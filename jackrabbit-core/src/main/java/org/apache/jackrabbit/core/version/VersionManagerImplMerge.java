@@ -163,7 +163,7 @@ abstract public class VersionManagerImplMerge extends VersionManagerImplRestore 
         // remove the child nodes in N but not in N'
         LinkedList<ChildNodeEntry> toDelete = new LinkedList<ChildNodeEntry>();
         for (ChildNodeEntry entry: state.getState().getChildNodeEntries()) {
-            if (!srcNode.getState().hasChildNodeEntry(entry.getName(), entry.getIndex())) {
+            if (!srcNode.getState().hasChildNodeEntry(entry.getName(), entry.getIndex()) || !srcNode.getState().hasChildNodeEntry(entry.getId())) { // https://issues.apache.org/jira/browse/JCR-2481
                 toDelete.add(entry);
             }
         }
