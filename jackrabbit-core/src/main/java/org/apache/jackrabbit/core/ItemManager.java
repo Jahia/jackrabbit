@@ -1052,17 +1052,15 @@ public class ItemManager implements Dumpable, ItemStateListener {
         ItemData data = retrieveItem(modified.getId());
         if (data != null && data.getState() == modified) {
             data.setStatus(ItemImpl.STATUS_MODIFIED);
-            /*
             if (modified.isNode()) {
                 NodeState state = (NodeState) modified;
                 if (state.isShareable()) {
-                    //evictItem(modified.getId());
-                    NodeData nodeData = (NodeData) data;
-                    NodeData shareSibling = new NodeData(nodeData, state.getParentId());
-                    shareableNodesCache.cache(shareSibling);
+                    evictItems(modified.getId());
+//                    NodeData nodeData = (NodeData) data;
+//                    NodeData shareSibling = new NodeData(nodeData, state.getParentId());
+//                    shareableNodesCache.cache(shareSibling);
                 }
             }
-            */
         }
     }
 
