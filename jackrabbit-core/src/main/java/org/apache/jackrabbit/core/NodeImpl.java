@@ -934,6 +934,10 @@ public class NodeImpl extends ItemImpl implements Node {
                     createChildNode(nd.unwrap().getName(), (NodeTypeImpl) nd.getDefaultPrimaryType(), null);
                 }
             }
+            // JCR-2599
+            if (mixin.isDerivedFrom(NameConstants.MIX_SHAREABLE)) {
+                thisState.addShare(getParentId());
+            }
         } catch (RepositoryException re) {
             // try to undo the modifications by removing the mixin
             try {
