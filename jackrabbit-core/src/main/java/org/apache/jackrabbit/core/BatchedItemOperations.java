@@ -1632,6 +1632,14 @@ public class BatchedItemOperations extends ItemValidator {
                     }
                     // use same uuid as source node
                     id = srcState.getNodeId();
+                    // -------- https://issues.apache.org/jira/browse/JCR-??
+                    if (shareable && stateMgr.hasItemState(id)) {
+                        NodeState sharedState = (NodeState) stateMgr.getItemState(id);
+                        sharedState.addShare(destParentId);
+                        stateMgr.store(sharedState);
+                        return sharedState;
+                    }
+                    // --------
                     if (stateMgr.hasItemState(id)) {
                         // node with this uuid already exists
                         throw new ItemExistsException(safeGetJCRPath(id));
