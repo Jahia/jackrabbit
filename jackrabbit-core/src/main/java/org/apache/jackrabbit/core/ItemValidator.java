@@ -298,7 +298,7 @@ public class ItemValidator {
         }
         if ((options & CHECK_CONSTRAINTS) == CHECK_CONSTRAINTS) {
             if (isProtected(item)) {
-                String msg = "Unable to perform operation. Node is protected.";
+                String msg = "Unable to perform operation. Node is protected : " + item.getPath();
                 log.debug(msg);
                 throw new ConstraintViolationException(msg);
             }
@@ -306,7 +306,7 @@ public class ItemValidator {
         if ((options & CHECK_CHECKED_OUT) == CHECK_CHECKED_OUT) {
             NodeImpl node = (item.isNode()) ? (NodeImpl) item : (NodeImpl) item.getParent();
             if (!node.isCheckedOut()) {
-                String msg = "Unable to perform operation. Node is checked-in.";
+                String msg = "Unable to perform operation. Node is checked-in : " + item.getPath();
                 log.debug(msg);
                 throw new VersionException(msg);
             }
