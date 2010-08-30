@@ -16,9 +16,20 @@
  */
 package org.apache.jackrabbit.spi2davex;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Stack;
+
+import javax.jcr.PropertyType;
+import javax.jcr.RepositoryException;
+
 import org.apache.jackrabbit.commons.json.JsonHandler;
 import org.apache.jackrabbit.spi.ChildInfo;
 import org.apache.jackrabbit.spi.IdFactory;
+import org.apache.jackrabbit.spi.ItemInfo;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.NodeId;
 import org.apache.jackrabbit.spi.NodeInfo;
@@ -31,15 +42,6 @@ import org.apache.jackrabbit.util.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.jcr.PropertyType;
-import javax.jcr.RepositoryException;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Stack;
-
 /**
  * <code>ItemInfoJSONHandler</code>...
  */
@@ -49,7 +51,7 @@ class ItemInfoJsonHandler implements JsonHandler {
 
     private static final int SPECIAL_JSON_PAIR = Integer.MAX_VALUE;
 
-    private final List itemInfos;
+    private final List<ItemInfo> itemInfos;
     private final NamePathResolver resolver;
     private final String rootURI;
 
@@ -61,7 +63,7 @@ class ItemInfoJsonHandler implements JsonHandler {
     private int propertyType;
     private int index = Path.INDEX_DEFAULT;
 
-    private Stack nodeInfos = new Stack();
+    private Stack<NodeInfo> nodeInfos = new Stack<NodeInfo>();
     private PropertyInfoImpl mvPropInfo;
 
     ItemInfoJsonHandler(NamePathResolver resolver, NodeInfo nInfo,
@@ -76,7 +78,7 @@ class ItemInfoJsonHandler implements JsonHandler {
         this.pFactory = pFactory;
         this.idFactory = idFactory;
 
-        itemInfos = new ArrayList();
+        itemInfos = new ArrayList<ItemInfo>();
         itemInfos.add(nInfo);
         nodeInfos.push(nInfo);
     }
@@ -101,6 +103,7 @@ class ItemInfoJsonHandler implements JsonHandler {
     public void endObject() throws IOException {
         try {
             NodeInfoImpl nInfo = (NodeInfoImpl) nodeInfos.pop();
+            nInfo.resolveUUID(idFactory);
             NodeInfo parent = getCurrentNodeInfo();
             if (parent != null) {
                 if (nInfo.getPath().getAncestor(1).equals(parent.getPath())) {
@@ -265,12 +268,12 @@ class ItemInfoJsonHandler implements JsonHandler {
         }
     }
 
-    Iterator getItemInfos() {
+    Iterator<? extends ItemInfo> getItemInfos() {
         return Collections.unmodifiableList(itemInfos).iterator();
     }
 
     private NodeInfoImpl getCurrentNodeInfo() {
-        return  (nodeInfos.isEmpty()) ? (NodeInfoImpl) null : (NodeInfoImpl) nodeInfos.peek();
+        return  (nodeInfos.isEmpty()) ? null : (NodeInfoImpl) nodeInfos.peek();
     }
 
     private PropertyInfoImpl createPropertyInfo(QValue value, boolean isMultiValued) throws RepositoryException {

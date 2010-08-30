@@ -28,7 +28,9 @@ public class TestAll extends TestCase {
 
         suite.addTestSuite(GuestLoginTest.class);
         suite.addTestSuite(NullLoginTest.class);
+        suite.addTestSuite(SimpleCredentialsAuthenticationTest.class);
         suite.addTestSuite(CryptedSimpleCredentialsTest.class);
+        suite.addTestSuite(LoginModuleTest.class);
 
         return suite;
     }

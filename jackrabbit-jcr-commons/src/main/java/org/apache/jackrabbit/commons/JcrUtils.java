@@ -16,7 +16,12 @@
  */
 package org.apache.jackrabbit.commons;
 
+import static java.net.URLDecoder.decode;
+
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -102,6 +107,41 @@ public class JcrUtils {
      */
     public static Repository getRepository(Map<String, String> parameters)
             throws RepositoryException {
+        // Use the query part of a repository URI as additional parameters
+        if (parameters != null
+                && parameters.containsKey(JcrUtils.REPOSITORY_URI)) {
+            String uri = parameters.get(JcrUtils.REPOSITORY_URI);
+            Map<String, String> copy = new HashMap<String, String>(parameters);
+            try {
+                URI u = new URI(uri);
+                String query = u.getRawQuery();
+                if (query != null) {
+                    for (String entry : query.split("&")) {
+                        int i = entry.indexOf('=');
+                        if (i != -1) {
+                            copy.put(
+                                    decode(entry.substring(0, i), "UTF-8"),
+                                    decode(entry.substring(i + 1), "UTF-8"));
+                        } else {
+                            copy.put(
+                                    decode(entry, "UTF-8"),
+                                    Boolean.TRUE.toString());
+                        }
+                    }
+                    copy.put(
+                            JcrUtils.REPOSITORY_URI,
+                            new URI(u.getScheme(), u.getRawAuthority(),
+                                    u.getRawPath(), null, u.getRawFragment()
+                                    ).toASCIIString());
+                    parameters = copy;
+                }
+            } catch (URISyntaxException e) {
+                // Ignore invalid URIs
+            } catch (UnsupportedEncodingException e) {
+                throw new RepositoryException("UTF-8 is not supported!", e);
+            }
+        }
+
         String newline = System.getProperty("line.separator");
 
         // Prepare the potential error message (JCR-2459)
@@ -160,11 +200,15 @@ public class JcrUtils {
     }
 
     /**
-     * Returns the repository identified by the given URI. See the
-     * documentation of the repository implementation you want to use for
-     * whether it supports this repository URI convention and for what
-     * the repository URI should look like. For example, Jackrabbit 2.0
-     * supports the following types of repository URIs:
+     * Returns the repository identified by the given URI. This feature
+     * is implemented by calling the {@link #getRepository(Map)} method
+     * with the {@link #REPOSITORY_URI} parameter set to the given URI.
+     * Any query parameters are moved from the URI to the parameter map.
+     * <p>
+     * See the documentation of the repository implementation you want
+     * to use for whether it supports this repository URI convention and
+     * for what the repository URI should look like. For example,
+     * Jackrabbit 2.0 supports the following types of repository URIs:
      * <dl>
      *   <dt>http(s)://...</dt>
      *   <dd>

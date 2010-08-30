@@ -53,4 +53,10 @@ public class BinaryPartSource implements PartSource {
             throw new IOException(e.getMessage());
         }
     }
+
+    public void dispose() {
+        if (value instanceof ValueLoader.Target) {
+            ((ValueLoader.Target) value).reset();
+        }
+    }
 }

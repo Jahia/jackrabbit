@@ -16,6 +16,9 @@
  */
 package org.apache.jackrabbit.rmi.client;
 
+import java.security.Principal;
+import java.util.Iterator;
+
 import javax.jcr.Item;
 import javax.jcr.NamespaceRegistry;
 import javax.jcr.Node;
@@ -26,6 +29,7 @@ import javax.jcr.Repository;
 import javax.jcr.Session;
 import javax.jcr.Workspace;
 import javax.jcr.lock.Lock;
+import javax.jcr.lock.LockManager;
 import javax.jcr.nodetype.ItemDefinition;
 import javax.jcr.nodetype.NodeDefinition;
 import javax.jcr.nodetype.NodeType;
@@ -38,14 +42,21 @@ import javax.jcr.query.QueryManager;
 import javax.jcr.query.QueryResult;
 import javax.jcr.query.Row;
 import javax.jcr.query.RowIterator;
+import javax.jcr.security.AccessControlEntry;
+import javax.jcr.security.AccessControlManager;
+import javax.jcr.security.AccessControlPolicy;
+import javax.jcr.security.AccessControlPolicyIterator;
+import javax.jcr.security.Privilege;
 import javax.jcr.version.Version;
 import javax.jcr.version.VersionHistory;
 import javax.jcr.version.VersionIterator;
+import javax.jcr.version.VersionManager;
 
 import org.apache.jackrabbit.rmi.remote.RemoteItem;
 import org.apache.jackrabbit.rmi.remote.RemoteItemDefinition;
 import org.apache.jackrabbit.rmi.remote.RemoteIterator;
 import org.apache.jackrabbit.rmi.remote.RemoteLock;
+import org.apache.jackrabbit.rmi.remote.RemoteLockManager;
 import org.apache.jackrabbit.rmi.remote.RemoteNamespaceRegistry;
 import org.apache.jackrabbit.rmi.remote.RemoteNode;
 import org.apache.jackrabbit.rmi.remote.RemoteNodeDefinition;
@@ -62,7 +73,13 @@ import org.apache.jackrabbit.rmi.remote.RemoteRow;
 import org.apache.jackrabbit.rmi.remote.RemoteSession;
 import org.apache.jackrabbit.rmi.remote.RemoteVersion;
 import org.apache.jackrabbit.rmi.remote.RemoteVersionHistory;
+import org.apache.jackrabbit.rmi.remote.RemoteVersionManager;
 import org.apache.jackrabbit.rmi.remote.RemoteWorkspace;
+import org.apache.jackrabbit.rmi.remote.principal.RemotePrincipal;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlEntry;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlManager;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlPolicy;
+import org.apache.jackrabbit.rmi.remote.security.RemotePrivilege;
 
 /**
  * Factory interface for creating local adapters for remote references.
@@ -233,11 +250,10 @@ public interface LocalAdapterFactory {
      * Factory method for creating a local adapter for a remote lock.
      *
      * @param session current session
-     * @param node current node
      * @param remote remote lock
      * @return local lock adapter
      */
-    Lock getLock(Session session, Node node, RemoteLock remote);
+    Lock getLock(Session session, RemoteLock remote);
 
     /**
      * Factory method for creating a local adapter for a remote query manager.
@@ -317,5 +333,111 @@ public interface LocalAdapterFactory {
      * @return local row iterator adapter
      */
     RowIterator getRowIterator(RemoteIterator remote);
+
+    LockManager getLockManager(Session session, RemoteLockManager lockManager);
+
+    VersionManager getVersionManager(
+            Session session, RemoteVersionManager versionManager);
+
+    /**
+     * Factory method for creating a local adapter for a remote access control
+     * manager
+     *
+     * @param remote remote access control manager
+     * @return local access control manager
+     */
+    AccessControlManager getAccessControlManager(
+            RemoteAccessControlManager remote);
+
+    /**
+     * Factory method for creating a local adapter for a remote access control
+     * policy
+     *
+     * @param remote remote access control policy
+     * @return local access control policy
+     */
+    AccessControlPolicy getAccessControlPolicy(RemoteAccessControlPolicy remote);
+
+    /**
+     * Factory method for creating an array of local adapter for an array of
+     * remote access control policies
+     *
+     * @param remote array of remote access control policies
+     * @return array of local access control policies
+     */
+    AccessControlPolicy[] getAccessControlPolicy(
+            RemoteAccessControlPolicy[] remote);
+
+    /**
+     * Factory method for creating a local adapter for a remote access control
+     * policy iterator
+     *
+     * @param remote access control policy iterator
+     * @return local access control policy iterator
+     */
+    AccessControlPolicyIterator getAccessControlPolicyIterator(
+            RemoteIterator remote);
+
+    /**
+     * Factory method for creating a local adapter for a remote access control
+     * entry
+     *
+     * @param remote remote access control entry
+     * @return local access control entry
+     */
+    AccessControlEntry getAccessControlEntry(RemoteAccessControlEntry remote);
+
+    /**
+     * Factory method for creating an array of local adapter for an array of
+     * remote access control entry
+     *
+     * @param remote array of remote access control entry
+     * @return local array of access control entry
+     */
+    AccessControlEntry[] getAccessControlEntry(RemoteAccessControlEntry[] remote);
+
+    /**
+     * Factory method for creating a local adapter for a remote principal.
+     * <p>
+     * If <code>remote</code> is a
+     * {@link org.apache.jackrabbit.rmi.remote.security.RemoteGroup} the
+     * prinicipal returned implements the <code>java.security.acl.Group</code>
+     * interface.
+     *
+     * @param remote principal
+     * @return local principal
+     */
+    Principal getPrincipal(RemotePrincipal remote);
+
+    /**
+     * Factory method for creating a local adapter for a remote principal
+     * iterator.
+     * <p>
+     * Each entry in the <code>remote</code> iterator which is a
+     * {@link org.apache.jackrabbit.rmi.remote.security.RemoteGroup} will be
+     * provided as a principal implementing the
+     * <code>java.security.acl.Group</code> interface.
+     *
+     * @param remote remote principal iterator
+     * @return local principal iterator
+     */
+    Iterator<Principal> getPrincipalIterator(RemoteIterator remote);
+
+    /**
+     * Factory method for creating a local adapter for a remote privilege
+     *
+     * @param remote remote privilege
+     * @return local privilege
+     */
+    Privilege getPrivilege(RemotePrivilege remote);
+
+    /**
+     * Factory method for creating an array of local adapter for an array of
+     * remote privilege
+     *
+     * @param remote array of remote privilege
+     * @return array of local privilege
+     */
+    Privilege[] getPrivilege(RemotePrivilege[] remote);
 
 }

@@ -118,7 +118,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
      *
      * @throws RepositoryException if an error occurs
      */
-    private void init() throws RepositoryException {
+    private synchronized void init() throws RepositoryException {
         nameCache.clear();
         versionCache.clear();
         labelCache.clear();
@@ -154,9 +154,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
         rootVersion = createVersionInstance(NameConstants.JCR_ROOTVERSION);
 
         // get version entries
-        ChildNodeEntry[] children = (ChildNodeEntry[])
-            node.getState().getChildNodeEntries().toArray();
-        for (ChildNodeEntry child : children) {
+        for (ChildNodeEntry child : node.getState().getChildNodeEntries()) {
             if (child.getName().equals(NameConstants.JCR_VERSIONLABELS)) {
                 continue;
             }
@@ -176,7 +174,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
      * Reload this object and all its dependent version objects.
      * @throws RepositoryException if an error occurs
      */
-    void reload() throws RepositoryException {
+    synchronized void reload() throws RepositoryException {
         tempVersionCache.putAll(versionCache);
 
         init();
@@ -195,7 +193,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
      * @return the new internal version
      * @throws IllegalArgumentException if the version does not exist
      */
-    InternalVersionImpl createVersionInstance(Name name) {
+    synchronized InternalVersionImpl createVersionInstance(Name name) {
         try {
             NodeStateEx nodeStateEx = node.getNode(name, 1);
             InternalVersionImpl v = createVersionInstance(nodeStateEx);
@@ -221,7 +219,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
      * @param child child node state
      * @return new version instance
      */
-    InternalVersionImpl createVersionInstance(NodeStateEx child) {
+    synchronized InternalVersionImpl createVersionInstance(NodeStateEx child) {
         InternalVersionImpl v = (InternalVersionImpl) tempVersionCache.remove(child.getNodeId());
         if (v != null) {
             v.clear();
@@ -266,7 +264,8 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
-    public InternalVersion getVersion(Name versionName) throws VersionException {
+    public synchronized InternalVersion getVersion(Name versionName)
+            throws VersionException {
         NodeId versionId = nameCache.get(versionName);
         if (versionId == null) {
             throw new VersionException("Version " + versionName + " does not exist.");
@@ -282,7 +281,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
-    public boolean hasVersion(Name versionName) {
+    public synchronized boolean hasVersion(Name versionName) {
         return nameCache.containsKey(versionName);
     }
 
@@ -290,6 +289,34 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
      * {@inheritDoc}
      */
     public InternalVersion getVersion(NodeId id) {
+        InternalVersion v = getCachedVersion(id);
+
+        // If the version was not found, our cache may not have been
+        // synchronized with updates from another cluster node.  Reload the history
+        // to be sure we have the latest updates and try again.
+        if (v == null) {
+            try {
+                reload();
+            } catch (RepositoryException e) {
+
+                // We should add the checked exception to this method definition
+                // so we don't need to wrap it.
+                // Avoiding it for now to limit impact of this fix.
+                throw new RuntimeException(e);
+            }
+            v = getCachedVersion(id);
+        }
+
+        return v;
+    }
+
+    /**
+     * Returns the version from cache, or <code>null</code> if it is not
+     * present.
+     * @param id the id of the version
+     * @return the version or <code>null</code> if not cached.
+     */
+    private synchronized InternalVersion getCachedVersion(NodeId id) {
         InternalVersion v = versionCache.get(id);
         if (v == null) {
             for (Name versionName : nameCache.keySet()) {
@@ -305,7 +332,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
-    public InternalVersion getVersionByLabel(Name label) {
+    public synchronized InternalVersion getVersionByLabel(Name label) {
         Name versionName = labelCache.get(label);
         if (versionName == null) {
             return null;
@@ -322,14 +349,14 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
-    public Name[] getVersionNames() {
+    public synchronized Name[] getVersionNames() {
         return nameCache.keySet().toArray(new Name[nameCache.size()]);
     }
     
     /**
      * {@inheritDoc}
      */
-    public int getNumVersions() {
+    public synchronized int getNumVersions() {
         return nameCache.size();
     }
 
@@ -343,7 +370,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
-    public Name[] getVersionLabels() {
+    public synchronized Name[] getVersionLabels() {
         return labelCache.keySet().toArray(new Name[labelCache.size()]);
     }
 
@@ -366,7 +393,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
      * @param versionName name of the version to remove
      * @throws VersionException if removal is not possible
      */
-    void removeVersion(Name versionName) throws RepositoryException {
+    synchronized void removeVersion(Name versionName) throws RepositoryException {
 
         InternalVersionImpl v = (InternalVersionImpl) getVersion(versionName);
         if (v.equals(rootVersion)) {
@@ -415,6 +442,8 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
                 parentNode.removeNode(node.getName());
                 // store changes for this node and his children
                 parentNode.store();
+            } else {
+                node.store();
             }
         } else {
             log.debug("Current version history has at least one reference");
@@ -437,12 +466,12 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
      * or <code>null</code> of the label was not moved.
      *
      * @param versionName the name of the version
-     * @param label the label to assgign
+     * @param label the label to assign
      * @param move  flag what to do by collisions
      * @return the version that was previously assigned by this label or <code>null</code>.
      * @throws VersionException if the version does not exist or if the label is already defined.
      */
-    InternalVersion setVersionLabel(Name versionName, Name label, boolean move)
+    synchronized InternalVersion setVersionLabel(Name versionName, Name label, boolean move)
             throws VersionException {
         InternalVersion version =
             (versionName != null) ? getVersion(versionName) : null;
@@ -500,7 +529,8 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
      * @return the newly created version
      * @throws RepositoryException if an error occurs
      */
-    InternalVersionImpl checkin(Name name, NodeStateEx src, Calendar created)
+    synchronized InternalVersionImpl checkin(
+            Name name, NodeStateEx src, Calendar created)
             throws RepositoryException {
 
         // copy predecessors from src node

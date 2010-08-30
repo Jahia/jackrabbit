@@ -16,16 +16,13 @@
  */
 package org.apache.jackrabbit.jca;
 
-import org.apache.jackrabbit.core.RepositoryImpl;
-import org.apache.jackrabbit.core.config.RepositoryConfig;
-
+import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Collection;
+import org.apache.jackrabbit.api.JackrabbitRepository;
+import org.apache.jackrabbit.commons.JcrUtils;
+
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 
 /**
@@ -45,7 +42,8 @@ public final class JCARepositoryManager {
     /**
      * References.
      */
-    private final Map references;
+    private final Map<Map<String, String>, Repository> repositories =
+        new HashMap<Map<String, String>, Repository>();
 
     /**
      * Flag indicating that the life cycle
@@ -58,53 +56,34 @@ public final class JCARepositoryManager {
      * Construct the manager.
      */
     private JCARepositoryManager() {
-        this.references = new HashMap();
     }
 
     /**
      * Create repository.
      *
-     * @param homeDir   The location of the repository.
-     * @param configFile The path to the repository configuration file. If the file is located on
-     *                   the classpath, the path should be prepended with
-     *                   JCARepositoryManager.CLASSPATH_CONFIG_PREFIX.
+     * @param parameters repository parameters
      * @return repository instance
      */
-    public RepositoryImpl createRepository(String homeDir, String configFile)
-            throws RepositoryException {
-        Reference ref = getReference(homeDir, configFile);
-        return ref.create();
+    public synchronized Repository createRepository(
+            Map<String, String> parameters) throws RepositoryException {
+        Repository repository = repositories.get(parameters);
+        if (repository == null) {
+            repository =  JcrUtils.getRepository(parameters);
+            repositories.put(parameters, repository);
+        }
+        return repository;
     }
 
     /**
      * Shutdown all the repositories.
      */
-    public void shutdown() {
-        Collection references = this.references.values();
-        Iterator iter = references.iterator();
-        while (iter.hasNext()) {
-            Reference ref = (Reference) iter.next();
-            ref.shutdown();
+    public synchronized void shutdown() {
+        for (Repository repository : repositories.values()) {
+            if (repository instanceof JackrabbitRepository) {
+                ((JackrabbitRepository) repository).shutdown();
+            }
         }
-        this.references.clear();
-    }
-
-    /**
-     * Return the reference.
-     *
-     * @param homeDir   The location of the repository.
-     * @param configFile The path to the repository configuration file.
-     */
-    private synchronized Reference getReference(String homeDir, String configFile) {
-        Reference ref = new Reference(homeDir, configFile);
-        Reference other = (Reference) references.get(ref);
-
-        if (other == null) {
-            references.put(ref, ref);
-            return ref;
-        } else {
-            return other;
-        }
+        repositories.clear();
     }
 
     /**
@@ -112,126 +91,6 @@ public final class JCARepositoryManager {
      */
     public static JCARepositoryManager getInstance() {
         return INSTANCE;
-    }
-
-    /**
-     * Repository reference implementation.
-     */
-    private final class Reference {
-        /**
-         * Home directory.
-         */
-        private final String homeDir;
-
-        /**
-         * Configuration file.
-         *
-         * Configuration files located on the classpath begin with
-         * JCARepositoryManager.CLASSPATH_CONFIG_PREFIX.
-         */
-        private String configFile;
-
-        /**
-         * Repository instance.
-         */
-        private RepositoryImpl repository;
-
-        /**
-         * Construct the manager.
-         */
-        private Reference(String homeDir, String configFile) {
-            this.homeDir = homeDir;
-            this.configFile = configFile;
-            this.repository = null;
-        }
-
-        /**
-         * Return the repository.
-         */
-        public RepositoryImpl create()
-                throws RepositoryException {
-            if (repository == null) {
-                RepositoryConfig config = null;
-
-                if (configFile.startsWith(CLASSPATH_CONFIG_PREFIX)) {
-                    ClassLoader cl = Thread.currentThread().getContextClassLoader();
-                    if (cl == null) {
-                        cl = this.getClass().getClassLoader();
-                    }
-
-                    InputStream configInputStream = cl.getResourceAsStream(
-                        configFile.substring(CLASSPATH_CONFIG_PREFIX.length()));
-                    try {
-                        config = RepositoryConfig.create(configInputStream, homeDir);
-                    } finally {
-                        if (configInputStream != null) {
-                            try {
-                                configInputStream.close();
-                            } catch (IOException e) {
-                                // ignore
-                            }
-                        }
-                    }
-                } else {
-                    config = RepositoryConfig.create(configFile, homeDir);
-                }
-                repository = RepositoryImpl.create(config);
-            }
-
-            return repository;
-        }
-
-        /**
-         * Shutdown the repository.
-         */
-        public void shutdown() {
-            if (repository != null) {
-                repository.shutdown();
-            }
-        }
-
-        /**
-         * Return the hash code.
-         */
-        public int hashCode() {
-            int result = homeDir != null ? homeDir.hashCode() : 0;
-            result = 37 * result + (configFile != null ? configFile.hashCode() : 0);
-            return result;
-        }
-
-        /**
-         * Return true if equals.
-         */
-        public boolean equals(Object o) {
-            if (o == this) {
-                return true;
-            } else if (o instanceof Reference) {
-                return equals((Reference) o);
-            } else {
-                return false;
-            }
-        }
-
-        /**
-         * Return true if equals.
-         */
-        private boolean equals(Reference o) {
-            return equals(homeDir, o.homeDir)
-                && equals(configFile, o.configFile);
-        }
-
-        /**
-         * Return true if equals.
-         */
-        private boolean equals(String s1, String s2) {
-            if (s1 == s2) {
-                return true;
-            } else if ((s1 == null) || (s2 == null)) {
-                return false;
-            } else {
-                return s1.equals(s2);
-            }
-        }
     }
 
     public boolean isAutoShutdown() {
@@ -249,13 +108,14 @@ public final class JCARepositoryManager {
      * @param homeDir   The location of the repository.
      * @param configFile The path to the repository configuration file.
      */
-    public void autoShutdownRepository(String homeDir, String configFile) {
+    public synchronized void autoShutdownRepository(
+            Map<String, String> parameters) {
         if (this.isAutoShutdown()) {
-            Reference ref = getReference(homeDir, configFile);
-            ref.shutdown();
+            Repository repository = repositories.get(parameters);
+            if (repository instanceof JackrabbitRepository) {
+                ((JackrabbitRepository) repository).shutdown();
+            }
         }
     }
 
 }
-
-

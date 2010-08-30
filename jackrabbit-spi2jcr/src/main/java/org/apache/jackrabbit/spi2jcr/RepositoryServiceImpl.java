@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.spi2jcr;
 
+import org.apache.jackrabbit.spi.ItemInfoCache;
 import org.apache.jackrabbit.spi.RepositoryService;
 import org.apache.jackrabbit.spi.IdFactory;
 import org.apache.jackrabbit.spi.QValueFactory;
@@ -40,8 +41,11 @@ import org.apache.jackrabbit.spi.Path;
 import org.apache.jackrabbit.spi.Subscription;
 import org.apache.jackrabbit.spi.QNodeTypeDefinition;
 import org.apache.jackrabbit.spi.Event;
+import org.apache.jackrabbit.spi.ItemInfo;
+import org.apache.jackrabbit.spi.ChildInfo;
 import org.apache.jackrabbit.spi.commons.EventFilterImpl;
 import org.apache.jackrabbit.spi.commons.EventBundleImpl;
+import org.apache.jackrabbit.spi.commons.ItemInfoCacheImpl;
 import org.apache.jackrabbit.spi.commons.QPropertyDefinitionImpl;
 import org.apache.jackrabbit.spi.commons.QNodeDefinitionImpl;
 import org.apache.jackrabbit.spi.commons.QNodeTypeDefinitionImpl;
@@ -156,6 +160,12 @@ public class RepositoryServiceImpl implements RepositoryService {
      */
     private final boolean supportsObservation;
 
+    private final int itemInfoCacheSize;
+
+    public RepositoryServiceImpl(Repository repository, BatchReadConfig batchReadConfig) {
+        this(repository, batchReadConfig, ItemInfoCacheImpl.DEFAULT_CACHE_SIZE);
+    }
+
     /**
      * Creates a new repository service based on the given
      * <code>repository</code>.
@@ -164,10 +174,11 @@ public class RepositoryServiceImpl implements RepositoryService {
      * @param batchReadConfig
      * {@link #getNodeInfo(SessionInfo, NodeId)}.
      */
-    public RepositoryServiceImpl(Repository repository, BatchReadConfig batchReadConfig) {
+    public RepositoryServiceImpl(Repository repository, BatchReadConfig batchReadConfig, int itemInfoCacheSize) {
         this.repository = repository;
         this.batchReadConfig = batchReadConfig;
         this.supportsObservation = "true".equals(repository.getDescriptor(Repository.OPTION_OBSERVATION_SUPPORTED));
+        this.itemInfoCacheSize = itemInfoCacheSize;
 
         try {
             Session s = repository.login(new GuestCredentials());
@@ -176,7 +187,7 @@ public class RepositoryServiceImpl implements RepositoryService {
                 qValueFactory = ((ValueFactoryQImpl) vf).getQValueFactory();
             }
         } catch (RepositoryException e) {
-            // ignore            
+            // ignore
         }
     }
 
@@ -211,8 +222,15 @@ public class RepositoryServiceImpl implements RepositoryService {
     /**
      * {@inheritDoc}
      */
+    public ItemInfoCache getItemInfoCache(SessionInfo sessionInfo) throws RepositoryException {
+        return new ItemInfoCacheImpl(itemInfoCacheSize);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public Map<String, QValue[]> getRepositoryDescriptors() throws RepositoryException {
-        Map<String, QValue[]> descriptors = new HashMap();
+        Map<String, QValue[]> descriptors = new HashMap<String, QValue[]>();
         for (String key : repository.getDescriptorKeys()) {
             if (key.equals(Repository.OPTION_TRANSACTIONS_SUPPORTED)) {
                 descriptors.put(key, new QValue[] {qValueFactory.create(false)});
@@ -224,10 +242,10 @@ public class RepositoryServiceImpl implements RepositoryService {
                     // as Name/Path values are not expected to occur in the
                     // descriptors. TODO: check again.
                     NamePathResolver resolver = new DefaultNamePathResolver(new NamespaceResolver() {
-                        public String getURI(String prefix) throws NamespaceException {
+                        public String getURI(String prefix) {
                             return prefix;
                         }
-                        public String getPrefix(String uri) throws NamespaceException {
+                        public String getPrefix(String uri) {
                             return uri;
                         }
                     });
@@ -272,8 +290,7 @@ public class RepositoryServiceImpl implements RepositoryService {
      */
     public void dispose(SessionInfo sessionInfo) throws RepositoryException {
         SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
-        for (Iterator it = sInfo.getSubscriptions().iterator(); it.hasNext(); ) {
-            EventSubscription s = (EventSubscription) it.next();
+        for (EventSubscription s : sInfo.getSubscriptions()) {
             s.dispose();
         }
         sInfo.getSession().logout();
@@ -304,9 +321,9 @@ public class RepositoryServiceImpl implements RepositoryService {
             } else {
                 String comma = "";
                 actStr = "";
-                for (int i = 0; i < actions.length; i++) {
+                for (String action : actions) {
                     actStr += comma;
-                    actStr += actions[i];
+                    actStr += action;
                     comma = ",";
                 }
             }
@@ -366,7 +383,7 @@ public class RepositoryServiceImpl implements RepositoryService {
     /**
      * {@inheritDoc}
      */
-    public Iterator getItemInfos(SessionInfo sessionInfo, NodeId nodeId)
+    public Iterator<? extends ItemInfo> getItemInfos(SessionInfo sessionInfo, NodeId nodeId)
             throws ItemNotFoundException, RepositoryException {
         final SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
         Node node = getNode(nodeId, sInfo);
@@ -386,8 +403,9 @@ public class RepositoryServiceImpl implements RepositoryService {
             }
             return Collections.singletonList(info).iterator();
         } else {
-            final List itemInfos = new ArrayList();
+            final List<ItemInfo> itemInfos = new ArrayList<ItemInfo>();
             ItemVisitor visitor = new TraversingItemVisitor(false, depth) {
+                @Override
                 protected void entering(Property property, int i) throws RepositoryException {
                     try {
                         itemInfos.add(new PropertyInfoImpl(property, idFactory, sInfo.getNamePathResolver(), getQValueFactory()));
@@ -395,6 +413,7 @@ public class RepositoryServiceImpl implements RepositoryService {
                         throw new RepositoryException(e);
                     }
                 }
+                @Override
                 protected void entering(Node node, int i) throws RepositoryException {
                     try {
                         itemInfos.add(new NodeInfoImpl(node, idFactory, sInfo.getNamePathResolver()));
@@ -402,9 +421,11 @@ public class RepositoryServiceImpl implements RepositoryService {
                         throw new RepositoryException(e);
                     }
                 }
+                @Override
                 protected void leaving(Property property, int i) {
                     // nothing to do
                 }
+                @Override
                 protected void leaving(Node node, int i) {
                     // nothing to do
                 }
@@ -417,11 +438,11 @@ public class RepositoryServiceImpl implements RepositoryService {
     /**
      * {@inheritDoc}
      */
-    public Iterator getChildInfos(SessionInfo sessionInfo, NodeId parentId)
+    public Iterator<ChildInfo> getChildInfos(SessionInfo sessionInfo, NodeId parentId)
             throws ItemNotFoundException, RepositoryException {
         SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
         NodeIterator children = getNode(parentId, sInfo).getNodes();
-        List childInfos = new ArrayList();
+        List<ChildInfo> childInfos = new ArrayList<ChildInfo>();
         try {
             while (children.hasNext()) {
                 childInfos.add(new ChildInfoImpl(children.nextNode(),
@@ -614,7 +635,7 @@ public class RepositoryServiceImpl implements RepositoryService {
         SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
         try {
             Lock lock = getNode(nodeId, sInfo).getLock();
-            return LockInfoImpl.createLockInfo(lock, idFactory, sInfo.getNamePathResolver());
+            return LockInfoImpl.createLockInfo(lock, idFactory);
         } catch (LockException e) {
             // no lock present on this node.
             return null;
@@ -634,7 +655,7 @@ public class RepositoryServiceImpl implements RepositoryService {
             public Object run() throws RepositoryException {
                 Node n = getNode(nodeId, sInfo);
                 Lock lock = n.lock(deep, sessionScoped);
-                return LockInfoImpl.createLockInfo(lock, idFactory, sInfo.getNamePathResolver());
+                return LockInfoImpl.createLockInfo(lock, idFactory);
             }
         }, sInfo);
     }
@@ -648,14 +669,9 @@ public class RepositoryServiceImpl implements RepositoryService {
             public Object run() throws RepositoryException {
                 Node n = getNode(nodeId, sInfo);
                 Lock lock;
-                // TODO: remove check once jsr283 is released
-                if (sInfo.getSession() instanceof javax.jcr.Session) {
-                    javax.jcr.lock.LockManager lMgr = (((javax.jcr.Workspace) sInfo.getSession().getWorkspace()).getLockManager());
-                    lock = lMgr.lock(n.getPath(), deep, sessionScoped, timeoutHint, ownerHint);
-                } else {
-                    lock = n.lock(deep, sessionScoped);
-                }
-                return LockInfoImpl.createLockInfo(lock, idFactory, sInfo.getNamePathResolver());
+                javax.jcr.lock.LockManager lMgr = (sInfo.getSession().getWorkspace()).getLockManager();
+                lock = lMgr.lock(n.getPath(), deep, sessionScoped, timeoutHint, ownerHint);
+                return LockInfoImpl.createLockInfo(lock, idFactory);
             }
         }, sInfo);
     }
@@ -693,7 +709,7 @@ public class RepositoryServiceImpl implements RepositoryService {
                 return getNode(nodeId, getSessionInfoImpl(sessionInfo)).checkin();
             }
         }, sInfo);
-        return idFactory.createNodeId(newVersion, sInfo.getNamePathResolver());
+        return idFactory.createNodeId(newVersion);
     }
 
     /**
@@ -716,15 +732,23 @@ public class RepositoryServiceImpl implements RepositoryService {
     public void checkout(final SessionInfo sessionInfo, final NodeId nodeId, NodeId activityId) throws UnsupportedRepositoryOperationException, LockException, RepositoryException {
         final SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
         Node activity = (activityId == null) ? null : getNode(activityId, sInfo);
-        sInfo.getSession().getWorkspace().getVersionManager().setActivity(activity);
-        executeWithLocalEvents(new Callable() {
-            public Object run() throws RepositoryException {
-                getNode(nodeId, sInfo).checkout();
-                return null;
-            }
-        }, sInfo);
+        VersionManager vMgr = sInfo.getSession().getWorkspace().getVersionManager();
+        vMgr.setActivity(activity);
+        try {
+            executeWithLocalEvents(new Callable() {
+                public Object run() throws RepositoryException {
+                    getNode(nodeId, sInfo).checkout();
+                    return null;
+                }
+            }, sInfo);
+        } finally {
+            vMgr.setActivity(null);
+        }
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public NodeId checkpoint(SessionInfo sessionInfo, final NodeId nodeId) throws UnsupportedRepositoryOperationException, RepositoryException {
         final SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
         Version newVersion = (Version) executeWithLocalEvents(new Callable() {
@@ -733,7 +757,28 @@ public class RepositoryServiceImpl implements RepositoryService {
                 return vMgr.checkpoint(getNodePath(nodeId, sInfo));
             }
         }, sInfo);
-        return idFactory.createNodeId(newVersion, sInfo.getNamePathResolver());
+        return idFactory.createNodeId(newVersion);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public NodeId checkpoint(SessionInfo sessionInfo, final NodeId nodeId, final NodeId activityId) throws UnsupportedRepositoryOperationException, RepositoryException {
+        final SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
+        Node activity = (activityId == null) ? null : getNode(activityId, sInfo);
+        VersionManager vMgr = sInfo.getSession().getWorkspace().getVersionManager();
+        vMgr.setActivity(activity);
+        try {
+            Version newVersion = (Version) executeWithLocalEvents(new Callable() {
+                public Object run() throws RepositoryException {
+                    VersionManager vMgr = sInfo.getSession().getWorkspace().getVersionManager();
+                    return vMgr.checkpoint(getNodePath(nodeId, sInfo));
+                }
+            }, sInfo);
+            return idFactory.createNodeId(newVersion);
+        } finally {
+            vMgr.setActivity(null);
+        }
     }
 
     /**
@@ -843,20 +888,20 @@ public class RepositoryServiceImpl implements RepositoryService {
     /**
      * {@inheritDoc}
      */
-    public Iterator merge(final SessionInfo sessionInfo,
+    public Iterator<NodeId> merge(final SessionInfo sessionInfo,
                           final NodeId nodeId,
                           final String srcWorkspaceName,
                           final boolean bestEffort)
             throws NoSuchWorkspaceException, AccessDeniedException, MergeException, LockException, InvalidItemStateException, RepositoryException {
         final SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
-        return (Iterator) executeWithLocalEvents(new Callable() {
+        return (Iterator<NodeId>) executeWithLocalEvents(new Callable() {
             public Object run() throws RepositoryException {
                 String nodePath = getNodePath(nodeId, sInfo);
                 NodeIterator it = getVersionManager(sInfo).merge(nodePath, srcWorkspaceName, bestEffort);
-                List ids = new ArrayList();
+                List<NodeId> ids = new ArrayList<NodeId>();
                 while (it.hasNext()) {
-                    ids.add(idFactory.createNodeId(it.nextNode(),
-                            sInfo.getNamePathResolver()));
+                    ids.add(idFactory.createNodeId(it.nextNode()
+                    ));
                 }
                 return ids.iterator();
             }
@@ -866,21 +911,21 @@ public class RepositoryServiceImpl implements RepositoryService {
     /**
      * {@inheritDoc}
      */
-    public Iterator merge(final SessionInfo sessionInfo,
+    public Iterator<NodeId> merge(final SessionInfo sessionInfo,
                           final NodeId nodeId,
                           final String srcWorkspaceName,
                           final boolean bestEffort,
                           final boolean isShallow)
             throws NoSuchWorkspaceException, AccessDeniedException, MergeException, LockException, InvalidItemStateException, RepositoryException {
         final SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
-        return (Iterator) executeWithLocalEvents(new Callable() {
+        return (Iterator<NodeId>) executeWithLocalEvents(new Callable() {
             public Object run() throws RepositoryException {
                 String nodePath = getNodePath(nodeId, sInfo);
                 NodeIterator it = getVersionManager(sInfo).merge(nodePath, srcWorkspaceName, bestEffort, isShallow);
-                List ids = new ArrayList();
+                List<NodeId> ids = new ArrayList<NodeId>();
                 while (it.hasNext()) {
-                    ids.add(idFactory.createNodeId(it.nextNode(),
-                            sInfo.getNamePathResolver()));
+                    ids.add(idFactory.createNodeId(it.nextNode()
+                    ));
                 }
                 return ids.iterator();
             }
@@ -902,23 +947,21 @@ public class RepositoryServiceImpl implements RepositoryService {
                 Version version = null;
                 boolean cancel;
                 NamePathResolver resolver = sInfo.getNamePathResolver();
-                List l = Arrays.asList(mergeFailedIds);
+                List<NodeId> l = Arrays.asList(mergeFailedIds);
                 Property mergeFailed = node.getProperty(resolver.getJCRName(NameConstants.JCR_MERGEFAILED));
-                Value[] values = mergeFailed.getValues();
-                for (int i = 0; i < values.length; i++) {
-                    String uuid = values[i].getString();
+                for (Value value : mergeFailed.getValues()) {
+                    String uuid = value.getString();
                     if (!l.contains(idFactory.createNodeId(uuid))) {
-                        version = (Version) sInfo.getSession().getNodeByUUID(uuid);
+                        version = (Version) sInfo.getSession().getNodeByIdentifier(uuid);
                         break;
                     }
                 }
 
-                l = new ArrayList(predecessorIds.length);
+                l = new ArrayList<NodeId>(predecessorIds.length);
                 l.addAll(Arrays.asList(predecessorIds));
                 Property predecessors = node.getProperty(resolver.getJCRName(NameConstants.JCR_PREDECESSORS));
-                values = predecessors.getValues();
-                for (int i = 0; i < values.length; i++) {
-                    NodeId vId = idFactory.createNodeId(values[i].getString());
+                for (Value value : predecessors.getValues()) {
+                    NodeId vId = idFactory.createNodeId(value.getString());
                     l.remove(vId);
                 }
                 cancel = l.isEmpty();
@@ -992,7 +1035,7 @@ public class RepositoryServiceImpl implements RepositoryService {
                 return vMgr.createActivity(title);
             }
         }, getSessionInfoImpl(sessionInfo));
-        return idFactory.createNodeId(activity, sInfo.getNamePathResolver());
+        return idFactory.createNodeId(activity);
     }
 
     /**
@@ -1012,16 +1055,16 @@ public class RepositoryServiceImpl implements RepositoryService {
     /**
      * {@inheritDoc}
      */
-    public Iterator mergeActivity(SessionInfo sessionInfo, final NodeId activityId) throws UnsupportedRepositoryOperationException, RepositoryException {
+    public Iterator<NodeId> mergeActivity(SessionInfo sessionInfo, final NodeId activityId) throws UnsupportedRepositoryOperationException, RepositoryException {
         final SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
-        return (Iterator) executeWithLocalEvents(new Callable() {
+        return (Iterator<NodeId>) executeWithLocalEvents(new Callable() {
             public Object run() throws RepositoryException {
                 Node node = getNode(activityId, sInfo);
                 NodeIterator it = getVersionManager(sInfo).merge(node);
-                List ids = new ArrayList();
+                List<NodeId> ids = new ArrayList<NodeId>();
                 while (it.hasNext()) {
-                    ids.add(idFactory.createNodeId(it.nextNode(),
-                            sInfo.getNamePathResolver()));
+                    ids.add(idFactory.createNodeId(it.nextNode()
+                    ));
                 }
                 return ids.iterator();
             }
@@ -1040,7 +1083,7 @@ public class RepositoryServiceImpl implements RepositoryService {
                 return vMgr.createConfiguration(getNodePath(nodeId, sInfo));
             }
         }, getSessionInfoImpl(sessionInfo));
-        return idFactory.createNodeId(configuration, sInfo.getNamePathResolver());
+        return idFactory.createNodeId(configuration);
     }
 
     /**
@@ -1058,7 +1101,7 @@ public class RepositoryServiceImpl implements RepositoryService {
     public String[] checkQueryStatement(SessionInfo sessionInfo,
                                     String statement,
                                     String language,
-                                    Map namespaces)
+                                    Map<String, String> namespaces)
             throws InvalidQueryException, RepositoryException {
         Query q = createQuery(getSessionInfoImpl(sessionInfo).getSession(),
                 statement, language, namespaces);
@@ -1099,9 +1142,9 @@ public class RepositoryServiceImpl implements RepositoryService {
                                          Name[] nodeTypeName,
                                          boolean noLocal)
             throws UnsupportedRepositoryOperationException, RepositoryException {
-        Set ntNames = null;
+        Set<Name> ntNames = null;
         if (nodeTypeName != null) {
-            ntNames = new HashSet(Arrays.asList(nodeTypeName));
+            ntNames = new HashSet<Name>(Arrays.asList(nodeTypeName));
         }
         return new EventFilterImpl(eventTypes, absPath, isDeep, uuid, ntNames, noLocal);
     }
@@ -1178,14 +1221,13 @@ public class RepositoryServiceImpl implements RepositoryService {
     /**
      * {@inheritDoc}
      */
-    public Map getRegisteredNamespaces(SessionInfo sessionInfo)
+    public Map<String, String> getRegisteredNamespaces(SessionInfo sessionInfo)
             throws RepositoryException {
         SessionInfoImpl sInfo = getSessionInfoImpl(sessionInfo);
         NamespaceRegistry nsReg = sInfo.getSession().getWorkspace().getNamespaceRegistry();
-        Map namespaces = new HashMap();
-        String[] prefixes = nsReg.getPrefixes();
-        for (int i = 0; i < prefixes.length; i++) {
-            namespaces.put(prefixes[i], nsReg.getURI(prefixes[i]));
+        Map<String, String> namespaces = new HashMap<String, String>();
+        for (String prefix : nsReg.getPrefixes()) {
+            namespaces.put(prefix, nsReg.getURI(prefix));
         }
         return namespaces;
     }
@@ -1259,7 +1301,7 @@ public class RepositoryServiceImpl implements RepositoryService {
             try {
                 String ntName = sInfo.getNamePathResolver().getJCRName(nodetypeName);
                 NodeType nt = ntMgr.getNodeType(ntName);
-                defs.add(new QNodeTypeDefinitionImpl(nt, 
+                defs.add(new QNodeTypeDefinitionImpl(nt,
                         sInfo.getNamePathResolver(), getQValueFactory()));
 
                 // in addition pack all supertypes into the return value
@@ -1334,7 +1376,7 @@ public class RepositoryServiceImpl implements RepositoryService {
            from lower index, the index of the following siblings must be reset
            in order to avoid PathNotFoundException.
          */
-        private final Set removedNodeIds = new HashSet();
+        private final Set<NodeId> removedNodeIds = new HashSet<NodeId>();
 
         private boolean failed = false;
 
@@ -1464,7 +1506,7 @@ public class RepositoryServiceImpl implements RepositoryService {
             NodeId nodeId = (NodeId) itemId;
             Path p = itemId.getPath();
             if (p != null) {
-                removedNodeIds.add(itemId);
+                removedNodeIds.add(nodeId);
                 int index = p.getNameElement().getNormalizedIndex();
                 if (index > Path.INDEX_DEFAULT) {
                     Path.Element[] elems = p.getElements();
@@ -1517,24 +1559,23 @@ public class RepositoryServiceImpl implements RepositoryService {
                 throws RepositoryException {
             executeGuarded(new Callable() {
                 public Object run() throws RepositoryException {
-                    Set mixinNames = new HashSet();
-                    for (int i = 0; i < mixinNodeTypeIds.length; i++) {
-                        mixinNames.add(getJcrName(mixinNodeTypeIds[i]));
+                    Set<String> mixinNames = new HashSet<String>();
+                    for (Name mixinNodeTypeId : mixinNodeTypeIds) {
+                        mixinNames.add(getJcrName(mixinNodeTypeId));
                     }
                     Node n = getNode(nodeId, sInfo);
-                    NodeType[] nts = n.getMixinNodeTypes();
-                    Set currentMixins = new HashSet();
-                    for (int i = 0; i < nts.length; i++) {
-                        currentMixins.add(nts[i].getName());
+                    Set<String> currentMixins = new HashSet<String>();
+                    for (NodeType nt : n.getMixinNodeTypes()) {
+                        currentMixins.add(nt.getName());
                     }
-                    Set remove = new HashSet(currentMixins);
+                    Set<String> remove = new HashSet<String>(currentMixins);
                     remove.removeAll(mixinNames);
                     mixinNames.removeAll(currentMixins);
-                    for (Iterator it = remove.iterator(); it.hasNext(); ) {
-                        n.removeMixin((String) it.next());
+                    for (String mixName : remove) {
+                        n.removeMixin(mixName);
                     }
-                    for (Iterator it = mixinNames.iterator(); it.hasNext(); ) {
-                        n.addMixin((String) it.next());
+                    for (String mixName : mixinNames) {
+                        n.addMixin(mixName);
                     }
                     return null;
                 }
@@ -1725,7 +1766,7 @@ public class RepositoryServiceImpl implements RepositoryService {
     }
 
     private String getNodePath(NodeId nodeId, SessionInfoImpl sessionInfo) throws RepositoryException {
-        // TODO: improve. avoid roundtrip over node access.
+        // TODO: improve. avoid round trip over node access.
         return getNode(nodeId, sessionInfo).getPath();
     }
 
@@ -1752,12 +1793,12 @@ public class RepositoryServiceImpl implements RepositoryService {
     private Query createQuery(Session session,
                               String statement,
                               String language,
-                              Map namespaces)
+                              Map<String, String> namespaces)
             throws InvalidQueryException, RepositoryException {
         QueryManager qMgr = session.getWorkspace().getQueryManager();
 
         // apply namespace mappings to session
-        Map previous = setNamespaceMappings(session, namespaces);
+        Map<String, String> previous = setNamespaceMappings(session, namespaces);
         try {
             return qMgr.createQuery(statement, language);
         } finally {
@@ -1769,21 +1810,19 @@ public class RepositoryServiceImpl implements RepositoryService {
     /**
      * Utility method that changes the namespace mappings of the
      * given sessions to include the given prefix to URI mappings.
-     * 
+     *
      * @param session current session
      * @param namespaces prefix to URI mappings
      * @return the previous namespace mappings that were modified
      * @throws RepositoryException if a repository error occurs
      */
-    private Map setNamespaceMappings(Session session, Map namespaces)
+    private Map<String, String> setNamespaceMappings(Session session, Map<String, String> namespaces)
             throws RepositoryException {
-        Map previous = new HashMap();
+        Map<String, String> previous = new HashMap<String, String>();
 
-        Iterator iterator = namespaces.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry entry = (Map.Entry) iterator.next();
-            String uri = (String) entry.getValue();
-            String prefix = (String) entry.getKey();
+        for (Map.Entry<String, String> entry : namespaces.entrySet()) {
+            String uri = entry.getValue();
+            String prefix = entry.getKey();
 
             // Get the previous prefix for this URI, throws if
             // URI not found (which is OK, as that's an error)
@@ -1834,13 +1873,12 @@ public class RepositoryServiceImpl implements RepositoryService {
             throws RepositoryException {
         if (supportsObservation) {
             // register local event listener
-            Collection subscr = sInfo.getSubscriptions();
+            Collection<EventSubscription> subscr = sInfo.getSubscriptions();
             if (subscr.size() != 0) {
                 ObservationManager obsMgr = sInfo.getSession().getWorkspace().getObservationManager();
-                List listeners = new ArrayList(subscr.size());
+                List<EventListener> listeners = new ArrayList<EventListener>(subscr.size());
                 try {
-                    for (Iterator it = subscr.iterator(); it.hasNext(); ) {
-                        EventSubscription s = (EventSubscription) it.next();
+                    for (EventSubscription s : subscr) {
                         EventListener listener = s.getLocalEventListener();
                         listeners.add(listener);
                         obsMgr.addEventListener(listener, EventSubscription.ALL_EVENTS,
@@ -1848,9 +1886,9 @@ public class RepositoryServiceImpl implements RepositoryService {
                     }
                     return call.run();
                 } finally {
-                    for (Iterator it = listeners.iterator(); it.hasNext(); ) {
+                    for (EventListener listener : listeners) {
                         try {
-                            obsMgr.removeEventListener((EventListener) it.next());
+                            obsMgr.removeEventListener(listener);
                         } catch (RepositoryException e) {
                             // ignore and remove next
                         }

@@ -16,18 +16,23 @@
  */
 package org.apache.jackrabbit.jcr2spi;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.apache.jackrabbit.test.NotExecutableException;
+import java.io.ByteArrayInputStream;
 
-import javax.jcr.RepositoryException;
+import javax.jcr.Item;
+import javax.jcr.ItemExistsException;
 import javax.jcr.Node;
 import javax.jcr.NodeIterator;
 import javax.jcr.PathNotFoundException;
-import javax.jcr.Item;
 import javax.jcr.Property;
-import javax.jcr.ItemExistsException;
 import javax.jcr.Repository;
+import javax.jcr.RepositoryException;
+import javax.jcr.Session;
+
+import org.apache.jackrabbit.JcrConstants;
+import org.apache.jackrabbit.commons.JcrUtils;
+import org.apache.jackrabbit.test.NotExecutableException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * <code>MoveTest</code>...
@@ -36,6 +41,7 @@ public class MoveTest extends AbstractMoveTest {
 
     private static Logger log = LoggerFactory.getLogger(MoveTest.class);
 
+    @Override
     protected boolean isSessionMove() {
         return true;
     }
@@ -172,8 +178,6 @@ public class MoveTest extends AbstractMoveTest {
         doMove(oldPath, destinationPath);
         Item movedItem = superuser.getItem(newPath);
         assertTrue("Moved Node must be the same after the move.", movedItem.isSame(moveNode));
-        // NOTE: implementation specific test
-        assertTrue("After successful moving a referenceable node node, accessing the node by uuid be the identical node.", movedItem == moveNode);
     }
 
     /**
@@ -196,8 +200,6 @@ public class MoveTest extends AbstractMoveTest {
 
         Item movedItem = superuser.getItem(destinationPath);
         assertTrue("Moved Node must be the same after the move.", movedItem.isSame(moveNode));
-        // NOTE: implementation specific test
-        assertTrue("After successful moving a referenceable node node, accessing the node by uuid be the identical node.", movedItem == moveNode);
     }
 
     /**
@@ -210,8 +212,6 @@ public class MoveTest extends AbstractMoveTest {
         //move the node
         doMove(moveNode.getPath(), destinationPath);
         assertTrue("Parent of moved node must be the destination parent node.", moveNode.getParent().isSame(destParentNode));
-        // NOTE: implementation specific test
-        assertTrue("After successful moving a referenceable node node, accessing the node by uuid be the identical node.", moveNode.getParent() == destParentNode);
     }
 
     /**
@@ -226,8 +226,6 @@ public class MoveTest extends AbstractMoveTest {
         superuser.save();
 
         assertTrue("Parent of moved node must be the destination parent node.", moveNode.getParent().isSame(destParentNode));
-        // NOTE: implementation specific test
-        assertTrue("After successful moving a referenceable node node, accessing the node by uuid be the identical node.", moveNode.getParent() == destParentNode);
     }
 
     /**
@@ -260,8 +258,64 @@ public class MoveTest extends AbstractMoveTest {
             }
         } else {
             // move the node: same name property and node must be supported
-            // see Issue 725 
+            // see Issue 725
             doMove(moveNode.getPath(), destProperty.getPath());
+        }
+    }
+
+    /**
+     * Regression tests for JCR-2528
+     * @throws RepositoryException
+     */
+    public void testMoveReferenceableNode() throws RepositoryException {
+        moveNode.addMixin(JcrConstants.MIX_REFERENCEABLE);
+        moveNode.getSession().save();
+
+        superuser.move(moveNode.getPath(), destParentNode.getPath() + "/" + moveNode.getName());
+        superuser.save();
+        destParentNode.remove();
+
+        // JCR-2528 caused this call to throw a javax.jcr.InvalidItemStateException: Item has already
+        // been removed by someone else. Status = REMOVED
+        destParentNode.getSession().save();
+    }
+
+
+    public void testMoveFile() throws RepositoryException, NotExecutableException {
+        // create a new file
+        String parentPath;
+        String filePath;
+        try {
+            Node parent = testRootNode.addNode("parent");
+            Node n = JcrUtils.putFile(parent, "file", "text/plain", new ByteArrayInputStream("data".getBytes()));
+            parentPath = parent.getPath();
+            filePath = n.getPath();
+            superuser.save();
+        } catch (RepositoryException e) {
+            throw new NotExecutableException();
+        }
+
+        Session s = getHelper().getSuperuserSession();
+        try {
+            Node n1 = s.getNode(filePath);
+            Node n2 = n1.getNode("jcr:content");
+            n2.setProperty("jcr:data", new java.io.ByteArrayInputStream("data2".getBytes()));
+            n2.save();
+
+            String destPath = parentPath + "1";
+            if (isSessionMove()) {
+                s.move(parentPath, destPath);
+                s.save();
+            } else {
+                s.getWorkspace().move(parentPath, destPath);
+            }
+            Node n3 = s.getNode(destPath + "/file");
+            Node n4 = n3.getNode("jcr:content");
+            n4.refresh(false);
+            // call must succeed (see JCR-2472)
+            Node n5 = n3.getNode("jcr:content");
+        } finally {
+            s.logout();
         }
     }
 }

@@ -22,7 +22,7 @@ import junit.framework.TestSuite;
  * <code>Jcr2SpiTestSuite</code>...
  */
 public class Jcr2SpiTestSuite extends TestSuite {
-    
+
     public Jcr2SpiTestSuite() {
         super("JCR2SPI tests");
 
@@ -31,6 +31,7 @@ public class Jcr2SpiTestSuite extends TestSuite {
         addTest(org.apache.jackrabbit.jcr2spi.lock.TestAll.suite());
         addTest(org.apache.jackrabbit.jcr2spi.name.TestAll.suite());
         addTest(org.apache.jackrabbit.jcr2spi.nodetype.TestAll.suite());
+        addTest(org.apache.jackrabbit.jcr2spi.observation.TestAll.suite());
         addTest(org.apache.jackrabbit.jcr2spi.query.TestAll.suite());
         addTest(org.apache.jackrabbit.jcr2spi.version.TestAll.suite());
         addTest(org.apache.jackrabbit.jcr2spi.xml.TestAll.suite());

@@ -1504,6 +1504,9 @@ public class RepositoryImpl extends AbstractRepository
                     session.setAttribute(name, sc.getAttribute(name));
                 }
             }
+
+            log.debug("User {} logged in to workspace {}",
+                    session.getUserID(), workspaceName);
             return session;
         } catch (SecurityException se) {
             throw new LoginException("Unable to access authentication information", se);
@@ -2015,6 +2018,14 @@ public class RepositoryImpl extends AbstractRepository
                     nsReg,
                     ntReg,
                     dataStore);
+
+            // JCR-2551: Recovery from a lost version history
+            if (Boolean.getBoolean("org.apache.jackrabbit.version.recovery")) {
+                RepositoryChecker checker =
+                    new RepositoryChecker(persistMgr, vMgr);
+                checker.check(ROOT_NODE_ID, true);
+                checker.fix();
+            }
 
             ISMLocking ismLocking = config.getISMLocking();
 

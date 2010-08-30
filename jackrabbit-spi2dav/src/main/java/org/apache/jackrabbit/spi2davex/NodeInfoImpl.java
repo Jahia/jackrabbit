@@ -16,6 +16,15 @@
  */
 package org.apache.jackrabbit.spi2davex;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+import javax.jcr.RepositoryException;
+
 import org.apache.jackrabbit.spi.ChildInfo;
 import org.apache.jackrabbit.spi.IdFactory;
 import org.apache.jackrabbit.spi.Name;
@@ -26,33 +35,19 @@ import org.apache.jackrabbit.spi.PropertyId;
 import org.apache.jackrabbit.spi.PropertyInfo;
 import org.apache.jackrabbit.spi.QValue;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.jcr.RepositoryException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
-import java.util.Collections;
 
 /**
  * <code>NodeInfoImpl</code>...
  */
 public class NodeInfoImpl extends ItemInfoImpl implements NodeInfo {
 
-    private static Logger log = LoggerFactory.getLogger(NodeInfoImpl.class);
-
     private NodeId id;
     private String uniqueID;
     private Name primaryNodeTypeName;
     private Name[] mixinNodeTypeNames = new Name[0];
 
-    private final Set propertyInfos = new HashSet();
-    private List childInfos = null;
-
-    private int numberOfChildNodes = -1;
+    private final Set<PropertyInfo> propertyInfos = new LinkedHashSet<PropertyInfo>();
+    private Set<ChildInfo> childInfos = null;
 
     /**
      * Creates a new <code>NodeInfo</code>.
@@ -87,16 +82,15 @@ public class NodeInfoImpl extends ItemInfoImpl implements NodeInfo {
         return new PropertyId[0];
     }
 
-    public Iterator getPropertyIds() {
-        List l = new ArrayList();
-        for (Iterator it = propertyInfos.iterator(); it.hasNext(); ) {
-            PropertyId pId = ((PropertyInfo) it.next()).getId();
-            l.add(pId);
+    public Iterator<PropertyId> getPropertyIds() {
+        List<PropertyId> l = new ArrayList<PropertyId>();
+        for (PropertyInfo propertyInfo : propertyInfos) {
+            l.add(propertyInfo.getId());
         }
         return l.iterator();
     }
 
-    public Iterator getChildInfos() {
+    public Iterator<ChildInfo> getChildInfos() {
         return (childInfos == null) ? null : childInfos.iterator();
     }
 
@@ -108,7 +102,6 @@ public class NodeInfoImpl extends ItemInfoImpl implements NodeInfo {
         if (NameConstants.JCR_UUID.equals(pn)) {
             uniqueID = propInfo.getValues()[0].getString();
             id = idFactory.createNodeId(uniqueID);
-            propInfo.setId(idFactory.createPropertyId(id, propInfo.getName()));
         } else if (NameConstants.JCR_PRIMARYTYPE.equals(pn)) {
             primaryNodeTypeName = propInfo.getValues()[0].getName();
         } else if (NameConstants.JCR_MIXINTYPES.equals(pn)) {
@@ -121,20 +114,25 @@ public class NodeInfoImpl extends ItemInfoImpl implements NodeInfo {
         }
     }
 
+    void resolveUUID(IdFactory idFactory) {
+        if (uniqueID != null) {
+            for (Object o : propertyInfos) {
+                PropertyInfoImpl propInfo = (PropertyInfoImpl) o;
+                propInfo.setId(idFactory.createPropertyId(id, propInfo.getName()));
+            }
+        }
+    }
+
     void addChildInfo(ChildInfo childInfo) {
         if (childInfos == null) {
-            childInfos = new ArrayList();
+            childInfos = new LinkedHashSet<ChildInfo>();
         }
-        if (childInfos.contains(childInfo)) {
-            log.warn("ChildInfo ( " + childInfo.toString() + " ) already contained -> ignore.");
-        } else {
-            childInfos.add(childInfo);
-        }
+        childInfos.add(childInfo);
     }
 
     void setNumberOfChildNodes(long numberOfChildNodes) {
         if (numberOfChildNodes == 0) {
-            childInfos = Collections.EMPTY_LIST;
+            childInfos = Collections.<ChildInfo>emptySet();
         } // else: wait for calls to #addChildInfo
     }
 

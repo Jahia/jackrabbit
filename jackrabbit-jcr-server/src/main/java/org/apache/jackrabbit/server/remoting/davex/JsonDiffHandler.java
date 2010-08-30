@@ -42,7 +42,6 @@ import javax.jcr.nodetype.NodeType;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Stack;
 import java.util.LinkedList;
@@ -146,7 +145,11 @@ class JsonDiffHandler implements DiffHandler {
         } catch (RepositoryException e) {
             throw new DiffException(e.getMessage(), e);
         } catch (IOException e) {
-            throw new DiffException(e.getMessage(), e);
+            if (e instanceof DiffException) {
+                throw (DiffException) e;
+            } else {
+                throw new DiffException(e.getMessage(), e);
+            }
         }
     }
 
@@ -265,7 +268,11 @@ class JsonDiffHandler implements DiffHandler {
             NodeHandler hndlr = new NodeHandler(parent, nodeName);            
             new JsonParser(hndlr).parse(diffValue);
         } catch (IOException e) {
-            throw new DiffException(e.getMessage());
+            if (e instanceof DiffException) {
+                throw (DiffException) e;
+            } else {
+                throw new DiffException(e.getMessage(), e);
+            }
         }
     }
 
@@ -274,23 +281,22 @@ class JsonDiffHandler implements DiffHandler {
             return path;
         }
         String[]  elems = Text.explode(path, '/', false);
-        LinkedList queue = new LinkedList();
+        LinkedList<String> queue = new LinkedList<String>();
         String last = "..";
-        for (int i = 0; i < elems.length; i++) {
-            String segm = elems[i];
+        for (String segm : elems) {
             if ("..".equals(segm) && !"..".equals(last)) {
                 queue.removeLast();
                 if (queue.isEmpty()) {
                     last = "..";
                 } else {
-                    last = queue.getLast().toString();
+                    last = queue.getLast();
                 }
             } else if (!".".equals(segm)) {
                 last = segm;
                 queue.add(last);
             }
         }
-        return "/" + Text.implode((String[]) queue.toArray(new String[queue.size()]), "/");
+        return "/" + Text.implode(queue.toArray(new String[queue.size()]), "/");
     }
     
     private static Node importNode(Node parent, String nodeName, String ntName,
@@ -364,24 +370,24 @@ class JsonDiffHandler implements DiffHandler {
         if (values.length == 0) {
             // remove all mixins
             NodeType[] mixins = n.getMixinNodeTypes();
-            for (int i = 0; i < mixins.length; i++) {
-                String mixinName = mixins[i].getName();
+            for (NodeType mixin : mixins) {
+                String mixinName = mixin.getName();
                 n.removeMixin(mixinName);
             }
         } else {
-            List newMixins = new ArrayList(values.length);
-            for (int i = 0; i < values.length; i++) {
-                newMixins.add(values[i].getString());
+            List<String> newMixins = new ArrayList<String>(values.length);
+            for (Value value : values) {
+                newMixins.add(value.getString());
             }
             NodeType[] mixins = n.getMixinNodeTypes();
-            for (int i = 0; i < mixins.length; i++) {
-                String mixinName = mixins[i].getName();
+            for (NodeType mixin : mixins) {
+                String mixinName = mixin.getName();
                 if (!newMixins.remove(mixinName)) {
                     n.removeMixin(mixinName);
                 }
             }
-            for (Iterator mixIt = newMixins.iterator(); mixIt.hasNext();) {
-                n.addMixin(mixIt.next().toString());
+            for (String newMixinName : newMixins) {
+                n.addMixin(newMixinName);
             }
         }
     }
@@ -413,7 +419,7 @@ class JsonDiffHandler implements DiffHandler {
             if (strs == null) {
                 vs = new Value[0];
             } else {
-                List valList = new ArrayList(strs.length);
+                List<Value> valList = new ArrayList<Value>(strs.length);
                 for (int i = 0; i < strs.length; i++) {
                     if (strs[i] != null) {
                         String[] types = data.getParameterTypes(paramName);
@@ -425,7 +431,7 @@ class JsonDiffHandler implements DiffHandler {
                         }
                     }
                 }
-                vs = (Value[]) valList.toArray(new Value[valList.size()]);
+                vs = valList.toArray(new Value[valList.size()]);
             }
         }
         return vs;
@@ -433,7 +439,7 @@ class JsonDiffHandler implements DiffHandler {
 
     private Value extractValue(String diffValue) throws RepositoryException, DiffException, IOException {
         ValueHandler hndlr = new ValueHandler();
-        // surround diffvalue { key : } to make it parsable
+        // surround diff value { key : } to make it parsable
         new JsonParser(hndlr).parse("{\"a\":"+diffValue+"}");
 
         return hndlr.getValue();
@@ -441,7 +447,7 @@ class JsonDiffHandler implements DiffHandler {
 
     private Value[] extractValues(String diffValue) throws RepositoryException, DiffException, IOException {
         ValuesHandler hndlr = new ValuesHandler();
-        // surround diffvalue { key : } to make it parsable
+        // surround diff value { key : } to make it parsable
         new JsonParser(hndlr).parse("{\"a\":"+diffValue+"}");
         
         return hndlr.getValues();
@@ -492,7 +498,7 @@ class JsonDiffHandler implements DiffHandler {
      * Inner class used to parse the values from a simple json array
      */
     private class ValuesHandler implements JsonHandler {
-        private List values = new ArrayList();
+        private List<Value> values = new ArrayList<Value>();
 
         public void object() throws IOException {
             // ignore
@@ -528,7 +534,7 @@ class JsonDiffHandler implements DiffHandler {
         }
 
         private Value[] getValues() {
-            return (Value[]) values.toArray(new Value[values.size()]);
+            return values.toArray(new Value[values.size()]);
         }
     }
 
@@ -540,7 +546,7 @@ class JsonDiffHandler implements DiffHandler {
         private Node parent;
         private String key;
 
-        private Stack st = new Stack();
+        private Stack<ImportItem> st = new Stack<ImportItem>();
 
         private NodeHandler(Node parent, String nodeName) throws IOException {
             this.parent = parent;
@@ -550,11 +556,11 @@ class JsonDiffHandler implements DiffHandler {
         public void object() throws IOException {
             ImportNode n = new ImportNode(key);
             if (!st.isEmpty()) {
-                Object obj = st.peek();
+                ImportItem obj = st.peek();
                 if (obj instanceof ImportNode) {
-                    ((ImportNode)obj).addNode(n);
+                    ((ImportNode) obj).addNode(n);
                 } else {
-                    throw new IOException("Invalid DIFF format: The JSONArray may only contain simple values.");
+                    throw new DiffException("Invalid DIFF format: The JSONArray may only contain simple values.");
                 }
             }
             st.push(n);
@@ -563,28 +569,28 @@ class JsonDiffHandler implements DiffHandler {
         public void endObject() throws IOException {
             // element on stack must be ImportMvProp since array may only
             // contain simple values, no arrays/objects are allowed.
-            Object obj = st.pop();
+            ImportItem obj = st.pop();
             if (!((obj instanceof ImportNode))) {
-                throw new IOException("Invalid DIFF format.");
+                throw new DiffException("Invalid DIFF format.");
             }
             if (st.isEmpty()) {
                 // everything parsed -> start adding all nodes and properties
                 try {
-                    ((ImportNode) obj).createItem(parent);                    
+                    obj.createItem(parent);                    
                 } catch (RepositoryException e) {
                     log.error(e.getMessage());
-                    throw new IOException("Invalid DIFF format");
+                    throw new DiffException(e.getMessage(), e);
                 }
             }
         }
 
         public void array() throws IOException {
             ImportMvProp prop = new ImportMvProp(key);
-            Object obj = st.peek();
+            ImportItem obj = st.peek();
             if (obj instanceof ImportNode) {
                 ((ImportNode)obj).addProp(prop);
             } else {
-                throw new IOException("Invalid DIFF format: The JSONArray may only contain simple values.");
+                throw new DiffException("Invalid DIFF format: The JSONArray may only contain simple values.");
             }
             st.push(prop);
         }
@@ -592,9 +598,9 @@ class JsonDiffHandler implements DiffHandler {
         public void endArray() throws IOException {
             // element on stack must be ImportMvProp since array may only
             // contain simple values, no arrays/objects are allowed.
-            Object obj = st.pop();
+            ImportItem obj = st.pop();
             if (!((obj instanceof ImportMvProp))) {
-                throw new IOException("Invalid DIFF format: The JSONArray may only contain simple values.");                
+                throw new DiffException("Invalid DIFF format: The JSONArray may only contain simple values.");
             }
         }
 
@@ -621,7 +627,7 @@ class JsonDiffHandler implements DiffHandler {
         }
                 
         private void value(Value v) throws IOException {
-            Object obj = st.peek();
+            ImportItem obj = st.peek();
             if (obj instanceof ImportMvProp) {
                 ((ImportMvProp) obj).values.add(v);
             } else {
@@ -634,7 +640,7 @@ class JsonDiffHandler implements DiffHandler {
         final String name;
         private ImportItem(String name) throws IOException {
             if (name == null) {
-                throw new IOException("Invalid DIFF format: NULL key.");
+                throw new DiffException("Invalid DIFF format: NULL key.");
             }
             this.name = name;
         }
@@ -646,8 +652,8 @@ class JsonDiffHandler implements DiffHandler {
         private String ntName;
         private String uuid;
 
-        private List childN = new ArrayList();
-        private List childP = new ArrayList();
+        private List<ImportNode> childN = new ArrayList<ImportNode>();
+        private List<ImportItem> childP = new ArrayList<ImportItem>();
 
         private ImportNode(String name) throws IOException {
             super(name);
@@ -682,6 +688,7 @@ class JsonDiffHandler implements DiffHandler {
             childN.add(node);
         }
 
+        @Override
         void createItem(Node parent) throws RepositoryException {
             Node n;
             if (uuid == null) {
@@ -690,13 +697,11 @@ class JsonDiffHandler implements DiffHandler {
                 n = importNode(parent, name, ntName, uuid);
             }
             // create all properties
-            for (Iterator it = childP.iterator(); it.hasNext();) {
-                ImportItem obj = (ImportItem) it.next();
+            for (ImportItem obj : childP) {
                 obj.createItem(n);
             }
-            // recursivly create all child nodes
-            for (Iterator it = childN.iterator(); it.hasNext();) {
-                ImportItem obj = (ImportItem) it.next();
+            // recursively create all child nodes
+            for (ImportItem obj : childN) {
                 obj.createItem(n);
             }
         }
@@ -710,20 +715,22 @@ class JsonDiffHandler implements DiffHandler {
             this.value = v;
         }
 
+        @Override
         void createItem(Node parent) throws RepositoryException {
             parent.setProperty(name, value);
         }
     }
 
     private class ImportMvProp extends ImportItem  {
-        private List values = new ArrayList();
+        private List<Value> values = new ArrayList<Value>();
 
         private ImportMvProp(String name) throws IOException {
             super(name);
         }
 
+        @Override
         void createItem(Node parent) throws RepositoryException {
-            Value[] vls = (Value[]) values.toArray(new Value[values.size()]);
+            Value[] vls = values.toArray(new Value[values.size()]);
             if (JcrConstants.JCR_MIXINTYPES.equals(name)) {
                 setMixins(parent, vls);
             } else {

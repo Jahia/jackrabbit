@@ -17,12 +17,14 @@
 package org.apache.jackrabbit.webdav.jcr;
 
 import org.apache.jackrabbit.server.BasicCredentialsProvider;
+import org.apache.jackrabbit.server.CredentialsProvider;
 import org.apache.jackrabbit.server.SessionProviderImpl;
 import org.apache.jackrabbit.server.jcr.JCRWebdavServer;
 import org.apache.jackrabbit.webdav.DavException;
 import org.apache.jackrabbit.webdav.DavLocatorFactory;
 import org.apache.jackrabbit.webdav.DavResource;
 import org.apache.jackrabbit.webdav.DavResourceFactory;
+import org.apache.jackrabbit.webdav.DavServletResponse;
 import org.apache.jackrabbit.webdav.DavSessionProvider;
 import org.apache.jackrabbit.webdav.WebdavRequest;
 import org.apache.jackrabbit.webdav.jcr.observation.SubscriptionManagerImpl;
@@ -95,6 +97,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      *
      * @throws ServletException
      */
+    @Override
     public void init() throws ServletException {
         super.init();
 
@@ -113,7 +116,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
         subscriptionMgr = new SubscriptionManagerImpl();
         txMgr.addTransactionListener((SubscriptionManagerImpl) subscriptionMgr);
 
-        // todo: ev. make configurable
+        // todo: eventually make configurable
         resourceFactory = new DavResourceFactoryImpl(txMgr, subscriptionMgr);
         locatorFactory = new DavLocatorFactoryImpl(pathPrefix);
     }
@@ -128,6 +131,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      *
      * @see AbstractWebdavServlet#isPreconditionValid(WebdavRequest, DavResource)
      */
+    @Override
     protected boolean isPreconditionValid(WebdavRequest request, DavResource resource) {
         // first check matching If header
         if (!request.matchesIfHeader(resource)) {
@@ -140,7 +144,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
             Session repositorySesssion = JcrDavSession.getRepositorySession(request.getDavSession());
             String reqWspName = resource.getLocator().getWorkspaceName();
             String wsName = repositorySesssion.getWorkspace().getName();
-            //  compare workspace names if the req. resource is not the root-collection.
+            //  compare workspace names if the requested resource isn't the root-collection.
             if (reqWspName != null && !reqWspName.equals(wsName)) {
                 return false;
             }
@@ -161,13 +165,11 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      * @return server
      * @see AbstractWebdavServlet#getDavSessionProvider()
      */
+    @Override
     public DavSessionProvider getDavSessionProvider() {
         if (server == null) {
             Repository repository = getRepository();
-            server = new JCRWebdavServer(repository, new SessionProviderImpl(
-                    new BasicCredentialsProvider(
-                            getInitParameter(INIT_PARAM_MISSING_AUTH_MAPPING)))
-            );
+            server = new JCRWebdavServer(repository, new SessionProviderImpl(getCredentialsProvider()));
         }
         return server;
     }
@@ -177,6 +179,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      *
      * @see AbstractWebdavServlet#setDavSessionProvider(DavSessionProvider)
      */
+    @Override
     public void setDavSessionProvider(DavSessionProvider davSessionProvider) {
         throw new UnsupportedOperationException("Not implemented. DavSession(s) are provided by the 'JCRWebdavServer'");
     }
@@ -186,6 +189,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      *
      * @see AbstractWebdavServlet#getLocatorFactory()
      */
+    @Override
     public DavLocatorFactory getLocatorFactory() {
         if (locatorFactory == null) {
             locatorFactory = new DavLocatorFactoryImpl(pathPrefix);
@@ -198,6 +202,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      *
      * @see AbstractWebdavServlet#setLocatorFactory(DavLocatorFactory)
      */
+    @Override
     public void setLocatorFactory(DavLocatorFactory locatorFactory) {
         this.locatorFactory = locatorFactory;
     }
@@ -207,6 +212,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      *
      * @see AbstractWebdavServlet#getResourceFactory()
      */
+    @Override
     public DavResourceFactory getResourceFactory() {
         if (resourceFactory == null) {
             resourceFactory = new DavResourceFactoryImpl(txMgr, subscriptionMgr);
@@ -219,6 +225,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      *
      * @see AbstractWebdavServlet#setResourceFactory(org.apache.jackrabbit.webdav.DavResourceFactory)
      */
+    @Override
     public void setResourceFactory(DavResourceFactory resourceFactory) {
         this.resourceFactory = resourceFactory;
     }
@@ -230,8 +237,62 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      * @return corresponding init parameter or {@link #DEFAULT_AUTHENTICATE_HEADER}.
      * @see #INIT_PARAM_AUTHENTICATE_HEADER
      */
+    @Override
     public String getAuthenticateHeaderValue() {
         return authenticate_header;
+    }
+
+    /**
+     * Modified variant needed for JCR move and copy that isn't compliant to
+     * WebDAV. The latter requires both methods to fail if the destination already
+     * exists and Overwrite is set to F (false); in JCR however this depends on
+     * the node type characteristics of the parent (SNSiblings allowed or not).
+     *
+     * @param destResource destination resource to be validated.
+     * @param request
+     * @param checkHeader flag indicating if the destination header must be present.
+     * @return status code indicating whether the destination is valid.
+     */
+    @Override
+    protected int validateDestination(DavResource destResource, WebdavRequest request, boolean checkHeader)
+            throws DavException {
+
+        if (checkHeader) {
+            String destHeader = request.getHeader(HEADER_DESTINATION);
+            if (destHeader == null || "".equals(destHeader)) {
+                return DavServletResponse.SC_BAD_REQUEST;
+            }
+        }
+        if (destResource.getLocator().equals(request.getRequestLocator())) {
+            return DavServletResponse.SC_FORBIDDEN;
+        }
+
+        int status;
+        if (destResource.exists()) {
+            if (request.isOverwrite()) {
+                // matching if-header required for existing resources
+                if (!request.matchesIfHeader(destResource)) {
+                    return DavServletResponse.SC_PRECONDITION_FAILED;
+                } else {
+                    // overwrite existing resource
+                    destResource.getCollection().removeMember(destResource);
+                    status = DavServletResponse.SC_NO_CONTENT;
+                }
+            } else {
+              /* NO overwrite header:
+
+                 but, instead of return the 412 Precondition-Failed code required
+                 by the WebDAV specification(s) leave the validation to the
+                 JCR repository.
+               */
+                status = DavServletResponse.SC_CREATED;
+            }
+
+        } else {
+            // destination does not exist >> copy/move can be performed
+            status = DavServletResponse.SC_CREATED;
+        }
+        return status;
     }
 
     /**
@@ -248,4 +309,13 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      * Returns the repository to be used by this servlet.
      */
     protected abstract Repository getRepository();
+
+    /**
+     * Returns a new instanceof <code>BasicCredentialsProvider</code>.
+     *
+     * @return a new credentials provider
+     */
+    protected CredentialsProvider getCredentialsProvider() {
+        return new BasicCredentialsProvider(getInitParameter(INIT_PARAM_MISSING_AUTH_MAPPING));
+    }
 }

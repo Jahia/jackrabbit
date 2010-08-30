@@ -16,7 +16,11 @@
  */
 package org.apache.jackrabbit.core.version;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Set;
 
 import javax.jcr.AccessDeniedException;
 import javax.jcr.MergeException;
@@ -33,7 +37,10 @@ import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.security.authorization.Permission;
-import org.apache.jackrabbit.core.state.*;
+import org.apache.jackrabbit.core.state.ChildNodeEntry;
+import org.apache.jackrabbit.core.state.ItemStateException;
+import org.apache.jackrabbit.core.state.PropertyState;
+import org.apache.jackrabbit.core.state.UpdatableItemStateManager;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
@@ -176,28 +183,16 @@ abstract public class VersionManagerImplMerge extends VersionManagerImplRestore 
         for (ChildNodeEntry entry: srcNode.getState().getChildNodeEntries()) {
             NodeStateEx child = state.getNode(entry.getName(), entry.getIndex());
             if (child == null) {
-                // ------ https://issues.apache.org/jira/browse/JCR-2474
-                // create new child
-                NodeStateEx srcChild = srcNode.getNode(entry.getId());
                 // if destination workspace already has such an node, remove it
                 if (state.hasNode(entry.getId())) {
                     child = state.getNode(entry.getId());
-                    if (!srcChild.getState().isShareable()) {
-                        NodeStateEx parent = child.getParent();
-                        parent.removeNode(child);
-                        parent.store();
-                        child = null;
-                    } else {
-                        child.getState().addShare(state.getNodeId());
-                        child.getState().setStatus(ItemState.STATUS_EXISTING_MODIFIED);
-                        child.store();
-                        state.getState().addChildNodeEntry(entry.getName(), child.getNodeId());
-                    }
+                    NodeStateEx parent = child.getParent();
+                    parent.removeNode(child);
+                    parent.store();
                 }
-                if (child == null) {
-                    child = state.addNode(entry.getName(), srcChild.getState().getNodeTypeName(), srcChild.getNodeId());
-                }
-                // ------
+                // create new child
+                NodeStateEx srcChild = srcNode.getNode(entry.getId());
+                child = state.addNode(entry.getName(), srcChild.getState().getNodeTypeName(), srcChild.getNodeId());
                 child.setMixins(srcChild.getState().getMixinTypeNames());
                 // copy src child
                 state.store();
@@ -208,19 +203,6 @@ abstract public class VersionManagerImplMerge extends VersionManagerImplRestore 
 
             }
         }
-
-        // ------ https://issues.apache.org/jira/browse/JCR-2300
-        if (state.getEffectiveNodeType().hasOrderableChildNodes()) {
-
-            List<ChildNodeEntry> src = new ArrayList<ChildNodeEntry>(srcNode.getState().getChildNodeEntries());
-            List<ChildNodeEntry> current = new ArrayList<ChildNodeEntry>(state.getState().getChildNodeEntries());
-
-            if (!src.equals(current)) {
-                state.getState().reorder(srcNode.getState().getChildNodeEntries());
-                state.store();
-            }
-        }
-        // ------
     }
 
     /**

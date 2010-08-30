@@ -26,12 +26,12 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-parent</artifactId>
-    <version>2.0.0</version>
+    <version>2.1.1</version>
     <relativePath>../jackrabbit-parent/pom.xml</relativePath>
   </parent>
   <artifactId>jackrabbit-core</artifactId>
   <name>Jackrabbit Core</name>
-  <version>2.0.0-patch6</version>
+  <version>2.1.1-patch6</version>
   <description>Jackrabbit content repository implementation</description>
 
   <build>
@@ -147,17 +147,6 @@
     </resources>
   </build>
 
-  <reporting>
-    <plugins>
-      <plugin>
-        <artifactId>maven-checkstyle-plugin</artifactId>
-        <configuration>
-          <configLocation>checkstyle.xml</configLocation>
-        </configuration>
-      </plugin>
-    </plugins>
-  </reporting>
-
   <dependencies>
     <dependency>
       <groupId>concurrent</groupId>
@@ -183,34 +172,46 @@
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-api</artifactId>
-      <version>2.0.0</version>
+      <version>2.1.1</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-commons</artifactId>
-      <version>2.0.0</version>
+      <version>2.1.1</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi-commons</artifactId>
-      <version>2.0.0</version>
+      <version>2.1.1</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi</artifactId>
-      <version>2.0.0</version>
+      <version>2.1.1</version>
       <classifier />
     </dependency>
       <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi</artifactId>
-      <version>2.0.0</version>
+      <version>2.1.1</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.tika</groupId>
       <artifactId>tika-parsers</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <!-- JCR-2502: Force a PDFBox upgrade until Tika 0.7 is out -->
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>1.0.0</version>
       <exclusions>
         <exclusion>
           <groupId>commons-logging</groupId>
@@ -237,7 +238,7 @@
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-tests</artifactId>
-      <version>2.0.0</version>
+      <version>2.1.1</version>
       <optional>true</optional>
     </dependency>
     <dependency>
@@ -258,6 +259,12 @@
     <dependency>
       <groupId>org.apache.geronimo.specs</groupId>
       <artifactId>geronimo-jta_1.0.1B_spec</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <version>1.2.121</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -330,13 +337,6 @@
     </profile>
     <profile>
       <id>h2</id>
-      <dependencies>
-        <dependency>
-          <groupId>com.h2database</groupId>
-          <artifactId>h2</artifactId>
-          <version>1.2.121</version>
-        </dependency>
-      </dependencies>
       <properties>
         <config.db.name>jackrabbit</config.db.name>
         <config.db.fsclass>org.apache.jackrabbit.core.fs.db.DbFileSystem</config.db.fsclass>

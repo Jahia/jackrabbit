@@ -51,6 +51,7 @@ import org.apache.jackrabbit.webdav.ordering.OrderingResource;
 import org.apache.jackrabbit.webdav.property.DavProperty;
 import org.apache.jackrabbit.webdav.property.DavPropertyName;
 import org.apache.jackrabbit.webdav.property.DavPropertyNameSet;
+import org.apache.jackrabbit.webdav.property.PropEntry;
 import org.apache.jackrabbit.webdav.search.SearchConstants;
 import org.apache.jackrabbit.webdav.search.SearchInfo;
 import org.apache.jackrabbit.webdav.search.SearchResource;
@@ -173,6 +174,7 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
      * @throws ServletException
      * @throws IOException
      */
+    @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
@@ -199,13 +201,31 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
 
         } catch (DavException e) {
             if (e.getErrorCode() == HttpServletResponse.SC_UNAUTHORIZED) {
-                webdavResponse.setHeader("WWW-Authenticate", getAuthenticateHeaderValue());
-                webdavResponse.sendError(e.getErrorCode(), e.getStatusPhrase());
+                sendUnauthorized(webdavRequest, webdavResponse, e);
             } else {
                 webdavResponse.sendError(e);
             }
         } finally {
             getDavSessionProvider().releaseSession(webdavRequest);
+        }
+    }
+
+    /**
+     * Sets the "WWW-Authenticate" header and writes the appropriate error
+     * to the given webdav response.
+     *
+     * @param request The webdav request.
+     * @param response The webdav response.
+     * @param error The DavException that leads to the unauthorized response.
+     * @throws IOException
+     */
+    protected void sendUnauthorized(WebdavRequest request,
+                                    WebdavResponse response, DavException error) throws IOException {
+        response.setHeader("WWW-Authenticate", getAuthenticateHeaderValue());
+        if (error == null || error.getErrorCode() != HttpServletResponse.SC_UNAUTHORIZED) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+        } else {
+            response.sendError(error.getErrorCode(), error.getStatusPhrase());
         }
     }
 
@@ -345,8 +365,8 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
         response.addHeader("MS-Author-Via", DavConstants.HEADER_DAV);
         if (resource instanceof SearchResource) {
             String[] langs = ((SearchResource) resource).getQueryGrammerSet().getQueryLanguages();
-            for (int i = 0; i < langs.length; i++) {
-                response.addHeader(SearchConstants.HEADER_DASL, "<" + langs[i] + ">");
+            for (String lang : langs) {
+                response.addHeader(SearchConstants.HEADER_DASL, "<" + lang + ">");
             }
         }
         // with DeltaV the OPTIONS request may contain a Xml body.
@@ -417,7 +437,7 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
             }
         }
 
-        // spool resource properties and ev. resource content.
+        // spool resource properties and eventually resource content.
         OutputStream out = (sendContent) ? response.getOutputStream() : null;
         resource.spool(getOutputContext(response, out));
         response.flushBuffer();
@@ -460,7 +480,7 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
                                DavResource resource)
             throws IOException, DavException {
 
-        List changeList = request.getPropPatchChangeList();
+        List<? extends PropEntry> changeList = request.getPropPatchChangeList();
         if (changeList.isEmpty()) {
             response.sendError(DavServletResponse.SC_BAD_REQUEST);
             return;
@@ -538,6 +558,7 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
         // shortcut: mkcol is only allowed on deleted/non-existing resources
         if (resource.exists()) {
             response.sendError(DavServletResponse.SC_METHOD_NOT_ALLOWED);
+            return;
         }
 
         if (request.getContentLength() > 0 || request.getHeader("Transfer-Encoding") != null) {
@@ -707,9 +728,10 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
      *
      * @param destResource destination resource to be validated.
      * @param request
+     * @param checkHeader flag indicating if the destination header must be present.
      * @return status code indicating whether the destination is valid.
      */
-    private int validateDestination(DavResource destResource, WebdavRequest request, boolean checkHeader)
+    protected int validateDestination(DavResource destResource, WebdavRequest request, boolean checkHeader)
             throws DavException {
 
         if (checkHeader) {
@@ -760,22 +782,22 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
         if (lockInfo.isRefreshLock()) {
             // refresh any matching existing locks
             ActiveLock[] activeLocks = resource.getLocks();
-            List lList = new ArrayList();
-            for (int i = 0; i < activeLocks.length; i++) {
+            List<ActiveLock> lList = new ArrayList<ActiveLock>();
+            for (ActiveLock activeLock : activeLocks) {
                 // adjust lockinfo with type/scope retrieved from the lock.
-                lockInfo.setType(activeLocks[i].getType());
-                lockInfo.setScope(activeLocks[i].getScope());
+                lockInfo.setType(activeLock.getType());
+                lockInfo.setScope(activeLock.getScope());
 
-                DavProperty etagProp = resource.getProperty(DavPropertyName.GETETAG);
+                DavProperty<?> etagProp = resource.getProperty(DavPropertyName.GETETAG);
                 String etag = etagProp != null ? String.valueOf(etagProp.getValue()) : "";
-                if (request.matchesIfHeader(resource.getHref(), activeLocks[i].getToken(), etag)) {
-                    lList.add(resource.refreshLock(lockInfo, activeLocks[i].getToken()));
+                if (request.matchesIfHeader(resource.getHref(), activeLock.getToken(), etag)) {
+                    lList.add(resource.refreshLock(lockInfo, activeLock.getToken()));
                 }
             }
             if (lList.isEmpty()) {
                 throw new DavException(DavServletResponse.SC_PRECONDITION_FAILED);
             }
-            ActiveLock[] refreshedLocks = (ActiveLock[]) lList.toArray(new ActiveLock[lList.size()]);
+            ActiveLock[] refreshedLocks = lList.toArray(new ActiveLock[lList.size()]);
             response.sendRefreshLockResponse(refreshedLocks);
         } else {
             // create a new lock
@@ -1134,7 +1156,7 @@ abstract public class AbstractWebdavServlet extends HttpServlet implements DavCo
             return;
         }
         // TODO: improve. see http://issues.apache.org/jira/browse/JCR-394
-        if (parentResource.getComplianceClass().indexOf(DavCompliance.ACTIVITY) < 0) {
+        if (!parentResource.getComplianceClass().contains(DavCompliance.ACTIVITY)) {
             response.sendError(DavServletResponse.SC_METHOD_NOT_ALLOWED);
             return;
         }

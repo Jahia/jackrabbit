@@ -60,6 +60,7 @@ import org.apache.jackrabbit.spi.EventFilter;
 import org.apache.jackrabbit.spi.IdFactory;
 import org.apache.jackrabbit.spi.ItemId;
 import org.apache.jackrabbit.spi.ItemInfo;
+import org.apache.jackrabbit.spi.ItemInfoCache;
 import org.apache.jackrabbit.spi.LockInfo;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.NameFactory;
@@ -106,14 +107,14 @@ public class RepositoryFactoryImplTest extends TestCase {
     public void testGetRepositoryWithLogger() throws RepositoryException {
         List<Object> lwprovider = new ArrayList<Object>();
         lwprovider.add(null);
-        lwprovider.add(new Boolean(true));
+        lwprovider.add(true);
         lwprovider.add(new Slf4jLogWriterProvider());
 
         Map<String, Object> params = new HashMap<String, Object>();
         params.put("org.apache.jackrabbit.jcr2spi.RepositoryConfig", RepositoryConfigImpl.INSTANCE);
 
-        for (int i = 0; i < lwprovider.size(); i++) {
-            params.put("org.apache.jackrabbit.spi.commons.logging.LogWriterProvider", lwprovider.get(i));
+        for (Object aLwprovider : lwprovider) {
+            params.put("org.apache.jackrabbit.spi.commons.logging.LogWriterProvider", aLwprovider);
             Repository repo = factory.getRepository(params);
             assertNotNull(repo);
         }
@@ -180,7 +181,7 @@ public class RepositoryFactoryImplTest extends TestCase {
     }
 
     public void testGetRepositoryUnknownParams() throws RepositoryException {
-        Repository repo = factory.getRepository(Collections.EMPTY_MAP);
+        Repository repo = factory.getRepository(Collections.emptyMap());
         assertNull(repo);
     }
 
@@ -233,6 +234,7 @@ public class RepositoryFactoryImplTest extends TestCase {
      * Dummy RepositoryService
      */
     private static final class RepositoryServiceImpl implements RepositoryService {
+
         public static final RepositoryService INSTANCE = new RepositoryServiceImpl();
 
         private RepositoryServiceImpl() {
@@ -252,6 +254,10 @@ public class RepositoryFactoryImplTest extends TestCase {
         }
 
         public QValueFactory getQValueFactory() throws RepositoryException {
+            return null;
+        }
+
+        public ItemInfoCache getItemInfoCache(SessionInfo sessionInfo) throws RepositoryException {
             return null;
         }
 
@@ -372,6 +378,10 @@ public class RepositoryFactoryImplTest extends TestCase {
         }
 
         public NodeId checkpoint(SessionInfo sessionInfo, NodeId nodeId) throws UnsupportedRepositoryOperationException, RepositoryException {
+            return null;
+        }
+
+        public NodeId checkpoint(SessionInfo sessionInfo, NodeId nodeId, NodeId activityId) throws UnsupportedRepositoryOperationException, RepositoryException {
             return null;
         }
 

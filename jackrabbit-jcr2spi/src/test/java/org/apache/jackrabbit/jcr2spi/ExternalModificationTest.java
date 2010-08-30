@@ -16,18 +16,18 @@
  */
 package org.apache.jackrabbit.jcr2spi;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.apache.jackrabbit.test.AbstractJCRTest;
-import org.apache.jackrabbit.test.NotExecutableException;
-import org.apache.jackrabbit.jcr2spi.state.Status;
-
-import javax.jcr.Session;
-import javax.jcr.RepositoryException;
-import javax.jcr.Node;
 import javax.jcr.InvalidItemStateException;
 import javax.jcr.Item;
+import javax.jcr.Node;
 import javax.jcr.Property;
+import javax.jcr.RepositoryException;
+import javax.jcr.Session;
+
+import org.apache.jackrabbit.jcr2spi.state.Status;
+import org.apache.jackrabbit.test.AbstractJCRTest;
+import org.apache.jackrabbit.test.NotExecutableException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** <code>ExternalModificationTest</code>... */
 public class ExternalModificationTest extends AbstractJCRTest {
@@ -38,6 +38,7 @@ public class ExternalModificationTest extends AbstractJCRTest {
     private Node refNode;
     private Session testSession;
 
+    @Override
     protected void setUp() throws Exception {
         super.setUp();
 
@@ -50,6 +51,7 @@ public class ExternalModificationTest extends AbstractJCRTest {
         testSession = getHelper().getReadWriteSession();
     }
 
+    @Override
     protected void tearDown() throws Exception {
         if (testSession != null) {
             testSession.logout();
@@ -185,8 +187,7 @@ public class ExternalModificationTest extends AbstractJCRTest {
         String uuid = refNode.getUUID();
 
         Node refNode2 = (Node) testSession.getItem(refNode.getPath());
-        // TODO: for generic jsr 170 test isSame must be replace by 'Item.isSame'
-        assertSame(refNode2, testSession.getNodeByUUID(uuid));
+        assertTrue(refNode2.isSame(testSession.getNodeByUUID(uuid)));
         // add some modification
         refNode2.addMixin(mixLockable);
 
@@ -200,9 +201,9 @@ public class ExternalModificationTest extends AbstractJCRTest {
         assertItemStatus(refNode2, Status.STALE_DESTROYED);
         // the uuid must be transferred to the 'moved' node
         Node n = testSession.getNodeByUUID(uuid);
-        // TODO: for generic jsr 170 test assertSame must be replace by 'Item.isSame'
-        assertSame(n, testSession.getItem(destPath));
-        assertSame(refNode2, testSession.getItem(srcPath));
+        assertTrue(n.isSame(testSession.getItem(destPath)));
+        // assertSame(refNode2, testSession.getItem(srcPath));
+        assertTrue(refNode2.isSame(testSession.getItem(srcPath)));
     }
 
     public void testExternalRemoval() throws RepositoryException, NotExecutableException {
@@ -223,8 +224,7 @@ public class ExternalModificationTest extends AbstractJCRTest {
         assertItemStatus(refNode2, Status.REMOVED);
         // the uuid must be transferred to the 'moved' node
         Node n = testSession.getNodeByUUID(uuid);
-        // TODO: for generic jsr 170 test assertSame must be replace by 'Item.isSame'
-        assertSame(n, testSession.getItem(destPath));
+        assertTrue(n.isSame(testSession.getItem(destPath)));
     }
 
     public void testExternalRemoval2() throws RepositoryException, NotExecutableException {
@@ -309,10 +309,10 @@ public class ExternalModificationTest extends AbstractJCRTest {
         assertItemStatus(childN.getProperty(jcrPrimaryType), Status.NEW);
 
         assertTrue(testSession.itemExists(childNPath));
-        assertSame(childN, testSession.getItem(childNPath));
+        assertTrue(childN.isSame(testSession.getItem(childNPath)));
 
         assertTrue(testSession.itemExists(childPPath));
-        assertSame(childP, testSession.getItem(childPPath));
+        assertTrue(childP.isSame(testSession.getItem(childPPath)));
 
         testSession.refresh(false);
 

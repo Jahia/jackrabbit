@@ -66,6 +66,10 @@ public class ClientWorkspace extends ClientObject implements Workspace {
      */
     private ObservationManager observationManager;
 
+    private LockManager lockManager;
+
+    private VersionManager versionManager;
+
     /**
      * Creates a client adapter for the given remote workspace.
      *
@@ -262,12 +266,31 @@ public class ClientWorkspace extends ClientObject implements Workspace {
         }
     }
 
+    /** {@inheritDoc} */
     public LockManager getLockManager() throws RepositoryException {
-        throw new UnsupportedRepositoryOperationException("TODO: JCRRMI-26");
+        if (lockManager == null) {
+            try {
+                lockManager = getFactory().getLockManager(
+                        session, remote.getLockManager());
+            } catch (RemoteException ex) {
+                throw new RemoteRepositoryException(ex);
+            }
+        }
+
+        return lockManager;
     }
 
     public VersionManager getVersionManager() throws RepositoryException {
-        throw new UnsupportedRepositoryOperationException("TODO: JCRRMI-26");
+        if (versionManager == null) {
+            try {
+                versionManager = getFactory().getVersionManager(
+                        session, remote.getVersionManager());
+            } catch (RemoteException ex) {
+                throw new RemoteRepositoryException(ex);
+            }
+        }
+
+        return versionManager;
     }
 
 }

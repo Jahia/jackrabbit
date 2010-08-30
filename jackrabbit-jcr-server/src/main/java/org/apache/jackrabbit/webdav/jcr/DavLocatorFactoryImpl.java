@@ -45,13 +45,14 @@ public class DavLocatorFactoryImpl extends AbstractLocatorFactory {
      * @return
      * @see AbstractLocatorFactory#getRepositoryPath(String, String)
      */
+    @Override
     protected String getRepositoryPath(String resourcePath, String wspPath) {
         if (resourcePath == null) {
             return null;
         }
         if (resourcePath.equals(wspPath)) {
             // workspace
-            log.info("Resource path represents workspace path -> repository path is null.");
+            log.debug("Resource path represents workspace path -> repository path is null.");
             return null;
         } else {
             // a repository item  -> remove wspPath + /jcr:root
@@ -73,6 +74,7 @@ public class DavLocatorFactoryImpl extends AbstractLocatorFactory {
      * @return
      * @see AbstractLocatorFactory#getResourcePath(String, String)
      */
+    @Override
     protected String getResourcePath(String repositoryPath, String wspPath) {
         if (wspPath != null) {
             StringBuffer b = new StringBuffer(wspPath);
@@ -84,7 +86,7 @@ public class DavLocatorFactoryImpl extends AbstractLocatorFactory {
             }
             return b.toString();
         } else {
-            log.info("Workspace path is 'null' -> 'null' resource path");
+            log.debug("Workspace path is 'null' -> 'null' resource path");
             return null;
         }
     }

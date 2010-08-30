@@ -21,15 +21,26 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 
+import javax.jcr.Repository;
+import javax.jcr.RepositoryException;
+import javax.jcr.Session;
+
+import org.apache.commons.chain.Context;
+import org.apache.commons.chain.impl.ContextBase;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.GnuParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.io.IOUtils;
+import org.apache.jackrabbit.commons.JcrUtils;
 import org.apache.jackrabbit.core.RepositoryCopier;
 import org.apache.jackrabbit.core.config.RepositoryConfig;
 import org.apache.jackrabbit.servlet.jackrabbit.JackrabbitRepositoryServlet;
+import org.apache.jackrabbit.standalone.cli.CommandException;
+import org.apache.jackrabbit.standalone.cli.CommandHelper;
+import org.apache.jackrabbit.standalone.cli.JcrClient;
+import org.apache.log4j.ConsoleAppender;
 import org.apache.log4j.FileAppender;
 import org.apache.log4j.Layout;
 import org.apache.log4j.Level;
@@ -73,6 +84,8 @@ public class Main {
         options.addOption("l", "license", false, "print license information");
         options.addOption(
                 "b", "backup", false, "create a backup of the repository");
+        options.addOption(
+                "i", "cli", true, "command line access to a remote repository");
 
         options.addOption("q", "quiet", false, "disable console output");
         options.addOption("d", "debug", false, "enable debug logging");
@@ -111,6 +124,31 @@ public class Main {
             copyToOutput("/META-INF/NOTICE.txt");
         } else if (command.hasOption("license")) {
             copyToOutput("/META-INF/LICENSE.txt");
+        } else if (command.hasOption("cli")) {
+            Logger logger = Logger.getRootLogger();
+            logger.addAppender(new ConsoleAppender(new PatternLayout("%p %m%n")));
+            logger.setLevel(Level.WARN);
+
+            String uri = command.getOptionValue("cli");
+            Repository repository = JcrUtils.getRepository(uri);
+
+            Context context = new ContextBase();
+            CommandHelper.setRepository(context, repository, uri);
+            try {
+                Session session = repository.login();
+                CommandHelper.setSession(context, session);
+                CommandHelper.setCurrentNode(context, session.getRootNode());
+            } catch (RepositoryException ignore) {
+                // anonymous login not possible
+            }
+
+            new JcrClient(context).runInteractive();
+
+            try {
+                CommandHelper.getSession(context).logout();
+            } catch (CommandException ignore) {
+                // already logged out
+            }
         } else {
             message("Welcome to Apache Jackrabbit!");
             message("-------------------------------");

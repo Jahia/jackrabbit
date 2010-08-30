@@ -27,6 +27,8 @@ import javax.jcr.Session;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * <code>XmlHandler</code> imports xml files and exports nodes that have
@@ -46,6 +48,19 @@ public class XmlHandler extends DefaultHandler {
      * the xml mimetype
      */
     public static final String XML_MIMETYPE = "text/xml";
+
+    /**
+     * the alternative xml mimetype. tika detects xml as this.
+     */
+    public static final String XML_MIMETYPE_ALT = "application/xml";
+
+    private static final Set<String> supportedTypes;
+    static {
+        supportedTypes = new HashSet<String>();
+        supportedTypes.add(XML_MIMETYPE);
+        supportedTypes.add(XML_MIMETYPE_ALT);
+    }
+
 
     /**
      * Creates a new <code>XmlHandler</code> with default nodetype definitions
@@ -85,12 +100,10 @@ public class XmlHandler extends DefaultHandler {
     /**
      * @see IOHandler#canImport(ImportContext, boolean)
      */
+    @Override
     public boolean canImport(ImportContext context, boolean isCollection) {
-        if (context == null || context.isCompleted()) {
-            return false;
-        }
-        boolean isXmlMimeType = XML_MIMETYPE.equals(context.getMimeType());
-        return isXmlMimeType
+        return !(context == null || context.isCompleted())
+                && supportedTypes.contains(context.getMimeType())
                 && context.hasStream()
                 && context.getContentLength() > 0
                 && super.canImport(context, isCollection);
@@ -99,6 +112,7 @@ public class XmlHandler extends DefaultHandler {
     /**
      * @see DefaultHandler#importData(ImportContext, boolean, Node)
      */
+    @Override
     protected boolean importData(ImportContext context, boolean isCollection, Node contentNode) throws IOException, RepositoryException {
         InputStream in = context.getInputStream();
         int uuidBehavior = (isCollection)
@@ -115,6 +129,7 @@ public class XmlHandler extends DefaultHandler {
     /**
      * @see DefaultHandler#importProperties(ImportContext, boolean, Node)
      */
+    @Override
     protected boolean importProperties(ImportContext context, boolean isCollection, Node contentNode) {
         boolean success = super.importProperties(context, isCollection, contentNode);
         if (success) {
@@ -134,6 +149,7 @@ public class XmlHandler extends DefaultHandler {
      *
      * @return <code>true</code>, always.
      */
+    @Override
     protected boolean forceCompatibleContentNodes() {
         return true;
     }
@@ -141,6 +157,7 @@ public class XmlHandler extends DefaultHandler {
     /**
      * @see IOHandler#canExport(ExportContext, boolean)
      */
+    @Override
     public boolean canExport(ExportContext context, boolean isCollection) {
         if (super.canExport(context, isCollection)) {
             String mimeType = null;
@@ -162,6 +179,7 @@ public class XmlHandler extends DefaultHandler {
     /**
      * @see DefaultHandler#exportData(ExportContext, boolean, Node)
      */
+    @Override
     protected void exportData(ExportContext context, boolean isCollection, Node contentNode) throws IOException, RepositoryException {
         // first child of content is XML document root
         if (contentNode.getNodes().hasNext()) {
@@ -174,6 +192,7 @@ public class XmlHandler extends DefaultHandler {
     /**
      * @see DefaultHandler#exportProperties(ExportContext, boolean, Node)
      */
+    @Override
     protected void exportProperties(ExportContext context, boolean isCollection, Node contentNode) throws IOException {
         super.exportProperties(context, isCollection, contentNode);
         // set mimetype if the content node did not provide the

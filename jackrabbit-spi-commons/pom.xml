@@ -26,7 +26,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-parent</artifactId>
-    <version>2.0.0</version>
+    <version>2.1.1</version>
     <relativePath>../jackrabbit-parent/pom.xml</relativePath>
   </parent>
   <artifactId>jackrabbit-spi-commons</artifactId>
@@ -117,6 +117,17 @@
           </excludes>
         </configuration>
       </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>cobertura-maven-plugin</artifactId>
+        <configuration>
+          <instrumentation>
+            <excludes>
+              <exclude>org/apache/jackrabbit/spi/commons/query/xpath/XPathTokenManager.class</exclude>
+            </excludes>
+          </instrumentation>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 
@@ -128,12 +139,12 @@
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi</artifactId>
-      <version>2.0.0</version>
+      <version>2.1.1</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-commons</artifactId>
-      <version>2.0.0</version>
+      <version>2.1.1</version>
     </dependency>
     <dependency>
       <groupId>commons-collections</groupId>

@@ -98,6 +98,7 @@ import org.apache.jackrabbit.spi.EventBundle;
 import org.apache.jackrabbit.spi.EventFilter;
 import org.apache.jackrabbit.spi.IdFactory;
 import org.apache.jackrabbit.spi.ItemId;
+import org.apache.jackrabbit.spi.ItemInfoCache;
 import org.apache.jackrabbit.spi.LockInfo;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.NameFactory;
@@ -165,6 +166,11 @@ public class WorkspaceManager
      * The current subscription for change events if there are listeners.
      */
     private Subscription subscription;
+
+    /**
+     * A cache for item infos as supplied by {@link RepositoryService#getItemInfoCache(SessionInfo)}
+     */
+    private ItemInfoCache cache;
 
     public WorkspaceManager(RepositoryService service, SessionInfo sessionInfo,
                             CacheBehaviour cacheBehaviour, int pollTimeout,
@@ -280,9 +286,8 @@ public class WorkspaceManager
      * @see SessionInfo#removeLockToken(String)
      */
     public void removeLockToken(String lt) throws UnsupportedRepositoryOperationException, LockException, RepositoryException {
-        String[] tokems = sessionInfo.getLockTokens();
-        for (int i = 0; i < tokems.length; i++) {
-            if (tokems[i].equals(lt)) {
+        for (String token : sessionInfo.getLockTokens()) {
+            if (token.equals(lt)) {
                 sessionInfo.removeLockToken(lt);
                 return;
             }
@@ -450,8 +455,11 @@ public class WorkspaceManager
     /**
      * @return a new instance of <code>TransientItemStateFactory</code>.
      */
-    private TransientItemStateFactory createItemStateFactory() {
-        WorkspaceItemStateFactory isf = new WorkspaceItemStateFactory(service, sessionInfo, getItemDefinitionProvider());
+    private TransientItemStateFactory createItemStateFactory() throws RepositoryException {
+        cache = service.getItemInfoCache(sessionInfo);
+        WorkspaceItemStateFactory isf = new WorkspaceItemStateFactory(service, sessionInfo,
+                getItemDefinitionProvider(), cache);
+
         TransientItemStateFactory tisf = new TransientISFactory(isf, getItemDefinitionProvider());
         return tisf;
     }
@@ -619,6 +627,7 @@ public class WorkspaceManager
                 service.dispose(subscription);
             }
             service.dispose(sessionInfo);
+            cache.dispose();
         } catch (Exception e) {
             log.warn("Exception while disposing WorkspaceManager: " + e);
         } finally {
@@ -683,9 +692,8 @@ public class WorkspaceManager
      * @see AccessManager#canAccess(String)
      */
     public boolean canAccess(String workspaceName) throws NoSuchWorkspaceException, RepositoryException {
-        String[] wspNames = getWorkspaceNames();
-        for (int i = 0; i < wspNames.length; i++) {
-            if (wspNames[i].equals(workspaceName)) {
+        for (String wspName : getWorkspaceNames()) {
+            if (wspName.equals(workspaceName)) {
                 return true;
             }
         }
@@ -698,30 +706,18 @@ public class WorkspaceManager
         return service.getRegisteredNamespaces(sessionInfo);
     }
 
-    /**
-     * @inheritDoc
-     */
     public String getPrefix(String uri) throws NamespaceException, RepositoryException {
         return service.getNamespacePrefix(sessionInfo, uri);
     }
 
-    /**
-     * @inheritDoc
-     */
     public String getURI(String prefix) throws NamespaceException, RepositoryException {
         return service.getNamespaceURI(sessionInfo, prefix);
     }
 
-    /**
-     * @inheritDoc
-     */
     public void registerNamespace(String prefix, String uri) throws NamespaceException, UnsupportedRepositoryOperationException, AccessDeniedException, RepositoryException {
         service.registerNamespace(sessionInfo, prefix, uri);
     }
 
-    /**
-     * @inheritDoc
-     */
     public void unregisterNamespace(String uri) throws NamespaceException, UnsupportedRepositoryOperationException, AccessDeniedException, RepositoryException {
         service.unregisterNamespace(sessionInfo, uri);
     }
@@ -740,10 +736,10 @@ public class WorkspaceManager
                                  InternalEventListener[] lstnrs)
             throws InterruptedException {
         if (log.isDebugEnabled()) {
-            log.debug("received {} event bundles.", new Integer(eventBundles.length));
-            for (int i = 0; i < eventBundles.length; i++) {
-                log.debug("IsLocal:  {}", Boolean.valueOf(eventBundles[i].isLocal()));
-                for (Iterator<Event> it = eventBundles[i].getEvents(); it.hasNext(); ) {
+            log.debug("received {} event bundles.", eventBundles.length);
+            for (EventBundle eventBundle : eventBundles) {
+                log.debug("IsLocal:  {}", eventBundle.isLocal());
+                for (Iterator<Event> it = eventBundle.getEvents(); it.hasNext();) {
                     Event e = it.next();
                     String type;
                     switch (e.getType()) {
@@ -780,9 +776,9 @@ public class WorkspaceManager
         updateSync.acquire();
         try {
             // notify listener
-            for (int i = 0; i < eventBundles.length; i++) {
-                for (int j = 0; j < lstnrs.length; j++) {
-                    lstnrs[j].onEvent(eventBundles[i]);
+            for (EventBundle eventBundle : eventBundles) {
+                for (InternalEventListener lstnr : lstnrs) {
+                    lstnr.onEvent(eventBundle);
                 }
             }
         } finally {
@@ -854,7 +850,6 @@ public class WorkspaceManager
 
         //-----------------------------------------------< OperationVisitor >---
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(AddNode)
          */
         public void visit(AddNode operation) throws RepositoryException {
@@ -863,7 +858,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(AddProperty)
          */
         public void visit(AddProperty operation) throws RepositoryException {
@@ -878,7 +872,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Clone)
          */
         public void visit(Clone operation) throws NoSuchWorkspaceException, LockException, ConstraintViolationException, AccessDeniedException, ItemExistsException, UnsupportedRepositoryOperationException, VersionException, RepositoryException {
@@ -888,7 +881,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Copy)
          */
         public void visit(Copy operation) throws NoSuchWorkspaceException, LockException, ConstraintViolationException, AccessDeniedException, ItemExistsException, UnsupportedRepositoryOperationException, VersionException, RepositoryException {
@@ -898,7 +890,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Move)
          */
         public void visit(Move operation) throws LockException, ConstraintViolationException, AccessDeniedException, ItemExistsException, UnsupportedRepositoryOperationException, VersionException, RepositoryException {
@@ -913,7 +904,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Update)
          */
         public void visit(Update operation) throws NoSuchWorkspaceException, AccessDeniedException, LockException, InvalidItemStateException, RepositoryException {
@@ -922,7 +912,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Remove)
          */
         public void visit(Remove operation) throws RepositoryException {
@@ -930,7 +919,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(SetMixin)
          */
         public void visit(SetMixin operation) throws RepositoryException {
@@ -938,7 +926,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(SetPrimaryType)
          */
         public void visit(SetPrimaryType operation) throws RepositoryException {
@@ -946,7 +933,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(SetPropertyValue)
          */
         public void visit(SetPropertyValue operation) throws RepositoryException {
@@ -959,7 +945,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(ReorderNodes)
          */
         public void visit(ReorderNodes operation) throws RepositoryException {
@@ -970,7 +955,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Checkout)
          */
         public void visit(Checkout operation) throws UnsupportedRepositoryOperationException, LockException, RepositoryException {
@@ -982,7 +966,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Checkin)
          */
         public void visit(Checkin operation) throws UnsupportedRepositoryOperationException, LockException, InvalidItemStateException, RepositoryException {
@@ -991,16 +974,19 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Checkpoint)
          */
         public void visit(Checkpoint operation) throws UnsupportedRepositoryOperationException, LockException, InvalidItemStateException, RepositoryException {
-            NodeId newId = service.checkpoint(sessionInfo, operation.getNodeId());
+            NodeId newId;
+            if (operation.supportsActivity()) {
+                newId = service.checkpoint(sessionInfo, operation.getNodeId(), operation.getActivityId());
+            } else {
+                newId = service.checkpoint(sessionInfo, operation.getNodeId());
+            }
             operation.setNewVersionId(newId);
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Restore)
          */
         public void visit(Restore operation) throws VersionException, PathNotFoundException, ItemExistsException, UnsupportedRepositoryOperationException, LockException, InvalidItemStateException, RepositoryException {
@@ -1021,7 +1007,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(Merge)
          */
         public void visit(Merge operation) throws NoSuchWorkspaceException, AccessDeniedException, MergeException, LockException, InvalidItemStateException, RepositoryException {
@@ -1036,7 +1021,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(ResolveMergeConflict)
          */
         public void visit(ResolveMergeConflict operation) throws VersionException, InvalidItemStateException, UnsupportedRepositoryOperationException, RepositoryException {
@@ -1047,7 +1031,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(LockOperation)
          */
         public void visit(LockOperation operation) throws AccessDeniedException, InvalidItemStateException, UnsupportedRepositoryOperationException, LockException, RepositoryException {
@@ -1056,7 +1039,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(LockRefresh)
          */
         public void visit(LockRefresh operation) throws AccessDeniedException, InvalidItemStateException, UnsupportedRepositoryOperationException, LockException, RepositoryException {
@@ -1064,7 +1046,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(LockRelease)
          */
         public void visit(LockRelease operation) throws AccessDeniedException, InvalidItemStateException, UnsupportedRepositoryOperationException, LockException, RepositoryException {
@@ -1072,7 +1053,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(AddLabel)
          */
         public void visit(AddLabel operation) throws VersionException, RepositoryException {
@@ -1082,7 +1062,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(RemoveLabel)
          */
         public void visit(RemoveLabel operation) throws VersionException, RepositoryException {
@@ -1092,7 +1071,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(RemoveVersion)
          */
         public void visit(RemoveVersion operation) throws VersionException, AccessDeniedException, ReferentialIntegrityException, RepositoryException {
@@ -1102,7 +1080,6 @@ public class WorkspaceManager
         }
 
         /**
-         * @inheritDoc
          * @see OperationVisitor#visit(WorkspaceImport)
          */
         public void visit(WorkspaceImport operation) throws RepositoryException {

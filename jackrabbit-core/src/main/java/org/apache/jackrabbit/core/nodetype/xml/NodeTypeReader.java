@@ -49,7 +49,6 @@ import javax.jcr.query.qom.QueryObjectModelConstants;
 import javax.jcr.version.OnParentVersionAction;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 import java.util.Properties;
 import java.util.List;
 import java.util.ArrayList;
@@ -307,8 +306,6 @@ public class NodeTypeReader {
             }
             def.setDefaultValues(values.toArray(new InternalValue[values.size()]));
             walker.leaveElement();
-        } else {
-            def.setDefaultValues(new InternalValue[0]); // https://issues.apache.org/jira/browse/JCR-2480
         }
 
         return def;

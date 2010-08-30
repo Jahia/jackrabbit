@@ -74,7 +74,7 @@ class ValueLoader {
             MultiStatusResponse[] responses = method.getResponseBodyAsMultiStatus().getResponses();
             if (responses.length == 1) {
                 DavPropertySet props = responses[0].getProperties(DavServletResponse.SC_OK);
-                DavProperty type = props.get(ItemResourceConstants.JCR_TYPE);
+                DavProperty<?> type = props.get(ItemResourceConstants.JCR_TYPE);
                 if (type != null) {
                     return PropertyType.valueFromName(type.getValue().toString());
                 } else {
@@ -102,5 +102,11 @@ class ValueLoader {
          * @throws IOException
          */
         void setStream(InputStream in) throws IOException;
+
+        /**
+         * Resets (clears) the state and this target is in the state as
+         * prior to setStream()
+         */
+        void reset();
     }
 }

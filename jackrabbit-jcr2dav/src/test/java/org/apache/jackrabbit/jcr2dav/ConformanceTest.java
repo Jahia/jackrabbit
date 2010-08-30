@@ -16,13 +16,12 @@
  */
 package org.apache.jackrabbit.jcr2dav;
 
-import java.io.IOException;
-
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestResult;
 import junit.framework.TestSuite;
 
+import org.apache.jackrabbit.jcr2spi.Jcr2SpiTestSuite;
 import org.apache.jackrabbit.test.JCRTestSuite;
 
 /**
@@ -34,6 +33,7 @@ public class ConformanceTest extends TestCase {
         TestSuite suite = new TestSuite();
         if (Boolean.getBoolean("jackrabbit.test.integration")) {
             suite.addTest(new JCRTestSuite());
+            suite.addTest(new Jcr2SpiTestSuite());
             suite.addTest(new StopRepository());
         }
         return suite;
@@ -47,7 +47,7 @@ public class ConformanceTest extends TestCase {
 
         public void run(TestResult result) {
             try {
-                RepositoryStubImpl.stopServer();
+                RepositoryStubImpl.stopServer(); 
             } catch (Exception e) {
                 result.addError(this, e);
             }

@@ -23,15 +23,15 @@ import java.util.Collection;
 /**
  * <code>ParentSet</code> represents a DAV:parent-set property.
  */
-public class ParentSet extends AbstractDavProperty {
+public class ParentSet extends AbstractDavProperty<Collection<ParentElement>> {
 
-    private final Collection parents;
+    private final Collection<ParentElement> parents;
 
     /**
      * Creates a new ParentSet from a collection of <code>ParentElement</code> objects.
      * @param parents
      */
-    public ParentSet(Collection parents) {
+    public ParentSet(Collection<ParentElement> parents) {
         super(BindConstants.PARENTSET, true);
         this.parents = parents;
     }
@@ -39,7 +39,7 @@ public class ParentSet extends AbstractDavProperty {
     /**
      * @see org.apache.jackrabbit.webdav.property.AbstractDavProperty#getValue() 
      */
-    public Object getValue() {
+    public Collection<ParentElement> getValue() {
         return this.parents;
     }
 }

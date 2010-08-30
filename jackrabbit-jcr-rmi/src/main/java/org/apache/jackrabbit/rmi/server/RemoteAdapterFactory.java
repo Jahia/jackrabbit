@@ -17,6 +17,8 @@
 package org.apache.jackrabbit.rmi.server;
 
 import java.rmi.RemoteException;
+import java.security.Principal;
+import java.util.Iterator;
 
 import javax.jcr.Item;
 import javax.jcr.NamespaceRegistry;
@@ -28,6 +30,7 @@ import javax.jcr.Repository;
 import javax.jcr.Session;
 import javax.jcr.Workspace;
 import javax.jcr.lock.Lock;
+import javax.jcr.lock.LockManager;
 import javax.jcr.nodetype.ItemDefinition;
 import javax.jcr.nodetype.NodeDefinition;
 import javax.jcr.nodetype.NodeType;
@@ -41,15 +44,22 @@ import javax.jcr.query.QueryManager;
 import javax.jcr.query.QueryResult;
 import javax.jcr.query.Row;
 import javax.jcr.query.RowIterator;
+import javax.jcr.security.AccessControlEntry;
+import javax.jcr.security.AccessControlManager;
+import javax.jcr.security.AccessControlPolicy;
+import javax.jcr.security.AccessControlPolicyIterator;
+import javax.jcr.security.Privilege;
 import javax.jcr.version.Version;
 import javax.jcr.version.VersionHistory;
 import javax.jcr.version.VersionIterator;
+import javax.jcr.version.VersionManager;
 
 import org.apache.jackrabbit.rmi.remote.RemoteEventCollection;
 import org.apache.jackrabbit.rmi.remote.RemoteItem;
 import org.apache.jackrabbit.rmi.remote.RemoteItemDefinition;
 import org.apache.jackrabbit.rmi.remote.RemoteIterator;
 import org.apache.jackrabbit.rmi.remote.RemoteLock;
+import org.apache.jackrabbit.rmi.remote.RemoteLockManager;
 import org.apache.jackrabbit.rmi.remote.RemoteNamespaceRegistry;
 import org.apache.jackrabbit.rmi.remote.RemoteNode;
 import org.apache.jackrabbit.rmi.remote.RemoteNodeDefinition;
@@ -66,7 +76,13 @@ import org.apache.jackrabbit.rmi.remote.RemoteRow;
 import org.apache.jackrabbit.rmi.remote.RemoteSession;
 import org.apache.jackrabbit.rmi.remote.RemoteVersion;
 import org.apache.jackrabbit.rmi.remote.RemoteVersionHistory;
+import org.apache.jackrabbit.rmi.remote.RemoteVersionManager;
 import org.apache.jackrabbit.rmi.remote.RemoteWorkspace;
+import org.apache.jackrabbit.rmi.remote.principal.RemotePrincipal;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlEntry;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlManager;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlPolicy;
+import org.apache.jackrabbit.rmi.remote.security.RemotePrivilege;
 
 /**
  * Factory interface for creating remote adapters for local resources.
@@ -360,5 +376,111 @@ public interface RemoteAdapterFactory {
      */
     RemoteIterator getRemoteRowIterator(RowIterator iterator)
         throws RemoteException;
+
+    RemoteLockManager getRemoteLockManager(LockManager lockManager)
+        throws RemoteException;
+
+    RemoteVersionManager getRemoteVersionManager(VersionManager versionManager)
+        throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    RemoteAccessControlManager getRemoteAccessControlManager(
+            AccessControlManager acm) throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemotePrivilege getRemotePrivilege(final Privilege local)
+            throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemotePrivilege[] getRemotePrivilege(final Privilege[] local)
+            throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemoteAccessControlPolicy getRemoteAccessControlPolicy(
+            final AccessControlPolicy local) throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemoteAccessControlPolicy[] getRemoteAccessControlPolicy(
+            final AccessControlPolicy[] local) throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemoteIterator getRemoteAccessControlPolicyIterator(
+            AccessControlPolicyIterator iterator) throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemoteAccessControlEntry getRemoteAccessControlEntry(
+            final AccessControlEntry local) throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemoteAccessControlEntry[] getRemoteAccessControlEntry(
+            final AccessControlEntry[] local) throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemotePrincipal getRemotePrincipal(final Principal principal)
+            throws RemoteException;
+
+    /**
+     * Returns a remote adapter for the given local access control manager.
+     *
+     * @param acm local access control manager
+     * @return remote access control manager
+     * @throws RemoteException on RMI errors
+     */
+    public RemoteIterator getRemotePrincipalIterator(
+            final Iterator<Principal> principals) throws RemoteException;
 
 }

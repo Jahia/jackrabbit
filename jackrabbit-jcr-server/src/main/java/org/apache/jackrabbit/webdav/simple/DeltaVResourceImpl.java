@@ -16,12 +16,14 @@
 package org.apache.jackrabbit.webdav.simple;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 import javax.jcr.Item;
 import javax.jcr.Node;
 import javax.jcr.RepositoryException;
+import javax.jcr.Property;
+import javax.jcr.PathNotFoundException;
+import javax.jcr.ValueFormatException;
 
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.webdav.DavCompliance;
@@ -35,6 +37,7 @@ import org.apache.jackrabbit.webdav.DavSession;
 import org.apache.jackrabbit.webdav.property.DavProperty;
 import org.apache.jackrabbit.webdav.property.DavPropertyName;
 import org.apache.jackrabbit.webdav.property.HrefProperty;
+import org.apache.jackrabbit.webdav.property.DefaultDavProperty;
 import org.apache.jackrabbit.webdav.version.DeltaVConstants;
 import org.apache.jackrabbit.webdav.version.DeltaVResource;
 import org.apache.jackrabbit.webdav.version.OptionsInfo;
@@ -76,6 +79,7 @@ public class DeltaVResourceImpl extends DavResourceImpl implements DeltaVResourc
     /**
      * @see org.apache.jackrabbit.webdav.DavResource#getComplianceClass()
      */
+    @Override
     public String getComplianceClass() {
         return DELTAV_COMPLIANCE_CLASSES;
     }
@@ -145,21 +149,19 @@ public class DeltaVResourceImpl extends DavResourceImpl implements DeltaVResourc
      * @see DeltaVResource#getReferenceResources(org.apache.jackrabbit.webdav.property.DavPropertyName)
      */
     public DavResource[] getReferenceResources(DavPropertyName hrefPropertyName) throws DavException {
-        DavProperty prop = getProperty(hrefPropertyName);
-        List resources = new ArrayList();
+        DavProperty<?> prop = getProperty(hrefPropertyName);
+        List<DavResource> resources = new ArrayList<DavResource>();
         if (prop != null && prop instanceof HrefProperty) {
             HrefProperty hp = (HrefProperty)prop;
             // process list of hrefs
-            List hrefs = hp.getHrefs();
-            for (Iterator iter = hrefs.iterator(); iter.hasNext();) {
-                String href = (String)iter.next();
+            for (String href : hp.getHrefs()) {
                 DavResourceLocator locator = getLocator().getFactory().createResourceLocator(getLocator().getPrefix(), href);
                 resources.add(createResourceFromLocator(locator));
             }
         } else {
             throw new DavException(DavServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
-        return (DavResource[])resources.toArray(new DavResource[0]);
+        return resources.toArray(new DavResource[resources.size()]);
     }
 
     /**
@@ -243,11 +245,23 @@ public class DeltaVResourceImpl extends DavResourceImpl implements DeltaVResourc
     /**
      * Fill the property set for this resource.
      */
+    @Override
     protected void initProperties() {
         if (!propsInitialized) {
             super.initProperties();
             if (exists()) {
                 properties.add(supportedReports);
+
+                // DAV:creator-displayname -> use jcr:createBy if present.
+                Node n = getNode();
+                try {
+                    if (n.hasProperty(Property.JCR_CREATED_BY)) {
+                        String createdBy = n.getProperty(Property.JCR_CREATED_BY).getString();
+                        properties.add(new DefaultDavProperty<String>(DeltaVConstants.CREATOR_DISPLAYNAME, createdBy, true));
+                    }
+                } catch (RepositoryException e) {
+                    log.debug("Error while accessing jcr:createdBy property");
+                }
             }
         }
     }

@@ -374,16 +374,7 @@ public class NodeStateEx {
             if (entry == null) {
                 return false;
             } else {
-                // ------ https://issues.apache.org/jira/browse/JCR-2474
-                NodeState child = (NodeState) stateMgr.getItemState(entry.getId());
-                if (child.getSharedSet().size() <= 1) {
-                    removeNode(entry.getId());
-                } else {
-                    child.removeShare(getNodeId());
-                    child.setStatus(ItemState.STATUS_EXISTING_MODIFIED);
-                    store(child);
-                }
-                // -------
+                removeNode(entry.getId());
                 nodeState.removeChildNodeEntry(entry.getId());
                 nodeState.setStatus(ItemState.STATUS_EXISTING_MODIFIED);
                 return true;

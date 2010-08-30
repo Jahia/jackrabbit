@@ -189,4 +189,10 @@ public interface RemoteWorkspace extends Remote {
     void deleteWorkspace(String name)
             throws RepositoryException, RemoteException;
 
+    RemoteLockManager getLockManager()
+        throws RepositoryException, RemoteException;
+
+    RemoteVersionManager getVersionManager()
+        throws RepositoryException, RemoteException;
+
 }

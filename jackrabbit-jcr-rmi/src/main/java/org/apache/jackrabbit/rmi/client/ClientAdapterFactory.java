@@ -16,6 +16,9 @@
  */
 package org.apache.jackrabbit.rmi.client;
 
+import java.security.Principal;
+import java.util.Iterator;
+
 import javax.jcr.Item;
 import javax.jcr.NamespaceRegistry;
 import javax.jcr.Node;
@@ -26,6 +29,7 @@ import javax.jcr.Repository;
 import javax.jcr.Session;
 import javax.jcr.Workspace;
 import javax.jcr.lock.Lock;
+import javax.jcr.lock.LockManager;
 import javax.jcr.nodetype.NodeType;
 import javax.jcr.nodetype.NodeTypeIterator;
 import javax.jcr.nodetype.NodeTypeManager;
@@ -38,19 +42,35 @@ import javax.jcr.query.QueryManager;
 import javax.jcr.query.QueryResult;
 import javax.jcr.query.Row;
 import javax.jcr.query.RowIterator;
+import javax.jcr.security.AccessControlEntry;
+import javax.jcr.security.AccessControlManager;
+import javax.jcr.security.AccessControlPolicy;
+import javax.jcr.security.AccessControlPolicyIterator;
+import javax.jcr.security.Privilege;
 import javax.jcr.version.Version;
 import javax.jcr.version.VersionHistory;
 import javax.jcr.version.VersionIterator;
+import javax.jcr.version.VersionManager;
 
 import org.apache.jackrabbit.rmi.client.iterator.ClientNodeIterator;
 import org.apache.jackrabbit.rmi.client.iterator.ClientNodeTypeIterator;
 import org.apache.jackrabbit.rmi.client.iterator.ClientPropertyIterator;
 import org.apache.jackrabbit.rmi.client.iterator.ClientRowIterator;
 import org.apache.jackrabbit.rmi.client.iterator.ClientVersionIterator;
+import org.apache.jackrabbit.rmi.client.principal.ClientGroup;
+import org.apache.jackrabbit.rmi.client.principal.ClientPrincipal;
+import org.apache.jackrabbit.rmi.client.principal.ClientPrincipalIterator;
+import org.apache.jackrabbit.rmi.client.security.ClientAccessControlEntry;
+import org.apache.jackrabbit.rmi.client.security.ClientAccessControlList;
+import org.apache.jackrabbit.rmi.client.security.ClientAccessControlManager;
+import org.apache.jackrabbit.rmi.client.security.ClientAccessControlPolicy;
+import org.apache.jackrabbit.rmi.client.security.ClientAccessControlPolicyIterator;
+import org.apache.jackrabbit.rmi.client.security.ClientPrivilege;
 import org.apache.jackrabbit.rmi.remote.RemoteItem;
 import org.apache.jackrabbit.rmi.remote.RemoteItemDefinition;
 import org.apache.jackrabbit.rmi.remote.RemoteIterator;
 import org.apache.jackrabbit.rmi.remote.RemoteLock;
+import org.apache.jackrabbit.rmi.remote.RemoteLockManager;
 import org.apache.jackrabbit.rmi.remote.RemoteNamespaceRegistry;
 import org.apache.jackrabbit.rmi.remote.RemoteNode;
 import org.apache.jackrabbit.rmi.remote.RemoteNodeDefinition;
@@ -67,8 +87,16 @@ import org.apache.jackrabbit.rmi.remote.RemoteRow;
 import org.apache.jackrabbit.rmi.remote.RemoteSession;
 import org.apache.jackrabbit.rmi.remote.RemoteVersion;
 import org.apache.jackrabbit.rmi.remote.RemoteVersionHistory;
+import org.apache.jackrabbit.rmi.remote.RemoteVersionManager;
 import org.apache.jackrabbit.rmi.remote.RemoteWorkspace;
 import org.apache.jackrabbit.rmi.remote.RemoteXASession;
+import org.apache.jackrabbit.rmi.remote.principal.RemoteGroup;
+import org.apache.jackrabbit.rmi.remote.principal.RemotePrincipal;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlEntry;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlList;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlManager;
+import org.apache.jackrabbit.rmi.remote.security.RemoteAccessControlPolicy;
+import org.apache.jackrabbit.rmi.remote.security.RemotePrivilege;
 
 /**
  * Default implementation of the
@@ -235,7 +263,7 @@ public class ClientAdapterFactory implements LocalAdapterFactory {
      *
      * {@inheritDoc}
      */
-    public Lock getLock(Session session, Node node, RemoteLock remote) {
+    public Lock getLock(Session session, RemoteLock remote) {
         return new ClientLock(session, remote, this);
     }
 
@@ -318,6 +346,112 @@ public class ClientAdapterFactory implements LocalAdapterFactory {
      */
     public RowIterator getRowIterator(RemoteIterator remote) {
         return new ClientRowIterator(remote, this);
+    }
+
+    public LockManager getLockManager(
+            Session session, RemoteLockManager remote) {
+        return new ClientLockManager(session, remote, this);
+    }
+
+    public VersionManager getVersionManager(
+            Session session, RemoteVersionManager remote) {
+        return new ClientVersionManager(session, remote, this);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public AccessControlManager getAccessControlManager(
+            RemoteAccessControlManager remote) {
+        return new ClientAccessControlManager(remote, this);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public AccessControlPolicy getAccessControlPolicy(
+            RemoteAccessControlPolicy remote) {
+        if (remote instanceof RemoteAccessControlList) {
+            return new ClientAccessControlList(
+                (RemoteAccessControlList) remote, this);
+        }
+        return new ClientAccessControlPolicy(remote, this);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public AccessControlPolicy[] getAccessControlPolicy(
+            RemoteAccessControlPolicy[] remote) {
+        final AccessControlPolicy[] local = new AccessControlPolicy[remote.length];
+        for (int i = 0; i < local.length; i++) {
+            local[i] = getAccessControlPolicy(remote[i]);
+        }
+        return local;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public AccessControlPolicyIterator getAccessControlPolicyIterator(
+            RemoteIterator remote) {
+        return new ClientAccessControlPolicyIterator(remote, this);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public AccessControlEntry getAccessControlEntry(
+            RemoteAccessControlEntry remote) {
+        return new ClientAccessControlEntry(remote, this);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public AccessControlEntry[] getAccessControlEntry(
+            RemoteAccessControlEntry[] remote) {
+        final AccessControlEntry[] local = new AccessControlEntry[remote.length];
+        for (int i = 0; i < local.length; i++) {
+            local[i] = getAccessControlEntry(remote[i]);
+        }
+        return local;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public Principal getPrincipal(RemotePrincipal remote) {
+        if (remote instanceof RemoteGroup) {
+            return new ClientGroup(remote, this);
+        }
+        return new ClientPrincipal(remote);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @SuppressWarnings("unchecked")
+    public Iterator<Principal> getPrincipalIterator(RemoteIterator remote) {
+        return new ClientPrincipalIterator(remote, this);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public Privilege getPrivilege(RemotePrivilege remote) {
+        return new ClientPrivilege(remote, this);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public Privilege[] getPrivilege(RemotePrivilege[] remote) {
+        final Privilege[] local = new Privilege[remote.length];
+        for (int i = 0; i < local.length; i++) {
+            local[i] = getPrivilege(remote[i]);
+        }
+        return local;
     }
 
 }

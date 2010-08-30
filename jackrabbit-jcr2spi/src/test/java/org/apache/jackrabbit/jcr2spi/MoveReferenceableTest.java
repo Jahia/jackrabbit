@@ -16,12 +16,12 @@
  */
 package org.apache.jackrabbit.jcr2spi;
 
+import javax.jcr.Node;
+import javax.jcr.RepositoryException;
+
+import org.apache.jackrabbit.test.NotExecutableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.jackrabbit.test.NotExecutableException;
-
-import javax.jcr.RepositoryException;
-import javax.jcr.Node;
 
 /**
  * <code>MoveReferenceableTest</code>...
@@ -30,6 +30,7 @@ public class MoveReferenceableTest extends AbstractMoveTest {
 
     private static Logger log = LoggerFactory.getLogger(MoveReferenceableTest.class);
 
+    @Override
     protected void setUp() throws Exception {
         super.setUp();
 
@@ -41,6 +42,7 @@ public class MoveReferenceableTest extends AbstractMoveTest {
         moveNode.save();
     }
 
+    @Override
     protected boolean isSessionMove() {
         return true;
     }
@@ -81,8 +83,6 @@ public class MoveReferenceableTest extends AbstractMoveTest {
 
         Node n = superuser.getNodeByUUID(uuid);
         assertTrue("After successful moving a referenceable node node, accessing the node by uuid must return the same node.", n.isSame(moveNode));
-        // NOTE: implementation specific test
-        assertTrue("After successful moving a referenceable node node, accessing the node by uuid be the identical node.", n == moveNode);
     }
 
     /**
@@ -98,7 +98,25 @@ public class MoveReferenceableTest extends AbstractMoveTest {
 
         Node n = superuser.getNodeByUUID(uuid);
         assertTrue("After successful moving a referenceable node node, accessing the node by uuid must return the same node.", n.isSame(moveNode));
-        // NOTE: implementation specific test
-        assertTrue("After successful moving a referenceable node node, accessing the node by uuid be the identical node.", n == moveNode);
+    }
+
+    /**
+     * Move a versionable (referenceable) node twice
+     * 
+     * @throws RepositoryException
+     * @see <a href="https://issues.apache.org/jira/browse/JCR-2572">JCR-2572</a>
+     */
+    public void testMoveTwice() throws RepositoryException {
+        moveNode.addMixin(mixVersionable);
+        superuser.save();
+        
+        // move the node
+        doMove(moveNode.getPath(), destinationPath);
+        superuser.save();
+
+        // move second time
+        String destinationPath2 = destParentNode.getPath() + "/" + nodeName3;
+        doMove(destinationPath, destinationPath2);
+        superuser.save();
     }
 }

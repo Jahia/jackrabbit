@@ -36,6 +36,7 @@ public class TestAll extends TestCase {
 
         suite.addTestSuite(CachingHierarchyManagerTest.class);
         suite.addTestSuite(ShareableNodeTest.class);
+        suite.addTestSuite(MultiWorkspaceShareableNodeTest.class);
         suite.addTestSuite(TransientRepositoryTest.class);
         suite.addTestSuite(XATest.class);
         suite.addTestSuite(RestoreAndCheckoutTest.class);
@@ -55,8 +56,11 @@ public class TestAll extends TestCase {
         suite.addTestSuite(ConcurrentModificationWithSNSTest.class);
         suite.addTestSuite(ConcurrentMoveTest.class);
         suite.addTestSuite(ConcurrentReorderTest.class);
+        suite.addTestSuite(ConcurrentAddRemoveNodeTest.class);
 
         suite.addTestSuite(UserPerWorkspaceSecurityManagerTest.class);
+
+        suite.addTestSuite(PersistenceManagerTest.class);
 
         return suite;
     }

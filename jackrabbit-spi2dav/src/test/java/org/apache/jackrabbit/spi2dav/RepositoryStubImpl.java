@@ -41,7 +41,7 @@ import java.util.Properties;
 /**
  * <code>RepositoryStubImpl</code>...
  */
-public class RepositoryStubImpl  extends RepositoryStub {
+public class RepositoryStubImpl extends RepositoryStub {
 
     /**
      * Property for the repository url
@@ -60,6 +60,7 @@ public class RepositoryStubImpl  extends RepositoryStub {
         super(env);
     }
 
+    @Override
     public synchronized Repository getRepository() throws RepositoryStubException {
         if (repository == null) {
             try {
@@ -85,11 +86,13 @@ public class RepositoryStubImpl  extends RepositoryStub {
         return new RepositoryServiceImpl(uri, idFactory, nFactory, pFactory, vFactory);
     }
 
+    @Override
     public Principal getKnownPrincipal(Session session) throws RepositoryException {
         // TODO Auto-generated method stub
         throw new RepositoryException("TBD");
     }
 
+    @Override
     public Principal getUnknownPrincipal(Session session) throws RepositoryException, NotExecutableException {
         // TODO Auto-generated method stub
         throw new RepositoryException("TBD");

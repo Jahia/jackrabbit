@@ -16,45 +16,44 @@
  */
 package org.apache.jackrabbit.jcr2spi.nodetype;
 
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import javax.jcr.NamespaceException;
+import javax.jcr.PropertyType;
+import javax.jcr.RepositoryException;
+import javax.jcr.Value;
+import javax.jcr.ValueFactory;
+import javax.jcr.nodetype.NoSuchNodeTypeException;
+import javax.jcr.nodetype.NodeDefinition;
+import javax.jcr.nodetype.NodeType;
+import javax.jcr.nodetype.NodeTypeDefinition;
+import javax.jcr.nodetype.NodeTypeExistsException;
+import javax.jcr.nodetype.NodeTypeIterator;
+import javax.jcr.nodetype.NodeTypeManager;
+import javax.jcr.nodetype.PropertyDefinition;
+import javax.jcr.version.OnParentVersionAction;
+
 import org.apache.commons.collections.map.ReferenceMap;
-import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;
 import org.apache.jackrabbit.commons.iterator.NodeTypeIteratorAdapter;
+import org.apache.jackrabbit.jcr2spi.ManagerProvider;
+import org.apache.jackrabbit.jcr2spi.util.Dumpable;
+import org.apache.jackrabbit.spi.Name;
+import org.apache.jackrabbit.spi.QNodeDefinition;
+import org.apache.jackrabbit.spi.QNodeTypeDefinition;
+import org.apache.jackrabbit.spi.QPropertyDefinition;
+import org.apache.jackrabbit.spi.commons.QNodeTypeDefinitionImpl;
 import org.apache.jackrabbit.spi.commons.conversion.NameException;
 import org.apache.jackrabbit.spi.commons.conversion.NamePathResolver;
 import org.apache.jackrabbit.spi.commons.nodetype.AbstractNodeTypeManager;
 import org.apache.jackrabbit.spi.commons.nodetype.NodeDefinitionImpl;
 import org.apache.jackrabbit.spi.commons.nodetype.PropertyDefinitionImpl;
-import org.apache.jackrabbit.spi.commons.QNodeTypeDefinitionImpl;
-import org.apache.jackrabbit.spi.Name;
-import org.apache.jackrabbit.jcr2spi.util.Dumpable;
-import org.apache.jackrabbit.jcr2spi.ManagerProvider;
-import org.apache.jackrabbit.spi.QNodeDefinition;
-import org.apache.jackrabbit.spi.QPropertyDefinition;
-import org.apache.jackrabbit.spi.QNodeTypeDefinition;
-import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
-
-import javax.jcr.RepositoryException;
-import javax.jcr.PropertyType;
-import javax.jcr.Value;
-import javax.jcr.ValueFactory;
-import javax.jcr.NamespaceException;
-import javax.jcr.version.OnParentVersionAction;
-import javax.jcr.nodetype.NoSuchNodeTypeException;
-import javax.jcr.nodetype.NodeType;
-import javax.jcr.nodetype.NodeTypeDefinition;
-import javax.jcr.nodetype.NodeTypeIterator;
-import javax.jcr.nodetype.NodeTypeManager;
-import javax.jcr.nodetype.PropertyDefinition;
-import javax.jcr.nodetype.NodeDefinition;
-import javax.jcr.nodetype.NodeTypeExistsException;
-
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.HashSet;
-import java.util.List;
-import java.io.PrintStream;
+import org.slf4j.LoggerFactory;
 
 /**
  * A <code>NodeTypeManagerImpl</code> implements a session dependant
@@ -120,10 +119,6 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
         ndCache = new ReferenceMap(ReferenceMap.HARD, ReferenceMap.SOFT);
     }
 
-    private NamespaceResolver nsResolver() {
-        return mgrProvider.getNamespaceResolver();
-    }
-
     private EffectiveNodeTypeProvider entProvider() {
         return mgrProvider.getEffectiveNodeTypeProvider();
     }
@@ -132,6 +127,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
     /**
      * @see AbstractNodeTypeManager#getNodeType(org.apache.jackrabbit.spi.Name)
      */
+    @Override
     public NodeTypeImpl getNodeType(Name name) throws NoSuchNodeTypeException {
         synchronized (ntCache) {
             NodeTypeImpl nt = ntCache.get(name);
@@ -146,8 +142,9 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
     }
 
     /**
-     * @see org.apache.jackrabbit.spi.commons.nodetype.AbstractNodeTypeManager#getNamePathResolver() 
+     * @see org.apache.jackrabbit.spi.commons.nodetype.AbstractNodeTypeManager#getNamePathResolver()
      */
+    @Override
     public NamePathResolver getNamePathResolver() {
         return mgrProvider.getNamePathResolver();
     }
@@ -172,6 +169,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
      * @param def
      * @return
      */
+    @Override
     public NodeDefinition getNodeDefinition(QNodeDefinition def) {
         synchronized (ndCache) {
             NodeDefinition ndi = ndCache.get(def);
@@ -190,6 +188,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
      * @param def
      * @return
      */
+    @Override
     public PropertyDefinition getPropertyDefinition(QPropertyDefinition def) {
         synchronized (pdCache) {
             PropertyDefinition pdi = pdCache.get(def);
@@ -210,7 +209,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
 
     //-----------------------------------------< NodeTypeDefinitionProvider >---
     /**
-     * @see NodeTypeDefinitionProvider#getNodeTypeDefinition(org.apache.jackrabbit.spi.Name) 
+     * @see NodeTypeDefinitionProvider#getNodeTypeDefinition(org.apache.jackrabbit.spi.Name)
      */
     public QNodeTypeDefinition getNodeTypeDefinition(Name ntName) throws NoSuchNodeTypeException, RepositoryException {
         NodeTypeImpl nt = getNodeType(ntName);
@@ -306,8 +305,8 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
     public NodeTypeIterator getAllNodeTypes() throws RepositoryException {
         Name[] ntNames = ntReg.getRegisteredNodeTypes();
         ArrayList<NodeType> list = new ArrayList<NodeType>(ntNames.length);
-        for (int i = 0; i < ntNames.length; i++) {
-            list.add(getNodeType(ntNames[i]));
+        for (Name ntName : ntNames) {
+            list.add(getNodeType(ntName));
         }
         return new NodeTypeIteratorAdapter(list);
     }
@@ -318,8 +317,8 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
     public NodeTypeIterator getPrimaryNodeTypes() throws RepositoryException {
         Name[] ntNames = ntReg.getRegisteredNodeTypes();
         ArrayList<NodeType> list = new ArrayList<NodeType>(ntNames.length);
-        for (int i = 0; i < ntNames.length; i++) {
-            NodeType nt = getNodeType(ntNames[i]);
+        for (Name ntName : ntNames) {
+            NodeType nt = getNodeType(ntName);
             if (!nt.isMixin()) {
                 list.add(nt);
             }
@@ -333,8 +332,8 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
     public NodeTypeIterator getMixinNodeTypes() throws RepositoryException {
         Name[] ntNames = ntReg.getRegisteredNodeTypes();
         ArrayList<NodeType> list = new ArrayList<NodeType>(ntNames.length);
-        for (int i = 0; i < ntNames.length; i++) {
-            NodeType nt = getNodeType(ntNames[i]);
+        for (Name ntName : ntNames) {
+            NodeType nt = getNodeType(ntName);
             if (nt.isMixin()) {
                 list.add(nt);
             }
@@ -388,8 +387,8 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
         getNodeTypeRegistry().registerNodeTypes(defs, allowUpdate);
 
         List<NodeType> nts = new ArrayList<NodeType>();
-        for (Iterator<QNodeTypeDefinition> it = defs.iterator(); it.hasNext();) {
-            nts.add(getNodeType(it.next().getName()));
+        for (QNodeTypeDefinition def : defs) {
+            nts.add(getNodeType(def.getName()));
         }
         return new NodeTypeIteratorAdapter(nts);
 
@@ -420,73 +419,70 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager implements Node
             while (iter.hasNext()) {
                 NodeType nt = iter.nextNodeType();
                 ps.println(nt.getName());
-                NodeType[] supertypes = nt.getSupertypes();
                 ps.println("\tSupertypes");
-                for (int i = 0; i < supertypes.length; i++) {
-                    ps.println("\t\t" + supertypes[i].getName());
+                for (NodeType supertype : nt.getSupertypes()) {
+                    ps.println("\t\t" + supertype.getName());
                 }
                 ps.println("\tMixin\t" + nt.isMixin());
                 ps.println("\tOrderableChildNodes\t" + nt.hasOrderableChildNodes());
                 ps.println("\tPrimaryItemName\t" + (nt.getPrimaryItemName() == null ? "<null>" : nt.getPrimaryItemName()));
-                PropertyDefinition[] pd = nt.getPropertyDefinitions();
-                for (int i = 0; i < pd.length; i++) {
+                for (PropertyDefinition aPd : nt.getPropertyDefinitions()) {
                     ps.print("\tPropertyDefinition");
-                    ps.println(" (declared in " + pd[i].getDeclaringNodeType().getName() + ") ");
-                    ps.println("\t\tName\t\t" + (pd[i].getName()));
-                    String type = pd[i].getRequiredType() == 0 ? "null" : PropertyType.nameFromValue(pd[i].getRequiredType());
+                    ps.println(" (declared in " + aPd.getDeclaringNodeType().getName() + ") ");
+                    ps.println("\t\tName\t\t" + (aPd.getName()));
+                    String type = aPd.getRequiredType() == 0 ? "null" : PropertyType.nameFromValue(aPd.getRequiredType());
                     ps.println("\t\tRequiredType\t" + type);
-                    String[] vca = pd[i].getValueConstraints();
+                    String[] vca = aPd.getValueConstraints();
                     StringBuffer constraints = new StringBuffer();
                     if (vca == null) {
                         constraints.append("<null>");
                     } else {
-                        for (int n = 0; n < vca.length; n++) {
+                        for (String aVca : vca) {
                             if (constraints.length() > 0) {
                                 constraints.append(", ");
                             }
-                            constraints.append(vca[n]);
+                            constraints.append(aVca);
                         }
                     }
                     ps.println("\t\tValueConstraints\t" + constraints.toString());
-                    Value[] defVals = pd[i].getDefaultValues();
+                    Value[] defVals = aPd.getDefaultValues();
                     StringBuffer defaultValues = new StringBuffer();
                     if (defVals == null) {
                         defaultValues.append("<null>");
                     } else {
-                        for (int n = 0; n < defVals.length; n++) {
+                        for (Value defVal : defVals) {
                             if (defaultValues.length() > 0) {
                                 defaultValues.append(", ");
                             }
-                            defaultValues.append(defVals[n].getString());
+                            defaultValues.append(defVal.getString());
                         }
                     }
                     ps.println("\t\tDefaultValue\t" + defaultValues.toString());
-                    ps.println("\t\tAutoCreated\t" + pd[i].isAutoCreated());
-                    ps.println("\t\tMandatory\t" + pd[i].isMandatory());
-                    ps.println("\t\tOnVersion\t" + OnParentVersionAction.nameFromValue(pd[i].getOnParentVersion()));
-                    ps.println("\t\tProtected\t" + pd[i].isProtected());
-                    ps.println("\t\tMultiple\t" + pd[i].isMultiple());
+                    ps.println("\t\tAutoCreated\t" + aPd.isAutoCreated());
+                    ps.println("\t\tMandatory\t" + aPd.isMandatory());
+                    ps.println("\t\tOnVersion\t" + OnParentVersionAction.nameFromValue(aPd.getOnParentVersion()));
+                    ps.println("\t\tProtected\t" + aPd.isProtected());
+                    ps.println("\t\tMultiple\t" + aPd.isMultiple());
                 }
-                NodeDefinition[] nd = nt.getChildNodeDefinitions();
-                for (int i = 0; i < nd.length; i++) {
+                for (NodeDefinition aNd : nt.getChildNodeDefinitions()) {
                     ps.print("\tNodeDefinition");
-                    ps.println(" (declared in " + nd[i].getDeclaringNodeType() + ") ");
-                    ps.println("\t\tName\t\t" + nd[i].getName());
-                    NodeType[] reqPrimaryTypes = nd[i].getRequiredPrimaryTypes();
+                    ps.println(" (declared in " + aNd.getDeclaringNodeType() + ") ");
+                    ps.println("\t\tName\t\t" + aNd.getName());
+                    NodeType[] reqPrimaryTypes = aNd.getRequiredPrimaryTypes();
                     if (reqPrimaryTypes != null && reqPrimaryTypes.length > 0) {
-                        for (int n = 0; n < reqPrimaryTypes.length; n++) {
-                            ps.print("\t\tRequiredPrimaryType\t" + reqPrimaryTypes[n].getName());
+                        for (NodeType reqPrimaryType : reqPrimaryTypes) {
+                            ps.print("\t\tRequiredPrimaryType\t" + reqPrimaryType.getName());
                         }
                     }
-                    NodeType defPrimaryType = nd[i].getDefaultPrimaryType();
+                    NodeType defPrimaryType = aNd.getDefaultPrimaryType();
                     if (defPrimaryType != null) {
                         ps.print("\n\t\tDefaultPrimaryType\t" + defPrimaryType.getName());
                     }
-                    ps.println("\n\t\tAutoCreated\t" + nd[i].isAutoCreated());
-                    ps.println("\t\tMandatory\t" + nd[i].isMandatory());
-                    ps.println("\t\tOnVersion\t" + OnParentVersionAction.nameFromValue(nd[i].getOnParentVersion()));
-                    ps.println("\t\tProtected\t" + nd[i].isProtected());
-                    ps.println("\t\tAllowsSameNameSiblings\t" + nd[i].allowsSameNameSiblings());
+                    ps.println("\n\t\tAutoCreated\t" + aNd.isAutoCreated());
+                    ps.println("\t\tMandatory\t" + aNd.isMandatory());
+                    ps.println("\t\tOnVersion\t" + OnParentVersionAction.nameFromValue(aNd.getOnParentVersion()));
+                    ps.println("\t\tProtected\t" + aNd.isProtected());
+                    ps.println("\t\tAllowsSameNameSiblings\t" + aNd.allowsSameNameSiblings());
                 }
             }
             ps.println();

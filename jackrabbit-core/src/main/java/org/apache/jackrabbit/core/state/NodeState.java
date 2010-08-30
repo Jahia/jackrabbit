@@ -23,7 +23,6 @@ import org.apache.jackrabbit.spi.Name;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -298,7 +297,7 @@ public class NodeState extends ItemState {
      * @see #removeChildNodeEntry
      */
     public synchronized List<ChildNodeEntry> getChildNodeEntries() {
-        return childNodeEntries;
+        return childNodeEntries.list();
     }
 
     /**
@@ -320,9 +319,12 @@ public class NodeState extends ItemState {
      * @param id the id the new entry is refering to.
      * @return the newly added <code>ChildNodeEntry</code>
      */
-    public synchronized ChildNodeEntry addChildNodeEntry(Name nodeName,
+    public ChildNodeEntry addChildNodeEntry(Name nodeName,
                                                          NodeId id) {
-        ChildNodeEntry entry = childNodeEntries.add(nodeName, id);
+        ChildNodeEntry entry = null;
+        synchronized (this) {
+            entry = childNodeEntries.add(nodeName, id);
+        }
         notifyNodeAdded(entry);
         return entry;
     }
@@ -336,12 +338,18 @@ public class NodeState extends ItemState {
      * @return <code>true</code> if the entry was sucessfully renamed;
      *         otherwise <code>false</code>
      */
-    public synchronized boolean renameChildNodeEntry(Name oldName, int index,
+    public boolean renameChildNodeEntry(Name oldName, int index,
                                                      Name newName) {
-        ChildNodeEntry oldEntry = childNodeEntries.remove(oldName, index);
-        if (oldEntry != null) {
-            ChildNodeEntry newEntry =
+        ChildNodeEntry oldEntry = null;
+        ChildNodeEntry newEntry = null;
+        synchronized (this) {
+            oldEntry = childNodeEntries.remove(oldName, index);
+            if (oldEntry != null) {
+                newEntry =
                     childNodeEntries.add(newName, oldEntry.getId());
+            }
+        }
+        if (oldEntry != null) {
             notifyNodeAdded(newEntry);
             notifyNodeRemoved(oldEntry);
             return true;
@@ -357,8 +365,11 @@ public class NodeState extends ItemState {
      * @return <code>true</code> if the specified child node entry was found
      *         in the list of child node entries and could be removed.
      */
-    public synchronized boolean removeChildNodeEntry(Name nodeName, int index) {
-        ChildNodeEntry entry = childNodeEntries.remove(nodeName, index);
+    public boolean removeChildNodeEntry(Name nodeName, int index) {
+        ChildNodeEntry entry = null;
+        synchronized (this) {
+            entry = childNodeEntries.remove(nodeName, index);
+        }
         if (entry != null) {
             notifyNodeRemoved(entry);
         }
@@ -372,8 +383,11 @@ public class NodeState extends ItemState {
      * @return <code>true</code> if the specified child node entry was found
      *         in the list of child node entries and could be removed.
      */
-    public synchronized boolean removeChildNodeEntry(NodeId id) {
-        ChildNodeEntry entry = childNodeEntries.remove(id);
+    public boolean removeChildNodeEntry(NodeId id) {
+        ChildNodeEntry entry = null;
+        synchronized (this) {
+            entry = childNodeEntries.remove(id);    
+        }
         if (entry != null) {
             notifyNodeRemoved(entry);
         }
@@ -383,25 +397,12 @@ public class NodeState extends ItemState {
     /**
      * Removes all <code>ChildNodeEntry</code>s.
      */
-    public synchronized void removeAllChildNodeEntries() {
-        childNodeEntries.removeAll();
+    public void removeAllChildNodeEntries() {
+        synchronized (this) {
+            childNodeEntries.removeAll();
+        }
         notifyNodesReplaced();
     }
-
-    // ------ https://issues.apache.org/jira/browse/JCR-2300
-    /**
-     * Reorder the children according to the list passed in parameter
-     * @param entries the new list of entries
-     */
-    public synchronized void reorder(List<ChildNodeEntry> entries) {
-        if (childNodeEntries.containsAll(entries) && entries.containsAll(childNodeEntries)) {
-            childNodeEntries.removeAll();
-            for (ChildNodeEntry entry : entries) {
-                childNodeEntries.add(entry.getName(), entry.getId());
-            }
-        }
-    }
-    // ------
 
     /**
      * Sets the list of <code>ChildNodeEntry</code> objects denoting the
@@ -409,15 +410,16 @@ public class NodeState extends ItemState {
      * @param nodeEntries list of {@link ChildNodeEntry} or
      * a {@link ChildNodeEntries} list.
      */
-    public synchronized void setChildNodeEntries(List<ChildNodeEntry> nodeEntries) {
-        if (nodeEntries instanceof ChildNodeEntries) {
-            // optimization
-            ChildNodeEntries entries = (ChildNodeEntries) nodeEntries;
-            childNodeEntries = (ChildNodeEntries) entries.clone();
-        } else {
-            childNodeEntries.removeAll();
-            childNodeEntries.addAll(nodeEntries);
-
+    public void setChildNodeEntries(List<ChildNodeEntry> nodeEntries) {
+        synchronized (this) {
+            if (nodeEntries instanceof ChildNodeEntries) {
+                // optimization
+                ChildNodeEntries entries = (ChildNodeEntries) nodeEntries;
+                childNodeEntries = (ChildNodeEntries) entries.clone();
+            } else {
+                childNodeEntries.removeAll();
+                childNodeEntries.addAll(nodeEntries);
+            }
         }
         notifyNodesReplaced();
     }
@@ -603,7 +605,7 @@ public class NodeState extends ItemState {
      */
     public synchronized List<ChildNodeEntry> getAddedChildNodeEntries() {
         if (!hasOverlayedState()) {
-            return childNodeEntries;
+            return childNodeEntries.list();
         }
 
         NodeState other = (NodeState) getOverlayedState();
@@ -652,32 +654,10 @@ public class NodeState extends ItemState {
      */
     public synchronized List<ChildNodeEntry> getRenamedChildNodeEntries() {
         if (!hasOverlayedState()) {
-            return Collections.emptyList();
-        }
-
-        ChildNodeEntries otherChildNodeEntries =
-                ((NodeState) overlayedState).childNodeEntries;
-
-        // do a lazy init
-        List<ChildNodeEntry> renamed = null;
-
-        for (Iterator<ChildNodeEntry> iter = childNodeEntries.iterator(); iter.hasNext();) {
-            ChildNodeEntry cne = iter.next();
-            ChildNodeEntry cneOther = otherChildNodeEntries.get(cne.getId());
-            if (cneOther != null && !cne.getName().equals(cneOther.getName())) {
-                // child node entry with same id but different name exists in
-                // overlayed and this state => renamed entry detected
-                if (renamed == null) {
-                    renamed = new ArrayList<ChildNodeEntry>();
-                }
-                renamed.add(cne);
-            }
-        }
-
-        if (renamed == null) {
-            return Collections.emptyList();
+            return childNodeEntries.getRenamedEntries(
+                    ((NodeState) overlayedState).childNodeEntries);
         } else {
-            return renamed;
+            return Collections.emptyList();
         }
     }
 
@@ -732,8 +712,8 @@ public class NodeState extends ItemState {
         // both entry lists now contain the set of nodes that have not
         // been removed or added, but they may have changed their position.
         for (int i = 0; i < ours.size();) {
-            ChildNodeEntry entry = (ChildNodeEntry) ours.get(i);
-            ChildNodeEntry other = (ChildNodeEntry) others.get(i);
+            ChildNodeEntry entry = ours.get(i);
+            ChildNodeEntry other = others.get(i);
             if (entry == other || entry.getId().equals(other.getId())) {
                 // no reorder, move to next child entry
                 i++;
@@ -750,10 +730,10 @@ public class NodeState extends ItemState {
                 if (i + 1 < ours.size()) {
                     // if entry is the next in the other list then probably
                     // the other entry at position <code>i</code> was reordered
-                    if (entry.getId().equals(((ChildNodeEntry) others.get(i + 1)).getId())) {
+                    if (entry.getId().equals(others.get(i + 1).getId())) {
                         // scan for the uuid of the other entry in our list
                         for (int j = i; j < ours.size(); j++) {
-                            if (((ChildNodeEntry) ours.get(j)).getId().equals(other.getId())) {
+                            if (ours.get(j).getId().equals(other.getId())) {
                                 // found it
                                 entry = (ChildNodeEntry) ours.get(j);
                                 break;
@@ -766,12 +746,12 @@ public class NodeState extends ItemState {
                 // remove the entry from both lists
                 // entries > i are already cleaned
                 for (int j = i; j < ours.size(); j++) {
-                    if (((ChildNodeEntry) ours.get(j)).getId().equals(entry.getId())) {
+                    if (ours.get(j).getId().equals(entry.getId())) {
                         ours.remove(j);
                     }
                 }
                 for (int j = i; j < ours.size(); j++) {
-                    if (((ChildNodeEntry) others.get(j)).getId().equals(entry.getId())) {
+                    if (others.get(j).getId().equals(entry.getId())) {
                         others.remove(j);
                     }
                 }

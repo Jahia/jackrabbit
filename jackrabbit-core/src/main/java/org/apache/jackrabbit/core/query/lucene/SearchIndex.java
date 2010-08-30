@@ -16,12 +16,15 @@
  */
 package org.apache.jackrabbit.core.query.lucene;
 
+import java.io.InputStream;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -260,6 +263,13 @@ public class SearchIndex extends AbstractQueryHandler {
     private int maxFieldLength = DEFAULT_MAX_FIELD_LENGTH;
 
     /**
+     * maxExtractLength config parameter. Positive values are used as-is,
+     * negative values are interpreted as factors of the maxFieldLength
+     * parameter.
+     */
+    private int maxExtractLength = -10;
+
+    /**
      * extractorPoolSize config parameter
      */
     private int extractorPoolSize = 2 * Runtime.getRuntime().availableProcessors();
@@ -347,7 +357,8 @@ public class SearchIndex extends AbstractQueryHandler {
     private Class<?> excerptProviderClass = DefaultHTMLExcerpt.class;
 
     /**
-     * The path to the indexing configuration file.
+     * The path to the indexing configuration file (can be an absolute path to a
+     * file or a classpath resource).
      */
     private String indexingConfigPath;
 
@@ -1092,6 +1103,7 @@ public class SearchIndex extends AbstractQueryHandler {
         indexer.setSupportHighlighting(supportHighlighting);
         indexer.setIndexingConfiguration(indexingConfig);
         indexer.setIndexFormatVersion(indexFormatVersion);
+        indexer.setMaxExtractLength(getMaxExtractLength());
         Document doc = indexer.createDoc();
         mergeAggregatedNodeIndexes(node, doc, indexFormatVersion);
         return doc;
@@ -1282,9 +1294,17 @@ public class SearchIndex extends AbstractQueryHandler {
             return null;
         }
         File config = new File(indexingConfigPath);
+        InputStream configStream = null;
+
         if (!config.exists()) {
-            log.warn("File does not exist: " + indexingConfigPath);
-            return null;
+            // check if it's a classpath resource
+            configStream = getClass().getResourceAsStream(indexingConfigPath);
+
+            if (configStream == null) {
+                // only warn if not available also in the classpath
+                log.warn("File does not exist: " + indexingConfigPath);
+                return null;
+            }
         } else if (!config.canRead()) {
             log.warn("Cannot read file: " + indexingConfigPath);
             return null;
@@ -1294,13 +1314,28 @@ public class SearchIndex extends AbstractQueryHandler {
                     DocumentBuilderFactory.newInstance();
             DocumentBuilder builder = factory.newDocumentBuilder();
             builder.setEntityResolver(new IndexingConfigurationEntityResolver());
-            indexingConfiguration = builder.parse(config).getDocumentElement();
+
+            if (configStream != null) {
+                indexingConfiguration = builder
+                    .parse(configStream).getDocumentElement();
+            } else {
+                indexingConfiguration = builder
+                    .parse(config).getDocumentElement();
+            }
         } catch (ParserConfigurationException e) {
             log.warn("Unable to create XML parser", e);
         } catch (IOException e) {
             log.warn("Exception parsing " + indexingConfigPath, e);
         } catch (SAXException e) {
             log.warn("Exception parsing " + indexingConfigPath, e);
+        } finally {
+            if (configStream != null) {
+                try {
+                    configStream.close();
+                } catch (IOException e) {
+                    // ignore
+                }
+            }
         }
         return indexingConfiguration;
     }
@@ -1339,6 +1374,18 @@ public class SearchIndex extends AbstractQueryHandler {
                                 }
                                 doc.add(new Field(FieldNames.AGGREGATED_NODE_UUID, aggregate.getNodeId().toString(), Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
                             }
+                        }
+                        // make sure that fulltext fields are aligned properly
+                        // first all stored fields, then remaining
+                        List<Fieldable> fulltextFields = new ArrayList<Fieldable>();
+                        fulltextFields.addAll(removeFields(doc, FieldNames.FULLTEXT));
+                        Collections.sort(fulltextFields, new Comparator<Fieldable>() {
+                            public int compare(Fieldable o1, Fieldable o2) {
+                                return Boolean.valueOf(o2.isStored()).compareTo(o1.isStored());
+                            }
+                        });
+                        for (Fieldable f : fulltextFields) {
+                            doc.add(f);
                         }
                     }
                     // property includes
@@ -1386,6 +1433,22 @@ public class SearchIndex extends AbstractQueryHandler {
                         + " node with id: " + state.getNodeId(), e);
             }
         }
+    }
+
+    /**
+     * Removes the fields with the given <code>name</code> from the
+     * <code>document</code> and returns them in a collection.
+     *
+     * @param document the document.
+     * @param name     the name of the fields to remove.
+     * @return the removed fields.
+     */
+    protected final Collection<Fieldable> removeFields(Document document,
+                                                 String name) {
+        List<Fieldable> fields = new ArrayList<Fieldable>();
+        fields.addAll(Arrays.asList(document.getFieldables(name)));
+        document.removeFields(FieldNames.FULLTEXT);
+        return fields;
     }
 
     /**
@@ -1830,6 +1893,18 @@ public class SearchIndex extends AbstractQueryHandler {
 
     public int getMaxFieldLength() {
         return maxFieldLength;
+    }
+
+    public void setMaxExtractLength(int length) {
+        maxExtractLength = length;
+    }
+
+    public int getMaxExtractLength() {
+        if (maxExtractLength < 0) {
+            return -maxExtractLength * maxFieldLength;
+        } else {
+            return maxExtractLength;
+        }
     }
 
     /**

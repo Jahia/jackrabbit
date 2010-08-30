@@ -402,7 +402,7 @@ public class BatchedItemOperations extends ItemValidator {
         // 2. check access rights, lock status, node type constraints, etc.
 
         // JCR-2269: store target node state in changelog early as a
-        // precautionary measure in order to isolate it from concurrent 
+        // precautionary measure in order to isolate it from concurrent
         // underlying changes while checking preconditions
         stateMgr.store(destParentState);
         checkAddNode(destParentState, destName.getName(),
@@ -573,14 +573,14 @@ public class BatchedItemOperations extends ItemValidator {
                 throw new UnsupportedRepositoryOperationException(msg);
             }
 
-            // remove child node entry from old parent
-            srcParent.removeChildNodeEntry(srcName.getName(), srcNameIndex);
-
-            // re-parent target node
-            target.setParentId(destParent.getNodeId());
-
-            // add child node entry to new parent
-            destParent.addChildNodeEntry(destName.getName(), target.getNodeId());
+            // do move:
+            // 1. remove child node entry from old parent
+            if (srcParent.removeChildNodeEntry(target.getNodeId())) {
+                // 2. re-parent target node
+                target.setParentId(destParent.getNodeId());
+                // 3. add child node entry to new parent
+                destParent.addChildNodeEntry(destName.getName(), target.getNodeId());
+            }
         }
 
         // store states
@@ -1608,15 +1608,16 @@ public class BatchedItemOperations extends ItemValidator {
             boolean shareable = ent.includesNodeType(NameConstants.MIX_SHAREABLE);
             switch (flag) {
                 case COPY:
-                    // -------- https://issues.apache.org/jira/browse/JCR-2473
+                    /* if this node is shareable and another node in the same shared set
+                     * has been already been copied and given a new uuid, use this one
+                     * (see section 14.5 of the specification)
+                     */
                     if (shareable && refTracker.getMappedId(srcState.getNodeId()) != null) {
                         NodeId newId = refTracker.getMappedId(srcState.getNodeId());
                         NodeState sharedState = (NodeState) stateMgr.getItemState(newId);
                         sharedState.addShare(destParentId);
-                        stateMgr.store(sharedState);
                         return sharedState;
                     }
-                    // --------
                     // always create new uuid
                     id = new NodeId();
                     if (referenceable) {
@@ -1632,15 +1633,13 @@ public class BatchedItemOperations extends ItemValidator {
                     }
                     // use same uuid as source node
                     id = srcState.getNodeId();
-                    // -------- https://issues.apache.org/jira/browse/JCR-??
-                    if (shareable && stateMgr.hasItemState(id)) {
-                        NodeState sharedState = (NodeState) stateMgr.getItemState(id);
-                        sharedState.addShare(destParentId);
-                        stateMgr.store(sharedState);
-                        return sharedState;
-                    }
-                    // --------
+
                     if (stateMgr.hasItemState(id)) {
+                        if (shareable) {
+                            NodeState sharedState = (NodeState) stateMgr.getItemState(id);
+                            sharedState.addShare(destParentId);
+                            return sharedState;
+                        }
                         // node with this uuid already exists
                         throw new ItemExistsException(safeGetJCRPath(id));
                     }
@@ -1653,14 +1652,6 @@ public class BatchedItemOperations extends ItemValidator {
                     }
                     // use same uuid as source node
                     id = srcState.getNodeId();
-                    // -------- https://issues.apache.org/jira/browse/JCR-2473
-                    if (shareable && stateMgr.hasItemState(id)) {
-                        NodeState sharedState = (NodeState) stateMgr.getItemState(id);
-                        sharedState.addShare(destParentId);
-                        stateMgr.store(sharedState);
-                        return sharedState;
-                    }
-                    // --------
                     if (stateMgr.hasItemState(id)) {
                         NodeState existingState = (NodeState) stateMgr.getItemState(id);
                         // make sure existing node is not the parent
@@ -1784,7 +1775,7 @@ public class BatchedItemOperations extends ItemValidator {
                 QPropertyDefinition def = ent.getApplicablePropertyDef(
                         srcChildState.getName(), srcChildState.getType(),
                         srcChildState.isMultiValued());
-                if (def.getDeclaringNodeType().equals(NameConstants.MIX_LOCKABLE)) {
+                if (NameConstants.MIX_LOCKABLE.equals(def.getDeclaringNodeType())) {
                     // skip properties defined by mix:lockable
                     continue;
                 }

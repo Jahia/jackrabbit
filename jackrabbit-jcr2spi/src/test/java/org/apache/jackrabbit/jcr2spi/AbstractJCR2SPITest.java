@@ -46,6 +46,7 @@ import org.apache.jackrabbit.spi.EventFilter;
 import org.apache.jackrabbit.spi.IdFactory;
 import org.apache.jackrabbit.spi.ItemId;
 import org.apache.jackrabbit.spi.ItemInfo;
+import org.apache.jackrabbit.spi.ItemInfoCache;
 import org.apache.jackrabbit.spi.LockInfo;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.NameFactory;
@@ -64,7 +65,10 @@ import org.apache.jackrabbit.spi.QueryInfo;
 import org.apache.jackrabbit.spi.RepositoryService;
 import org.apache.jackrabbit.spi.SessionInfo;
 import org.apache.jackrabbit.spi.Subscription;
+import org.apache.jackrabbit.spi.Path.Element;
 import org.apache.jackrabbit.spi.commons.AbstractReadableRepositoryService;
+import org.apache.jackrabbit.spi.commons.ItemInfoBuilder;
+import org.apache.jackrabbit.spi.commons.ItemInfoBuilder.NodeInfoBuilder;
 import org.apache.jackrabbit.spi.commons.value.QValueFactoryImpl;
 
 /**
@@ -75,17 +79,62 @@ import org.apache.jackrabbit.spi.commons.value.QValueFactoryImpl;
 public abstract class AbstractJCR2SPITest extends TestCase implements RepositoryService {
     private static final String DEFAULT_WSP = "default";
 
-    protected RepositoryService repositoryService;
+    private RepositoryService repositoryService;
+
+    protected ItemInfoStore itemInfoStore;
     protected RepositoryConfig config;
     protected Repository repository;
 
     @Override
     public void setUp() throws Exception {
         super.setUp();
+
+        itemInfoStore = new ItemInfoStore();
+        ItemInfoBuilder.Listener listener = new ItemInfoBuilder.Listener() {
+            public void createPropertyInfo(PropertyInfo propertyInfo) {
+                itemInfoStore.addItemInfo(propertyInfo);
+            }
+
+            public void createNodeInfo(NodeInfo nodeInfo) {
+                itemInfoStore.addItemInfo(nodeInfo);
+            }
+
+            public void createChildInfos(NodeId id, Iterator<ChildInfo> childInfos) {
+                itemInfoStore.setChildInfos(id, childInfos);
+            }
+        };
+
+        initInfosStore(ItemInfoBuilder.nodeInfoBuilder(listener));
         repositoryService = getRepositoryService();
         config = getRepositoryConfig();
         repository = getRepository();
     }
+
+    /**
+     * Convert the given <code>path</code> to a JCR path.
+     * @param path
+     * @return
+     */
+    public static final String toJCRPath(Path path) {
+        Element[] elems = path.getElements();
+        StringBuffer jcrPath = new StringBuffer();
+
+        for (int k = 0; k < elems.length; k++) {
+            jcrPath.append(elems[k].getName().getLocalName());
+            if (k + 1 < elems.length || elems.length == 1) {
+                jcrPath.append('/');
+            }
+        }
+
+        return jcrPath.toString();
+    }
+
+    /**
+     * Initialize the mock repository using the <code>builder</code>.
+     * @param builder
+     * @throws RepositoryException
+     */
+    protected abstract void initInfosStore(NodeInfoBuilder builder) throws RepositoryException;
 
     protected RepositoryService getRepositoryService() throws RepositoryException, ParseException {
         return new AbstractReadableRepositoryService(getDescriptors(), getNameSpaces(), getCndReader(),
@@ -176,7 +225,7 @@ public abstract class AbstractJCR2SPITest extends TestCase implements Repository
     protected RepositoryConfig getRepositoryConfig() {
         return new AbstractRepositoryConfig() {
             public RepositoryService getRepositoryService() throws RepositoryException {
-                return repositoryService;
+                return AbstractJCR2SPITest.this;
             }
         };
     }
@@ -211,6 +260,9 @@ public abstract class AbstractJCR2SPITest extends TestCase implements Repository
         return repositoryService.getRepositoryDescriptors();
     }
 
+    public ItemInfoCache getItemInfoCache(SessionInfo sessionInfo) throws RepositoryException {
+        return repositoryService.getItemInfoCache(sessionInfo);
+    }
 
     //-----------------------------------< SessionInfo creation and release >---
 
@@ -268,7 +320,7 @@ public abstract class AbstractJCR2SPITest extends TestCase implements Repository
 
     public abstract Iterator<ChildInfo> getChildInfos(SessionInfo sessionInfo, NodeId parentId) throws ItemNotFoundException, RepositoryException;
 
-    public abstract PropertyInfo getPropertyInfo(SessionInfo sessionInfo, PropertyId propertyId);
+    public abstract PropertyInfo getPropertyInfo(SessionInfo sessionInfo, PropertyId propertyId) throws ItemNotFoundException, RepositoryException;
 
     public Iterator<PropertyId> getReferences(SessionInfo sessionInfo, NodeId nodeId, Name propertyName,
             boolean weakReferences) throws RepositoryException {
@@ -373,6 +425,11 @@ public abstract class AbstractJCR2SPITest extends TestCase implements Repository
     public NodeId checkpoint(SessionInfo sessionInfo, NodeId nodeId)
             throws RepositoryException {
         return repositoryService.checkpoint(sessionInfo, nodeId);
+    }
+
+    public NodeId checkpoint(SessionInfo sessionInfo, NodeId nodeId, NodeId activityId)
+            throws RepositoryException {
+        return repositoryService.checkpoint(sessionInfo, nodeId, activityId);
     }
 
     public void removeVersion(SessionInfo sessionInfo, NodeId versionHistoryId, NodeId versionId)
