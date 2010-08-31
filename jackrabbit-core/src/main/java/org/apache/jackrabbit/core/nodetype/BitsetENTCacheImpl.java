@@ -413,7 +413,7 @@ public class BitsetENTCacheImpl implements EffectiveNodeTypeCache {
                             h1 = w1 & 0x0ffffL;
                             h2 = w2 & 0x0ffffL;
                         }
-                        return (int) (h2 - h1);
+                        return Long.signum(h2 - h1); // JCR-2734
                     }
                     adr--;
                 }
