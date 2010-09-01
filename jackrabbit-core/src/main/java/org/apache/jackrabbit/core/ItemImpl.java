@@ -253,12 +253,19 @@ public abstract class ItemImpl implements Item {
                     case ItemState.STATUS_STALE_DESTROYED:
                         throw new InvalidItemStateException(
                                 "Item cannot be saved because it has been "
-                                + "deleted externally: " + stateMgr.getHierarchyMgr().getPath(transientState.getId()));
+                                + "deleted externally: " + transientState.getId());
 
                     case ItemState.STATUS_UNDEFINED:
+                        String itemInfo = null;
+                        try {
+                            itemInfo = stateMgr.getHierarchyMgr()
+                                    .getPath(transientState.getId()).toString();
+                        } catch (Exception e) {
+                            itemInfo = transientState.getId().toString();
+                        }
                         throw new InvalidItemStateException(
                                 "Item cannot be saved; it seems to have been "
-                                + "removed externally: " + stateMgr.getHierarchyMgr().getPath(transientState.getId()));
+                                        + "removed externally: " + itemInfo);
 
                     default:
                         log.warn("Unexpected item state status: "
@@ -287,14 +294,28 @@ public abstract class ItemImpl implements Item {
                             + " modified externally: " + stateMgr.getHierarchyMgr().getPath(state.getId()));
 
                 case ItemState.STATUS_STALE_DESTROYED:
+                    String itemInfo = null;
+                    try {
+                        itemInfo = stateMgr.getHierarchyMgr()
+                                .getPath(state.getId()).toString();
+                    } catch (Exception e) {
+                        itemInfo = state.getId().toString();
+                    }
                     throw new InvalidItemStateException(
                             "Item cannot be saved because it has been"
-                            + " deleted externally:" + stateMgr.getHierarchyMgr().getPath(state.getId()));
+                            + " deleted externally:" + itemInfo);
 
                 case ItemState.STATUS_UNDEFINED:
+                    itemInfo = null;
+                    try {
+                        itemInfo = stateMgr.getHierarchyMgr()
+                                .getPath(state.getId()).toString();
+                    } catch (Exception e) {
+                        itemInfo = state.getId().toString();
+                    }
                     throw new InvalidItemStateException(
                             "Item cannot be saved; it seems to have been"
-                            + " removed externally: " + stateMgr.getHierarchyMgr().getPath(state.getId()));
+                            + " removed externally: " + itemInfo);
 
                 default:
                     log.warn("Unexpected item state status:"
