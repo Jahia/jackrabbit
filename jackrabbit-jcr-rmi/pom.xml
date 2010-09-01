@@ -103,7 +103,7 @@
           <plugin>
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
-              <argLine>-Xmx256m</argLine>
+              <argLine>-Xmx256m -Xdebug -Xrunjdwp:transport=dt_socket,address=8001,server=y,suspend=y</argLine>
               <fork>true</fork>
               <systemProperties>
                 <property>
@@ -672,7 +672,7 @@ org.apache.jackrabbit.test.api.version.WorkspaceRestoreTest#testWorkspaceRestore
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-core</artifactId>
-      <version>2.1.1</version>
+      <version>${jackrabbit.version}-${jackrabbit.patch.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

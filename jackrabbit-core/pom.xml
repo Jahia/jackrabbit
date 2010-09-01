@@ -31,7 +31,7 @@
   </parent>
   <artifactId>jackrabbit-core</artifactId>
   <name>Jackrabbit Core</name>
-  <version>2.1.1-patch7</version>
+  <version>${jackrabbit.version}-${jackrabbit.patch.version}</version>
   <description>Jackrabbit content repository implementation</description>
 
   <build>
