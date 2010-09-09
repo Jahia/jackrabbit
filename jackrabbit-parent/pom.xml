@@ -44,7 +44,7 @@
     <jetty.version>6.1.22</jetty.version>
     <tika.version>0.6</tika.version>
     <jackrabbit.version>2.1.1</jackrabbit.version>
-    <jackrabbit.patch.version>patch8</jackrabbit.patch.version>
+    <jackrabbit.patch.version>patch9</jackrabbit.patch.version>
   </properties>
 
     <distributionManagement>
