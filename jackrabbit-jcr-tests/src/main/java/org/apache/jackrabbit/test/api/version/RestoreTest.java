@@ -941,56 +941,57 @@ public class RestoreTest extends AbstractVersionTest {
         assertEquals("Node.restore('test') not correctly restored", propertyValue1, value);
     }
 
-    /**
-     * Test the restore of the OPV=Version child nodes.
-     * @throws RepositoryException
-     */
-    public void testRestoreName() throws RepositoryException,
-            NotExecutableException {
-        // V1.0 of versionableNode has no child
-        Node child1 = versionableNode.addNode(nodeName4);
-        ensureMixinType(child1, mixVersionable);
-        versionableNode.getSession().save();
-        // create v1.0 of child
-        Version v1Child = child1.checkin();
-
-        // V1 of versionable node has child1
-        String v1 = versionableNode.checkin().getName();
-
-        // create V1.1 of child
-        child1.checkout();
-        Version v11Child = child1.checkin();
-
-        // V2 of versionable node has child1
-        versionableNode.checkout();
-        String v2 = versionableNode.checkin().getName();
-
-        // restore 1.0 of versionable node --> no child
-        versionableNode.restore(version, true);
-        assertFalse("Node.restore('1.0') must remove child node.", versionableNode.hasNode(nodeName4));
-
-        // restore V1 via name. since child was checkin first, 1.0 should be restored
-        versionableNode.restore(v1, true);
-        assertTrue("Node.restore('test') must restore child node.", versionableNode.hasNode(nodeName4));
-        child1 = versionableNode.getNode(nodeName4);
-        assertEquals("Node.restore('test') must restore child node version 1.0.", v1Child.getName(), child1.getBaseVersion().getName());
-
-        // JSR283 is more clear about restoring versionable OPV=VERSION nodes
-        // and states that an existing one is not restored when the parent
-        // is restored (see 15.7.5 Chained Versions on Restore)
-
-        // Old JSR170 version:
-        // restore V2 via name. child should be 1.1
-        // versionableNode.restore(v2, true);
-        // child1 = versionableNode.getNode(nodeName4);
-        // assertEquals("Node.restore('foo') must restore child node version 1.1.", v11Child.getName(), child1.getBaseVersion().getName());
-
-        // New JSR283 version:
-        // restore V2 via name. child should still be be 1.0
-        versionableNode.restore(v2, true);
-        child1 = versionableNode.getNode(nodeName4);
-        assertEquals("Node.restore('foo') must not restore child node and keep version 1.0.", v1Child.getName(), child1.getBaseVersion().getName());
-    }
+// Jahia patch - Do not restore childVersionHistory nodes
+//    /**
+//     * Test the restore of the OPV=Version child nodes.
+//     * @throws RepositoryException
+//     */
+//    public void testRestoreName() throws RepositoryException,
+//            NotExecutableException {
+//        // V1.0 of versionableNode has no child
+//        Node child1 = versionableNode.addNode(nodeName4);
+//        ensureMixinType(child1, mixVersionable);
+//        versionableNode.getSession().save();
+//        // create v1.0 of child
+//        Version v1Child = child1.checkin();
+//
+//        // V1 of versionable node has child1
+//        String v1 = versionableNode.checkin().getName();
+//
+//        // create V1.1 of child
+//        child1.checkout();
+//        Version v11Child = child1.checkin();
+//
+//        // V2 of versionable node has child1
+//        versionableNode.checkout();
+//        String v2 = versionableNode.checkin().getName();
+//
+//        // restore 1.0 of versionable node --> no child
+//        versionableNode.restore(version, true);
+//        assertFalse("Node.restore('1.0') must remove child node.", versionableNode.hasNode(nodeName4));
+//
+//        // restore V1 via name. since child was checkin first, 1.0 should be restored
+//        versionableNode.restore(v1, true);
+//        assertTrue("Node.restore('test') must restore child node.", versionableNode.hasNode(nodeName4));
+//        child1 = versionableNode.getNode(nodeName4);
+//        assertEquals("Node.restore('test') must restore child node version 1.0.", v1Child.getName(), child1.getBaseVersion().getName());
+//
+//        // JSR283 is more clear about restoring versionable OPV=VERSION nodes
+//        // and states that an existing one is not restored when the parent
+//        // is restored (see 15.7.5 Chained Versions on Restore)
+//
+//        // Old JSR170 version:
+//        // restore V2 via name. child should be 1.1
+//        // versionableNode.restore(v2, true);
+//        // child1 = versionableNode.getNode(nodeName4);
+//        // assertEquals("Node.restore('foo') must restore child node version 1.1.", v11Child.getName(), child1.getBaseVersion().getName());
+//
+//        // New JSR283 version:
+//        // restore V2 via name. child should still be be 1.0
+//        versionableNode.restore(v2, true);
+//        child1 = versionableNode.getNode(nodeName4);
+//        assertEquals("Node.restore('foo') must not restore child node and keep version 1.0.", v1Child.getName(), child1.getBaseVersion().getName());
+//    }
 
     /**
      * Test the restore of the OPV=Version child nodes.
@@ -1032,210 +1033,211 @@ public class RestoreTest extends AbstractVersionTest {
         assertEquals("Node.restore('foo') must restore child node version 1.1.", v11Child.getName(), versionManager.getBaseVersion(child1.getPath()).getName());
     }
 
-    /**
-     * Test the child ordering of restored nodes.
-     * @throws RepositoryException
-     */
-    public void testRestoreOrder() throws RepositoryException,
-            NotExecutableException {
-        // create a test-root that has orderable child nodes
-        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
-        ensureMixinType(testRoot, mixVersionable);
-        versionableNode.getSession().save();
-
-        // create children of vNode and checkin
-        Node child1 = testRoot.addNode(nodeName1);
-        ensureMixinType(child1, mixVersionable);
-        Node child2 = testRoot.addNode(nodeName2);
-        ensureMixinType(child2, mixVersionable);
-        testRoot.getSession().save();
-        child1.checkin();
-        child2.checkin();
-        Version v1 = testRoot.checkin();
-
-        // remove node 1
-        testRoot.checkout();
-        child1.remove();
-        testRoot.getSession().save();
-        testRoot.checkin();
-
-        // restore version 1.0
-        testRoot.restore(v1, true);
-
-        // check order
-        NodeIterator iter = testRoot.getNodes();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n1 = iter.nextNode();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n2 = iter.nextNode();
-        String orderOk = nodeName1 + ", " + nodeName2;
-        String order = n1.getName() + ", " + n2.getName();
-        assertEquals("Invalid child node ordering", orderOk, order);
-    }
-
-    /**
-     * Test the child ordering of restored nodes.
-     * @throws RepositoryException
-     */
-    public void testRestoreOrderJcr2() throws RepositoryException,
-            NotExecutableException {
-        // create a test-root that has orderable child nodes
-        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
-        ensureMixinType(testRoot, mixVersionable);
-        versionableNode.getSession().save();
-
-        // create children of vNode and checkin
-        Node child1 = testRoot.addNode(nodeName1);
-        ensureMixinType(child1, mixVersionable);
-        Node child2 = testRoot.addNode(nodeName2);
-        ensureMixinType(child2, mixVersionable);
-        testRoot.getSession().save();
-        versionManager.checkin(child1.getPath());
-        versionManager.checkin(child2.getPath());
-        Version v1 = versionManager.checkin(testRoot.getPath());
-
-        // remove node 1
-        versionManager.checkout(testRoot.getPath());
-        child1.remove();
-        testRoot.getSession().save();
-        versionManager.checkout(testRoot.getPath());
-
-        // restore version 1.0
-        versionManager.restore(v1, true);
-
-        // check order
-        NodeIterator iter = testRoot.getNodes();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n1 = iter.nextNode();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n2 = iter.nextNode();
-        String orderOk = nodeName1 + ", " + nodeName2;
-        String order = n1.getName() + ", " + n2.getName();
-        assertEquals("Invalid child node ordering", orderOk, order);
-    }
-
-    /**
-     * Test the child ordering of restored nodes.
-     * @throws RepositoryException
-     */
-    public void testRestoreOrderJcr2_2() throws RepositoryException,
-            NotExecutableException {
-        // create a test-root that has orderable child nodes
-        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
-        ensureMixinType(testRoot, mixVersionable);
-        versionableNode.getSession().save();
-
-        // create children of vNode and checkin
-        Node child1 = testRoot.addNode(nodeName1);
-        ensureMixinType(child1, mixVersionable);
-        Node child2 = testRoot.addNode(nodeName2);
-        ensureMixinType(child2, mixVersionable);
-        testRoot.getSession().save();
-        versionManager.checkin(child1.getPath());
-        versionManager.checkin(child2.getPath());
-        Version v1 = versionManager.checkin(testRoot.getPath());
-
-        // remove node 1
-        versionManager.checkout(testRoot.getPath());
-        child1.remove();
-        testRoot.getSession().save();
-        versionManager.checkout(testRoot.getPath());
-
-        // restore version 1.0
-        versionManager.restore(v1, true);
-
-        // check order
-        NodeIterator iter = testRoot.getNodes();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n1 = iter.nextNode();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n2 = iter.nextNode();
-        String orderOk = nodeName1 + ", " + nodeName2;
-        String order = n1.getName() + ", " + n2.getName();
-        assertEquals("Invalid child node ordering", orderOk, order);
-    }
-
-    /**
-     * Test the child ordering of restored nodes.
-     * @throws RepositoryException
-     */
-    public void testRestoreOrderJcr2_3() throws RepositoryException,
-            NotExecutableException {
-        // create a test-root that has orderable child nodes
-        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
-        ensureMixinType(testRoot, mixVersionable);
-        versionableNode.getSession().save();
-
-        // create children of vNode and checkin
-        Node child1 = testRoot.addNode(nodeName1);
-        ensureMixinType(child1, mixVersionable);
-        Node child2 = testRoot.addNode(nodeName2);
-        ensureMixinType(child2, mixVersionable);
-        testRoot.getSession().save();
-        versionManager.checkin(child1.getPath());
-        versionManager.checkin(child2.getPath());
-        Version v1 = versionManager.checkin(testRoot.getPath());
-
-        // remove node 1
-        versionManager.checkout(testRoot.getPath());
-        child1.remove();
-        testRoot.getSession().save();
-        versionManager.checkout(testRoot.getPath());
-
-        // restore version 1.0
-        versionManager.restore(testRoot.getPath(), v1.getName(), true);
-
-        // check order
-        NodeIterator iter = testRoot.getNodes();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n1 = iter.nextNode();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n2 = iter.nextNode();
-        String orderOk = nodeName1 + ", " + nodeName2;
-        String order = n1.getName() + ", " + n2.getName();
-        assertEquals("Invalid child node ordering", orderOk, order);
-    }
-
-    /**
-     * Test the child ordering of restored nodes.
-     * @throws RepositoryException
-     */
-    public void testRestoreOrderJcr2_4() throws RepositoryException,
-            NotExecutableException {
-        // create a test-root that has orderable child nodes
-        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
-        ensureMixinType(testRoot, mixVersionable);
-        versionableNode.getSession().save();
-
-        // create children of vNode and checkin
-        Node child1 = testRoot.addNode(nodeName1);
-        ensureMixinType(child1, mixVersionable);
-        Node child2 = testRoot.addNode(nodeName2);
-        ensureMixinType(child2, mixVersionable);
-        testRoot.getSession().save();
-        versionManager.checkin(child1.getPath());
-        versionManager.checkin(child2.getPath());
-        Version v1 = versionManager.checkin(testRoot.getPath());
-
-        // remove node 1
-        versionManager.checkout(testRoot.getPath());
-        child1.remove();
-        testRoot.getSession().save();
-        versionManager.checkout(testRoot.getPath());
-
-        // restore version 1.0
-        versionManager.restore(new Version[] {v1}, true);
-
-        // check order
-        NodeIterator iter = testRoot.getNodes();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n1 = iter.nextNode();
-        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
-        Node n2 = iter.nextNode();
-        String orderOk = nodeName1 + ", " + nodeName2;
-        String order = n1.getName() + ", " + n2.getName();
-        assertEquals("Invalid child node ordering", orderOk, order);
-    }
+// Jahia patch - Do not restore childVersionHistory nodes
+//    /**
+//     * Test the child ordering of restored nodes.
+//     * @throws RepositoryException
+//     */
+//    public void testRestoreOrder() throws RepositoryException,
+//            NotExecutableException {
+//        // create a test-root that has orderable child nodes
+//        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
+//        ensureMixinType(testRoot, mixVersionable);
+//        versionableNode.getSession().save();
+//
+//        // create children of vNode and checkin
+//        Node child1 = testRoot.addNode(nodeName1);
+//        ensureMixinType(child1, mixVersionable);
+//        Node child2 = testRoot.addNode(nodeName2);
+//        ensureMixinType(child2, mixVersionable);
+//        testRoot.getSession().save();
+//        child1.checkin();
+//        child2.checkin();
+//        Version v1 = testRoot.checkin();
+//
+//        // remove node 1
+//        testRoot.checkout();
+//        child1.remove();
+//        testRoot.getSession().save();
+//        testRoot.checkin();
+//
+//        // restore version 1.0
+//        testRoot.restore(v1, true);
+//
+//        // check order
+//        NodeIterator iter = testRoot.getNodes();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n1 = iter.nextNode();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n2 = iter.nextNode();
+//        String orderOk = nodeName1 + ", " + nodeName2;
+//        String order = n1.getName() + ", " + n2.getName();
+//        assertEquals("Invalid child node ordering", orderOk, order);
+//    }
+//
+//    /**
+//     * Test the child ordering of restored nodes.
+//     * @throws RepositoryException
+//     */
+//    public void testRestoreOrderJcr2() throws RepositoryException,
+//            NotExecutableException {
+//        // create a test-root that has orderable child nodes
+//        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
+//        ensureMixinType(testRoot, mixVersionable);
+//        versionableNode.getSession().save();
+//
+//        // create children of vNode and checkin
+//        Node child1 = testRoot.addNode(nodeName1);
+//        ensureMixinType(child1, mixVersionable);
+//        Node child2 = testRoot.addNode(nodeName2);
+//        ensureMixinType(child2, mixVersionable);
+//        testRoot.getSession().save();
+//        versionManager.checkin(child1.getPath());
+//        versionManager.checkin(child2.getPath());
+//        Version v1 = versionManager.checkin(testRoot.getPath());
+//
+//        // remove node 1
+//        versionManager.checkout(testRoot.getPath());
+//        child1.remove();
+//        testRoot.getSession().save();
+//        versionManager.checkout(testRoot.getPath());
+//
+//        // restore version 1.0
+//        versionManager.restore(v1, true);
+//
+//        // check order
+//        NodeIterator iter = testRoot.getNodes();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n1 = iter.nextNode();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n2 = iter.nextNode();
+//        String orderOk = nodeName1 + ", " + nodeName2;
+//        String order = n1.getName() + ", " + n2.getName();
+//        assertEquals("Invalid child node ordering", orderOk, order);
+//    }
+//
+//    /**
+//     * Test the child ordering of restored nodes.
+//     * @throws RepositoryException
+//     */
+//    public void testRestoreOrderJcr2_2() throws RepositoryException,
+//            NotExecutableException {
+//        // create a test-root that has orderable child nodes
+//        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
+//        ensureMixinType(testRoot, mixVersionable);
+//        versionableNode.getSession().save();
+//
+//        // create children of vNode and checkin
+//        Node child1 = testRoot.addNode(nodeName1);
+//        ensureMixinType(child1, mixVersionable);
+//        Node child2 = testRoot.addNode(nodeName2);
+//        ensureMixinType(child2, mixVersionable);
+//        testRoot.getSession().save();
+//        versionManager.checkin(child1.getPath());
+//        versionManager.checkin(child2.getPath());
+//        Version v1 = versionManager.checkin(testRoot.getPath());
+//
+//        // remove node 1
+//        versionManager.checkout(testRoot.getPath());
+//        child1.remove();
+//        testRoot.getSession().save();
+//        versionManager.checkout(testRoot.getPath());
+//
+//        // restore version 1.0
+//        versionManager.restore(v1, true);
+//
+//        // check order
+//        NodeIterator iter = testRoot.getNodes();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n1 = iter.nextNode();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n2 = iter.nextNode();
+//        String orderOk = nodeName1 + ", " + nodeName2;
+//        String order = n1.getName() + ", " + n2.getName();
+//        assertEquals("Invalid child node ordering", orderOk, order);
+//    }
+//
+//    /**
+//     * Test the child ordering of restored nodes.
+//     * @throws RepositoryException
+//     */
+//    public void testRestoreOrderJcr2_3() throws RepositoryException,
+//            NotExecutableException {
+//        // create a test-root that has orderable child nodes
+//        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
+//        ensureMixinType(testRoot, mixVersionable);
+//        versionableNode.getSession().save();
+//
+//        // create children of vNode and checkin
+//        Node child1 = testRoot.addNode(nodeName1);
+//        ensureMixinType(child1, mixVersionable);
+//        Node child2 = testRoot.addNode(nodeName2);
+//        ensureMixinType(child2, mixVersionable);
+//        testRoot.getSession().save();
+//        versionManager.checkin(child1.getPath());
+//        versionManager.checkin(child2.getPath());
+//        Version v1 = versionManager.checkin(testRoot.getPath());
+//
+//        // remove node 1
+//        versionManager.checkout(testRoot.getPath());
+//        child1.remove();
+//        testRoot.getSession().save();
+//        versionManager.checkout(testRoot.getPath());
+//
+//        // restore version 1.0
+//        versionManager.restore(testRoot.getPath(), v1.getName(), true);
+//
+//        // check order
+//        NodeIterator iter = testRoot.getNodes();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n1 = iter.nextNode();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n2 = iter.nextNode();
+//        String orderOk = nodeName1 + ", " + nodeName2;
+//        String order = n1.getName() + ", " + n2.getName();
+//        assertEquals("Invalid child node ordering", orderOk, order);
+//    }
+//
+//    /**
+//     * Test the child ordering of restored nodes.
+//     * @throws RepositoryException
+//     */
+//    public void testRestoreOrderJcr2_4() throws RepositoryException,
+//            NotExecutableException {
+//        // create a test-root that has orderable child nodes
+//        Node testRoot = versionableNode.addNode(nodeName4, "nt:unstructured");
+//        ensureMixinType(testRoot, mixVersionable);
+//        versionableNode.getSession().save();
+//
+//        // create children of vNode and checkin
+//        Node child1 = testRoot.addNode(nodeName1);
+//        ensureMixinType(child1, mixVersionable);
+//        Node child2 = testRoot.addNode(nodeName2);
+//        ensureMixinType(child2, mixVersionable);
+//        testRoot.getSession().save();
+//        versionManager.checkin(child1.getPath());
+//        versionManager.checkin(child2.getPath());
+//        Version v1 = versionManager.checkin(testRoot.getPath());
+//
+//        // remove node 1
+//        versionManager.checkout(testRoot.getPath());
+//        child1.remove();
+//        testRoot.getSession().save();
+//        versionManager.checkout(testRoot.getPath());
+//
+//        // restore version 1.0
+//        versionManager.restore(new Version[] {v1}, true);
+//
+//        // check order
+//        NodeIterator iter = testRoot.getNodes();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n1 = iter.nextNode();
+//        assertTrue(testRoot.getName() + " should have 2 child nodes.", iter.hasNext());
+//        Node n2 = iter.nextNode();
+//        String orderOk = nodeName1 + ", " + nodeName2;
+//        String order = n1.getName() + ", " + n2.getName();
+//        assertEquals("Invalid child node ordering", orderOk, order);
+//    }
 
     /**
      * Test the child ordering of restored nodes.
