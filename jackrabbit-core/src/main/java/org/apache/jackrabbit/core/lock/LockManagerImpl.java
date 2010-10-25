@@ -54,6 +54,7 @@ import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.observation.EventImpl;
 import org.apache.jackrabbit.core.observation.SynchronousEventListener;
+import org.apache.jackrabbit.core.security.SystemPrincipal;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.NodeState;
 import org.apache.jackrabbit.core.state.PropertyState;
@@ -689,8 +690,8 @@ public class LockManagerImpl
      */
     protected void checkLock(LockInfo info, Session session)
             throws LockException, RepositoryException {
-
-        if (!info.isLockHolder(session)) {
+        // Don't check lock for system sessions
+        if (!info.isLockHolder(session) && ((SessionImpl)session).getSubject().getPrincipals(SystemPrincipal.class).isEmpty()) {
             throw new LockException("Node locked.");
         }
     }
@@ -734,7 +735,7 @@ public class LockManagerImpl
     protected void checkUnlock(LockInfo info, Session session)
             throws LockException, RepositoryException {
 
-        if (!info.isLockHolder(session)) {
+        if (!info.isLockHolder(session) && ((SessionImpl)session).getSubject().getPrincipals(SystemPrincipal.class).isEmpty()) {
             throw new LockException("Node not locked by session: "
                     + info.getId());
         }
