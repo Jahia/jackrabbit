@@ -47,6 +47,17 @@
     <tika.version>0.7</tika.version>
   </properties>
 
+  <distributionManagement>
+    <repository>
+      <id>jahiaRepository</id>
+      <url>scpexe://maven.jahia.org/var/www/vhosts/maven.jahia.org/html/maven2</url>
+    </repository>
+    <site>
+      <id>jahia.website</id>
+      <url>file://${jahia.site.path}</url>
+    </site>
+  </distributionManagement>
+
   <build>
     <plugins>
       <!-- JCR-2087: Upgrade to Java 5 as the base platform -->
