@@ -393,7 +393,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
             // the definition has not been modified, there's nothing to do here...
             return getEffectiveNodeType(name);
         }
-        if (diff.isTrivial()) {
+        if (diff.isTrivial() || diff.isMajor()) {
             /**
              * the change is trivial and has no effect on current content
              * (e.g. that would be the case when non-mandatory properties had
