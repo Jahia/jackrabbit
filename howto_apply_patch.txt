@@ -1,0 +1,3 @@
+
+svn diff -r 1027183 > r1027183-r1038169.patch
+patch -p0 -E -i /Users/loom/java/technologies/apache-svn/jackrabbit/trunk/r1027183-r1038169.patch

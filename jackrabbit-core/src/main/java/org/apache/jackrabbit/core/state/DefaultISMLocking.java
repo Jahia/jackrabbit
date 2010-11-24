@@ -16,11 +16,9 @@
  */
 package org.apache.jackrabbit.core.state;
 
-import java.util.Arrays;
+import static org.apache.jackrabbit.core.TransactionContext.getCurrentThreadId;
+import static org.apache.jackrabbit.core.TransactionContext.isSameThreadId;
 
-import javax.transaction.xa.Xid;
-
-import org.apache.jackrabbit.core.TransactionContext;
 import org.apache.jackrabbit.core.id.ItemId;
 
 /**
@@ -87,8 +85,9 @@ public class DefaultISMLocking implements ISMLocking {
      */
     public synchronized ReadLock acquireReadLock(ItemId id)
             throws InterruptedException {
+        Object currentId = getCurrentThreadId();
         while (writerId != null
-                ? (writerCount > 0 && !isSameId(writerId, getCurrentId()))
+                ? (writerCount > 0 && !isSameThreadId(writerId, currentId))
                 : writersWaiting > 0) {
             wait();
         }
@@ -111,17 +110,17 @@ public class DefaultISMLocking implements ISMLocking {
 
     /**
      * Increments the writer count, sets the writer identifier and returns
-     * the acquired read lock once there are no other active readers or
+     * the acquired write lock once there are no other active readers or
      * writers or the current writer shares the thread id with this writer.
      */
     public synchronized WriteLock acquireWriteLock(ChangeLog changeLog)
             throws InterruptedException {
-        Object currentId = getCurrentId();
+        Object currentId = getCurrentThreadId();
 
         writersWaiting++;
         try {
             while (writerId != null
-                    ? !isSameId(writerId, currentId) : readerCount > 0) {
+                    ? !isSameThreadId(writerId, currentId) : readerCount > 0) {
                 wait();
             }
         } finally {
@@ -150,35 +149,6 @@ public class DefaultISMLocking implements ISMLocking {
                 writerId = null;
             }
             notifyAll();
-        }
-    }
-
-    /**
-     * Returns the current thread identifier. The identifier is either the
-     * current thread instance or the global transaction identifier when
-     * running under a transaction.
-     *
-     * @return current thread identifier
-     */
-    private Object getCurrentId() {
-        Xid xid = TransactionContext.getCurrentXid();
-        if (xid != null) {
-            return xid.getGlobalTransactionId();
-        } else {
-            return Thread.currentThread();
-        }
-    }
-
-    /**
-     * Compares the given thread identifiers for equality.
-     */
-    private boolean isSameId(Object a, Object b) {
-        if (a == b) {
-            return true;
-        } else if (a instanceof byte[] && b instanceof byte[]) {
-            return Arrays.equals((byte[]) a, (byte[]) b);
-        } else {
-            return false;
         }
     }
 

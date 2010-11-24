@@ -40,6 +40,7 @@ import org.apache.jackrabbit.core.fs.local.LocalFileSystem;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.persistence.PMContext;
+import org.apache.jackrabbit.core.persistence.bundle.AbstractBundlePersistenceManager;
 import org.apache.jackrabbit.core.persistence.util.BundleBinding;
 import org.apache.jackrabbit.core.persistence.util.ErrorHandling;
 import org.apache.jackrabbit.core.persistence.util.NodePropBundle;
@@ -81,7 +82,8 @@ import org.slf4j.LoggerFactory;
  * <li>&lt;param name="{@link #setSchemaCheckEnabled(String) schemaCheckEnabled}" value="true"/>
  * </ul>
  */
-public class BundleDbPersistenceManager extends AbstractBundlePersistenceManager implements DatabaseAware {
+public class BundleDbPersistenceManager
+        extends AbstractBundlePersistenceManager implements DatabaseAware {
 
     /** the default logger */
     private static Logger log = LoggerFactory.getLogger(BundleDbPersistenceManager.class);
@@ -580,7 +582,7 @@ public class BundleDbPersistenceManager extends AbstractBundlePersistenceManager
      */
     protected CheckSchemaOperation createCheckSchemaOperation() {
         InputStream in =
-            org.apache.jackrabbit.core.persistence.bundle.BundleDbPersistenceManager.class.getResourceAsStream(
+            AbstractBundlePersistenceManager.class.getResourceAsStream(
                     databaseType + ".ddl");
         return new CheckSchemaOperation(conHelper, in, schemaObjectPrefix + "BUNDLE").addVariableReplacement(
             CheckSchemaOperation.SCHEMA_OBJECT_PREFIX_VARIABLE, schemaObjectPrefix);
