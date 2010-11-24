@@ -1,3 +1,8 @@
 
-svn diff -r 1027183 > r1027183-r1038169.patch
-patch -p0 -E -i /Users/loom/java/technologies/apache-svn/jackrabbit/trunk/r1027183-r1038169.patch
+How to apply patches from the official Jackrabbit version to this forked version :
+
+1. svn diff -r OLD_REVISION_NUMBER > rOLD_REVISION_NUMBER-rNEW_REVISION_NUMBER.patch
+2. patch -p0 -E -i /Users/loom/java/technologies/apache-svn/jackrabbit/trunk/rOLD_REVISION_NUMBER-rNEW_REVISION_NUMBER.patch
+3. Compile using : mvn clean install (don't use package)
+4. Use the deploy_jars.sh script file to deploy both the code and the source code JARs. The deploy_sources_jar.sh
+is no longer needed but left in case someone was still needing it.
