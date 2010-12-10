@@ -86,15 +86,15 @@ public class QueryEngine {
     
     private final Session session;
 
-    private final LuceneQueryFactory lqf;
+    protected final LuceneQueryFactory lqf;
 
-    private final NodeTypeManager ntManager;
+    protected final NodeTypeManager ntManager;
 
-    private final QueryObjectModelFactory qomFactory;
+    protected final QueryObjectModelFactory qomFactory;
 
-    private final ValueFactory valueFactory;
+    protected final ValueFactory valueFactory;
 
-    private final OperandEvaluator evaluator;
+    protected final OperandEvaluator evaluator;
 
     public QueryEngine(Session session, LuceneQueryFactory lqf,
             Map<String, Value> variables) throws RepositoryException {
@@ -526,7 +526,7 @@ public class QueryEngine {
         return sortFields.toArray(new SortField[sortFields.size()]);
     }
 
-    private Map<String, PropertyValue> getColumnMap(Column[] columns,
+    protected Map<String, PropertyValue> getColumnMap(Column[] columns,
             Map<String, NodeType> selectors) throws RepositoryException {
         Map<String, PropertyValue> map = new LinkedHashMap<String, PropertyValue>();
         if (columns != null && columns.length > 0) {
@@ -550,7 +550,7 @@ public class QueryEngine {
         return map;
     }
 
-    private Map<String, PropertyValue> getColumnMap(String selector,
+    protected Map<String, PropertyValue> getColumnMap(String selector,
             NodeType type) throws RepositoryException {
         Map<String, PropertyValue> map = new LinkedHashMap<String, PropertyValue>();
         for (PropertyDefinition definition : type.getPropertyDefinitions()) {
@@ -564,7 +564,7 @@ public class QueryEngine {
         return map;
     }
 
-    private Map<String, NodeType> getSelectorNames(Source source)
+    protected Map<String, NodeType> getSelectorNames(Source source)
             throws RepositoryException {
         if (source instanceof Selector) {
             Selector selector = (Selector) source;
@@ -582,7 +582,7 @@ public class QueryEngine {
         }
     }
 
-    private NodeType getNodeType(Selector selector) throws RepositoryException {
+    protected NodeType getNodeType(Selector selector) throws RepositoryException {
         try {
             return ntManager.getNodeType(selector.getNodeTypeName());
         } catch (NoSuchNodeTypeException e) {
