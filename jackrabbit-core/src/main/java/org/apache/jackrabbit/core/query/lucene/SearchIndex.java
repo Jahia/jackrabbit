@@ -33,8 +33,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.query.InvalidQueryException;
+import javax.jcr.query.qom.QueryObjectModel;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -60,10 +62,7 @@ import org.apache.jackrabbit.core.journal.Journal;
 import org.apache.jackrabbit.core.journal.JournalException;
 import org.apache.jackrabbit.core.journal.Record;
 import org.apache.jackrabbit.core.journal.RecordIterator;
-import org.apache.jackrabbit.core.query.AbstractQueryHandler;
-import org.apache.jackrabbit.core.query.ExecutableQuery;
-import org.apache.jackrabbit.core.query.QueryHandler;
-import org.apache.jackrabbit.core.query.QueryHandlerContext;
+import org.apache.jackrabbit.core.query.*;
 import org.apache.jackrabbit.core.query.lucene.directory.DirectoryManager;
 import org.apache.jackrabbit.core.query.lucene.directory.FSDirectoryManager;
 import org.apache.jackrabbit.core.query.lucene.hits.AbstractHitCollector;
@@ -81,6 +80,7 @@ import org.apache.jackrabbit.spi.commons.name.NameConstants;
 import org.apache.jackrabbit.spi.commons.name.PathFactoryImpl;
 import org.apache.jackrabbit.spi.commons.query.DefaultQueryNodeFactory;
 import org.apache.jackrabbit.spi.commons.query.qom.OrderingImpl;
+import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelTree;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
@@ -699,6 +699,26 @@ public class SearchIndex extends AbstractQueryHandler {
 
             index.update(aggregateRoots.keySet(), modified);
         }
+    }
+
+    /**
+     * Creates a new query by specifying the query Object model tree itself.
+     *
+     * @param sessionContext component context of the current session
+     * @param qomTree  the query object model tree.
+     * @param language the original query syntax from where the JQOM was
+     *                 created.
+     * @param node     a nt:query node where the query was read from or
+     *                 <code>null</code> if it is not a stored query.
+     *
+     * @throws InvalidQueryException if statement is invalid or language is unsupported.
+     * @return A <code>Query</code> object.
+     */
+    public QueryObjectModel createQueryObjectModel(SessionContext sessionContext, QueryObjectModelTree qomTree,
+                                                       String language, Node node) throws RepositoryException {
+        QueryObjectModelImpl qom = new QueryObjectModelImpl();
+        qom.init(sessionContext, this, qomTree, language, node);
+        return qom;
     }
 
     /**

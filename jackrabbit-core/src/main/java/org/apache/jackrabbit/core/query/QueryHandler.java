@@ -19,13 +19,16 @@ package org.apache.jackrabbit.core.query;
 import java.io.IOException;
 import java.util.Iterator;
 
+import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.query.InvalidQueryException;
+import javax.jcr.query.qom.QueryObjectModel;
 
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.core.state.NodeState;
+import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelTree;
 
 /**
  * Defines an interface for the actual node indexing and query execution.
@@ -92,6 +95,21 @@ public interface QueryHandler {
      */
     void close() throws IOException;
 
+    /**
+     * Creates a new query by specifying the query Object model tree itself.
+     *
+     * @param sessionContext component context of the current session
+     * @param qomTree  the query object model tree.
+     * @param language the original query syntax from where the JQOM was
+     *                 created.
+     * @param node     a nt:query node where the query was read from or
+     *                 <code>null</code> if it is not a stored query.
+     *
+     * @throws InvalidQueryException if statement is invalid or language is unsupported.
+     * @return A <code>Query</code> object.
+     */
+    public QueryObjectModel createQueryObjectModel(SessionContext sessionContext, QueryObjectModelTree qomTree,
+                                                       String language, Node node) throws RepositoryException;
     /**
      * Creates a new query by specifying the query statement itself and the
      * language in which the query is stated.  If the query statement is
