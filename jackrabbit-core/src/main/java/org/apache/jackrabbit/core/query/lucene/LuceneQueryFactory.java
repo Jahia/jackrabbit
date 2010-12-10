@@ -411,7 +411,6 @@ public class LuceneQueryFactory {
         return filter;
     }
 
-
     protected Query create(
             Constraint constraint, Map<String, NodeType> selectorMap,
             JackrabbitIndexSearcher searcher)
