@@ -50,9 +50,9 @@ public class QueryObjectModelImpl extends QueryImpl implements QueryObjectModel 
     protected QueryObjectModelTree qomTree;
 
     /** Bind variables */
-    private final Map<String, Value> variables = new HashMap<String, Value>();
+    protected final Map<String, Value> variables = new HashMap<String, Value>();
 
-    private LuceneQueryFactory lqf;
+    protected LuceneQueryFactory lqf;
 
     /**
      * {@inheritDoc}

@@ -117,32 +117,32 @@ public class LuceneQueryFactory {
     /**
      * Session of the user executing this query
      */
-    private final SessionImpl session;
+    protected final SessionImpl session;
 
     /**
      * Node type manager
      */
-    private final NodeTypeManager ntManager;
+    protected final NodeTypeManager ntManager;
 
     /** Lucene search index */
-    private final SearchIndex index;
+    protected final SearchIndex index;
 
     /**
      * Namespace mappings to internal prefixes
      */
-    private final NamespaceMappings nsMappings;
+    protected final NamespaceMappings nsMappings;
 
     /**
      * NamePathResolver to map namespace mappings to internal prefixes
      */
-    private final NamePathResolver npResolver;
+    protected final NamePathResolver npResolver;
 
     /** Operand evaluator */
-    private final OperandEvaluator evaluator;
+    protected final OperandEvaluator evaluator;
 
-    private final String mixinTypesField;
+    protected final String mixinTypesField;
 
-    private final String primaryTypeField;
+    protected final String primaryTypeField;
 
     /**
      * Creates a new lucene query factory.
@@ -240,7 +240,7 @@ public class LuceneQueryFactory {
         }
     }
 
-    private Term createNodeTypeTerm(NodeType type) throws RepositoryException {
+    protected Term createNodeTypeTerm(NodeType type) throws RepositoryException {
         String field;
         if (type.isMixin()) {
             // search for nodes where jcr:mixinTypes is set to this mixin
@@ -296,7 +296,7 @@ public class LuceneQueryFactory {
         return Util.createMatchAllQuery(propName, index.getIndexFormatVersion());
     }
 
-    private Predicate mapConstraintToQueryAndFilter(
+    protected Predicate mapConstraintToQueryAndFilter(
             BooleanQuery query, Constraint constraint,
             Map<String, NodeType> selectorMap,
             JackrabbitIndexSearcher searcher, IndexReader reader)
@@ -357,7 +357,7 @@ public class LuceneQueryFactory {
         return filter;
     }
 
-    private Query create(
+    protected Query create(
             Constraint constraint, Map<String, NodeType> selectorMap,
             JackrabbitIndexSearcher searcher)
             throws RepositoryException, IOException {
@@ -392,7 +392,7 @@ public class LuceneQueryFactory {
         }
     }
 
-    private Query getDescendantNodeQuery(
+    protected Query getDescendantNodeQuery(
             DescendantNode dn, JackrabbitIndexSearcher searcher)
             throws RepositoryException, IOException {
         BooleanQuery query = new BooleanQuery();
@@ -423,7 +423,7 @@ public class LuceneQueryFactory {
         return query;
     }
 
-    private Query getFullTextSearchQuery(FullTextSearch fts)
+    protected Query getFullTextSearchQuery(FullTextSearch fts)
             throws RepositoryException {
         String field = FieldNames.FULLTEXT;
         String property = fts.getPropertyName();
@@ -445,7 +445,7 @@ public class LuceneQueryFactory {
         }
     }
 
-    private BooleanQuery getAndQuery(
+    protected BooleanQuery getAndQuery(
             And and, Map<String, NodeType> selectorMap,
             JackrabbitIndexSearcher searcher)
             throws RepositoryException, IOException {
@@ -457,7 +457,7 @@ public class LuceneQueryFactory {
         return query;
     }
 
-    private BooleanQuery getOrQuery(
+    protected BooleanQuery getOrQuery(
             Or or, Map<String, NodeType> selectorMap,
             JackrabbitIndexSearcher searcher)
             throws RepositoryException, IOException {
@@ -469,7 +469,7 @@ public class LuceneQueryFactory {
         return query;
     }
 
-    private void addBooleanConstraint(
+    protected void addBooleanConstraint(
             BooleanQuery query, Constraint constraint, Occur occur,
             Map<String, NodeType> selectorMap, JackrabbitIndexSearcher searcher)
             throws RepositoryException, IOException {
@@ -490,21 +490,21 @@ public class LuceneQueryFactory {
         }
     }
 
-    private NotQuery getNotQuery(
+    protected NotQuery getNotQuery(
             Not not, Map<String, NodeType> selectorMap,
             JackrabbitIndexSearcher searcher)
             throws RepositoryException, IOException {
         return new NotQuery(create(not.getConstraint(), selectorMap, searcher));
     }
 
-    private Query getPropertyExistenceQuery(PropertyExistence property)
+    protected Query getPropertyExistenceQuery(PropertyExistence property)
             throws RepositoryException {
         String name = npResolver.getJCRName(session.getQName(
                 property.getPropertyName()));
         return Util.createMatchAllQuery(name, index.getIndexFormatVersion());
     }
 
-    private static class Transform {
+    protected static class Transform {
 
         private final DynamicOperand operand;
 
@@ -534,7 +534,7 @@ public class LuceneQueryFactory {
         }
     }
 
-    private Query getComparisonQuery(
+    protected Query getComparisonQuery(
             DynamicOperand left, int transform, String operator,
             StaticOperand rigth, Map<String, NodeType> selectorMap)
             throws RepositoryException {
@@ -563,7 +563,7 @@ public class LuceneQueryFactory {
         }
     }
 
-    private Query getNodeNameQuery(
+    protected Query getNodeNameQuery(
             int transform, String operator, StaticOperand right)
             throws RepositoryException {
         if (transform != TRANSFORM_NONE
@@ -599,7 +599,7 @@ public class LuceneQueryFactory {
         }
     }
 
-    private Query getNodeLocalNameQuery(
+    protected Query getNodeLocalNameQuery(
             int transform, String operator, StaticOperand right)
             throws RepositoryException {
         if (transform != TRANSFORM_NONE
@@ -611,7 +611,7 @@ public class LuceneQueryFactory {
         return new JackrabbitTermQuery(new Term(LOCAL_NAME, name));
     }
 
-    private Query getNodeIdQuery(String field, String path)
+    protected Query getNodeIdQuery(String field, String path)
             throws RepositoryException {
         String value;
         try {
@@ -623,7 +623,7 @@ public class LuceneQueryFactory {
         return new JackrabbitTermQuery(new Term(field, value));
     }
 
-    private Query getPropertyValueQuery(
+    protected Query getPropertyValueQuery(
             String field, String operator, Value value,
             int type, int transform) throws RepositoryException {
         String string = getValueString(value, type);
@@ -669,11 +669,11 @@ public class LuceneQueryFactory {
         }
     }
 
-    private Term getTerm(String field, String value) {
+    protected Term getTerm(String field, String value) {
         return new Term(PROPERTIES, FieldNames.createNamedValue(field, value));
     }
 
-    private String getValueString(Value value, int type)
+    protected String getValueString(Value value, int type)
             throws RepositoryException {
         switch (value.getType()) {
         case DATE:
