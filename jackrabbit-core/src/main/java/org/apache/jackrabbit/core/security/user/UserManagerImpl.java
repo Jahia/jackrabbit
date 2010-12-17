@@ -17,10 +17,20 @@
 package org.apache.jackrabbit.core.security.user;
 
 import org.apache.jackrabbit.api.security.principal.ItemBasedPrincipal;
-import org.apache.jackrabbit.api.security.user.*;
-import org.apache.jackrabbit.core.*;
+import org.apache.jackrabbit.api.security.user.Authorizable;
+import org.apache.jackrabbit.api.security.user.AuthorizableExistsException;
+import org.apache.jackrabbit.api.security.user.Group;
+import org.apache.jackrabbit.api.security.user.Query;
+import org.apache.jackrabbit.api.security.user.User;
+import org.apache.jackrabbit.api.security.user.UserManager;
+import org.apache.jackrabbit.core.ItemImpl;
+import org.apache.jackrabbit.core.NodeImpl;
+import org.apache.jackrabbit.core.ProtectedItemModifier;
+import org.apache.jackrabbit.core.SessionImpl;
+import org.apache.jackrabbit.core.SessionListener;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.security.SystemPrincipal;
+import org.apache.jackrabbit.core.security.principal.EveryonePrincipal;
 import org.apache.jackrabbit.core.security.principal.PrincipalImpl;
 import org.apache.jackrabbit.core.session.SessionOperation;
 import org.apache.jackrabbit.spi.Name;
@@ -29,13 +39,25 @@ import org.apache.jackrabbit.util.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.jcr.*;
+import javax.jcr.AccessDeniedException;
+import javax.jcr.ItemExistsException;
+import javax.jcr.ItemNotFoundException;
+import javax.jcr.Node;
+import javax.jcr.NodeIterator;
+import javax.jcr.RepositoryException;
+import javax.jcr.UnsupportedRepositoryOperationException;
+import javax.jcr.Value;
 import javax.jcr.lock.LockException;
 import javax.jcr.nodetype.ConstraintViolationException;
 import javax.jcr.version.VersionException;
 import java.io.UnsupportedEncodingException;
 import java.security.Principal;
-import java.util.*;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+import java.util.Properties;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Default implementation of the <code>UserManager</code> interface with the
@@ -356,6 +378,18 @@ public class UserManagerImpl extends ProtectedItemModifier
         return membershipCache;
     }
 
+    /**
+     * Maximum number of properties on the group membership node structure under
+     * {@link UserConstants#N_MEMBERS} until additional intermediate nodes are inserted.
+     * If 0 (default), {@link UserConstants#P_MEMBERS} is used to record group
+     * memberships.
+     *
+     * @return
+     */
+    public int getGroupMembershipSplitSize() {
+        return groupMembershipSplitSize;
+    }
+
     //--------------------------------------------------------< UserManager >---
     /**
      * @see UserManager#getAuthorizable(String)
@@ -466,6 +500,9 @@ public class UserManagerImpl extends ProtectedItemModifier
         return new AuthorizableIterator(nodes);
     }
 
+    /**
+     * @see UserManager#findAuthorizables(Query)
+     */
     public Iterator<Authorizable> findAuthorizables(Query query) throws RepositoryException {
         XPathQueryBuilder builder = new XPathQueryBuilder();
         query.build(builder);
@@ -544,7 +581,7 @@ public class UserManagerImpl extends ProtectedItemModifier
      * @see UserManager#createGroup(java.security.Principal, String)
      */
     public Group createGroup(Principal principal, String intermediatePath) throws AuthorizableExistsException, RepositoryException {
-        checkValidPrincipal(principal);
+        checkValidPrincipal(principal, true);
         
         String groupID = getGroupId(principal.getName());
         return createGroup(groupID, principal, intermediatePath);
@@ -612,18 +649,6 @@ public class UserManagerImpl extends ProtectedItemModifier
         throw new UnsupportedRepositoryOperationException("Cannot change autosave behavior.");
     }
 
-    /**
-     * Maximum number of properties on the group membership node structure under
-     * {@link UserConstants#N_MEMBERS} until additional intermediate nodes are inserted.
-     * If 0 (default), {@link UserConstants#P_MEMBERS} is used to record group
-     * memberships.
-     *
-     * @return
-     */
-    public int getGroupMembershipSplitSize() {
-        return groupMembershipSplitSize;
-    }
-
     //--------------------------------------------------------------------------
     /**
      *
@@ -634,7 +659,7 @@ public class UserManagerImpl extends ProtectedItemModifier
      * @throws RepositoryException If another error occurs.
      */
     void setPrincipal(NodeImpl node, Principal principal) throws AuthorizableExistsException, RepositoryException {
-        checkValidPrincipal(principal);        
+        checkValidPrincipal(principal, node.isNodeType(NT_REP_GROUP));        
         /*
          Check if there is *another* authorizable with the same principal.
          The additional validation (nodes not be same) is required in order to
@@ -929,11 +954,15 @@ public class UserManagerImpl extends ProtectedItemModifier
      * Throws <code>IllegalArgumentException</code> if the specified principal
      * is <code>null</code> or if it's name is <code>null</code> or empty string.
      * @param principal
+     * @param isGroup
      */
-    private static void checkValidPrincipal(Principal principal) {
+    private static void checkValidPrincipal(Principal principal, boolean isGroup) {
         if (principal == null || principal.getName() == null || "".equals(principal.getName())) {
             throw new IllegalArgumentException("Principal may not be null and must have a valid name.");
         }
+        if (!isGroup && EveryonePrincipal.NAME.equals(principal.getName())) {
+            throw new IllegalArgumentException("'everyone' is a reserved group principal name.");
+    }
     }
 
     private static int parseMembershipSplitSize(Object param) {

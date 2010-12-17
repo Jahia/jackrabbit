@@ -94,22 +94,31 @@ class GroupImpl extends AuthorizableImpl implements Group {
      * @see Group#getDeclaredMembers()
      */
     public Iterator<Authorizable> getDeclaredMembers() throws RepositoryException {
+        if (isEveryone()) {
+            return userManager.findAuthorizables(getSession().getJCRName(P_PRINCIPAL_NAME), null, UserManager.SEARCH_TYPE_AUTHORIZABLE);
+        } else {
         return getMembers(false, UserManager.SEARCH_TYPE_AUTHORIZABLE);
+    }
     }
 
     /**
      * @see Group#getMembers()
      */
     public Iterator<Authorizable> getMembers() throws RepositoryException {
+        if (isEveryone()) {
+            return getDeclaredMembers();
+        } else {
         return getMembers(true, UserManager.SEARCH_TYPE_AUTHORIZABLE);
+    }
     }
 
     public boolean isDeclaredMember(Authorizable authorizable) throws RepositoryException {
         if (authorizable == null || !(authorizable instanceof AuthorizableImpl)
                 || getNode().isSame(((AuthorizableImpl) authorizable).getNode())) {
             return false;
-        }
-        else {
+        } else if (isEveryone()) {
+            return true;
+        } else {
             return getMembershipProvider(getNode()).hasMember((AuthorizableImpl) authorizable);
         }
     }
@@ -121,6 +130,8 @@ class GroupImpl extends AuthorizableImpl implements Group {
         if (authorizable == null || !(authorizable instanceof AuthorizableImpl)
                 || getNode().isSame(((AuthorizableImpl) authorizable).getNode())) {
             return false;
+        } else if (isEveryone()) {
+            return true;
         } else {
             String thisID = getID();
             AuthorizableImpl impl = (AuthorizableImpl) authorizable;
@@ -139,6 +150,9 @@ class GroupImpl extends AuthorizableImpl implements Group {
     public boolean addMember(Authorizable authorizable) throws RepositoryException {
         if (!(authorizable instanceof AuthorizableImpl)) {
             log.warn("Invalid Authorizable: {}", authorizable);
+            return false;
+        }
+        if (isEveryone() || ((AuthorizableImpl) authorizable).isEveryone()) {
             return false;
         }
 
@@ -165,6 +179,9 @@ class GroupImpl extends AuthorizableImpl implements Group {
     public boolean removeMember(Authorizable authorizable) throws RepositoryException {
         if (!(authorizable instanceof AuthorizableImpl)) {
             log.warn("Invalid Authorizable: {}", authorizable);
+            return false;
+        }
+        if (isEveryone()) {
             return false;
         }
 
@@ -242,7 +259,9 @@ class GroupImpl extends AuthorizableImpl implements Group {
     }
 
     //------------------------------------------------------< inner classes >---
-
+    /**
+     * Principal Implementation
+     */
     private class NodeBasedGroup extends NodeBasedPrincipal implements java.security.acl.Group {
 
         private Set<Principal> members;
@@ -269,21 +288,19 @@ class GroupImpl extends AuthorizableImpl implements Group {
          * @see java.security.acl.Group#isMember(Principal)
          */
         public boolean isMember(Principal member) {
-            Collection<Principal> members = getMembers();
-            if (members.contains(member)) {
-                // shortcut.
-                return true;
+            // shortcut for everyone group -> avoid collecting all members
+            // as all users and groups are member of everyone.
+            try {
+                if (isEveryone()) {
+                    return !getPrincipal().equals(member);
+            }
+            } catch (RepositoryException e) {
+                // continue using regular membership evaluation
             }
 
-            // test if member of a member-group
-            for (Principal p : members) {
-                if (p instanceof java.security.acl.Group &&
-                        ((java.security.acl.Group) p).isMember(member)) {
-                    return true;
+            Collection<Principal> members = getMembers();
+            return members.contains(member);
                 }
-            }
-            return false;
-        }
 
         /**
          * @return Always <code>false</code>. Group membership must be edited

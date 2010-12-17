@@ -25,11 +25,12 @@ import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.security.user.XPathQueryBuilder.Condition;
 import org.apache.jackrabbit.core.security.user.XPathQueryBuilder.RelationOp;
+import org.apache.jackrabbit.spi.commons.iterator.BoundedIterator;
 import org.apache.jackrabbit.spi.commons.iterator.Iterators;
 import org.apache.jackrabbit.spi.commons.iterator.Predicate;
 import org.apache.jackrabbit.spi.commons.iterator.Predicates;
 import org.apache.jackrabbit.spi.commons.iterator.Transformer;
-import org.apache.jackrabbit.test.api.util.Text;
+import org.apache.jackrabbit.util.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -77,8 +78,7 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
         if (bound != null) {
             if (sortCol == null) {
                 log.warn("Ignoring bound {} since no sort order is specified");
-            }
-            else {
+            } else {
                 Condition boundCondition = builder.property(sortCol, getCollation(sortDir), bound);
                 condition = condition == null 
                         ? boundCondition
@@ -106,15 +106,21 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
             return Iterators.empty();
         }
 
+        // If we are scoped to a group and have a limit, we have to apply the limit
+        // here (inefficient!) otherwise we can apply the limit in the query
+        if (builder.getGroupName() == null) {
+            if (offset > 0) {
+                query.setOffset(offset);
+            }
         if (maxCount > 0) {
             query.setLimit(maxCount);
         }
-
-        if (offset > 0) {
-            query.setOffset(offset);
+            return toAuthorizables(execute(query));
+        } else {
+            Iterator<Authorizable> result = toAuthorizables(execute(query));
+            Iterator<Authorizable> filtered = filter(result, builder.getGroupName(), builder.isDeclaredMembersOnly());
+            return BoundedIterator.create(offset, maxCount, filtered);
         }
-
-        return filter(toAuthorizables(execute(query)), builder.getGroupName(), builder.isDeclaredMembersOnly());
     }
 
     //------------------------------------------< ConditionVisitor >---
@@ -139,15 +145,13 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
         RelationOp relOp = condition.getOp();
         if (relOp == RelationOp.EX) {
             xPath.append(condition.getRelPath());
-        }
-        else if (relOp == RelationOp.LIKE) {
+        } else if (relOp == RelationOp.LIKE) {
             xPath.append("jcr:like(")
                  .append(condition.getRelPath())
                  .append(",'")
                  .append(condition.getPattern())
                  .append("')");
-        }
-        else {
+        } else {
             xPath.append(condition.getRelPath())
                  .append(condition.getOp().getOp())
                  .append(format(condition.getValue()));
@@ -202,6 +206,7 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
 
     /**
      * Escape <code>string</code> for matching in jcr escaped node names
+     *
      * @param string  string to escape
      * @return  escaped string
      */
@@ -215,12 +220,10 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
             if (j < 0) {
                 // jcr escape trail
                 result.append(Text.escapeIllegalJcrChars(string.substring(k)));
-            }
-            else if (j > 0 && string.charAt(j - 1) == '\\') {
+            } else if (j > 0 && string.charAt(j - 1) == '\\') {
                 // literal occurrence of % -> jcr escape
                 result.append(Text.escapeIllegalJcrChars(string.substring(k, j) + '%'));
-            }
-            else {
+            } else {
                 // wildcard occurrence of % -> jcr escape all but %
                 result.append(Text.escapeIllegalJcrChars(string.substring(k, j))).append('%');
             }
@@ -234,11 +237,9 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
     private String getNtName(Class<? extends Authorizable> selector) throws RepositoryException {
         if (User.class.isAssignableFrom(selector)) {
             return session.getJCRName(UserConstants.NT_REP_USER);
-        }
-        else if (Group.class.isAssignableFrom(selector)) {
+        } else if (Group.class.isAssignableFrom(selector)) {
             return session.getJCRName(UserConstants.NT_REP_GROUP);
-        }
-        else {
+        } else {
             return session.getJCRName(UserConstants.NT_REP_AUTHORIZABLE);
         }
     }
@@ -300,15 +301,10 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
                                           boolean declaredMembersOnly) throws RepositoryException {
 
         Predicate<Authorizable> predicate;
-        if (groupName == null) {
-            predicate = Predicates.TRUE();
-        }
-        else {
             Authorizable groupAuth = userManager.getAuthorizable(groupName);
             if (groupAuth == null || !groupAuth.isGroup()) {
                 predicate = Predicates.FALSE();
-            }
-            else {
+        } else {
                 final Group group = (Group) groupAuth;
                 if (declaredMembersOnly) {
                     predicate = new Predicate<Authorizable>() {
@@ -323,8 +319,7 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
                         }
                     };
 
-                }
-                else {
+            } else {
                     predicate = new Predicate<Authorizable>() {
                         public boolean evaluate(Authorizable authorizable) {
                             try {
@@ -338,7 +333,6 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
                     };
                 }
             }
-        }
 
         return Iterators.filterIterator(authorizables, predicate);
     }
