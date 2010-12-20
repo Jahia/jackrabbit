@@ -176,18 +176,21 @@ public class LuceneQueryFactory {
 
             Predicate filter = Predicate.TRUE;
             BooleanQuery query = new BooleanQuery();
+
+            QueryPair qp = new QueryPair(query);
+
             query.add(create(selector), MUST);
             if (constraint != null) {
                 String name = selector.getSelectorName();
                 NodeType type =
                     ntManager.getNodeType(selector.getNodeTypeName());
-                filter = mapConstraintToQueryAndFilter(
-                        query, constraint, Collections.singletonMap(name, type),
+                filter = mapConstraintToQueryAndFilter(qp,
+                        constraint, Collections.singletonMap(name, type),
                         searcher, reader);
             }
 
             List<Row> rows = new ArrayList<Row>();
-            QueryHits hits = searcher.evaluate(query);
+            QueryHits hits = searcher.evaluate(qp.mainQuery);
             ScoreNode node = hits.nextScoreNode();
             while (node != null) {
                 try {
@@ -297,7 +300,7 @@ public class LuceneQueryFactory {
     }
 
     protected Predicate mapConstraintToQueryAndFilter(
-            BooleanQuery query, Constraint constraint,
+            QueryPair query, Constraint constraint,
             Map<String, NodeType> selectorMap,
             JackrabbitIndexSearcher searcher, IndexReader reader)
             throws RepositoryException, IOException {
@@ -349,13 +352,18 @@ public class LuceneQueryFactory {
             } else {
                 Query cq = getComparisonQuery(
                         left, transform.transform, operator, right, selectorMap);
-                query.add(cq, MUST);
+                query.subQuery.add(cq, MUST);
             }
+        } else if (constraint instanceof DescendantNode) {
+            final DescendantNode descendantNode = (DescendantNode) constraint;
+            Query context = getNodeIdQuery(UUID, descendantNode.getAncestorPath());
+            query.mainQuery = new DescendantSelfAxisQuery(context, query.subQuery, false);
         } else {
-            query.add(create(constraint, selectorMap, searcher), MUST);
+            query.subQuery.add(create(constraint, selectorMap, searcher), MUST);
         }
         return filter;
     }
+
 
     protected Query create(
             Constraint constraint, Map<String, NodeType> selectorMap,
@@ -698,6 +706,16 @@ public class LuceneQueryFactory {
                 return string;
             }
         }
+    }
+
+    protected class QueryPair {
+        Query mainQuery;
+        BooleanQuery subQuery;
+
+        QueryPair(BooleanQuery mainQuery) {
+            this.mainQuery = mainQuery;
+            this.subQuery = mainQuery;
+}
     }
 
 }
