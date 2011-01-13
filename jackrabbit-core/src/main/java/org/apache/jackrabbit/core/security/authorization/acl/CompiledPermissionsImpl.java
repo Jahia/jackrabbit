@@ -238,7 +238,7 @@ class CompiledPermissionsImpl extends AbstractCompiledPermissions implements Acc
                 if (isAcItem) {
                     /* item defines ac content -> regular evaluation */
                     Result result = buildResult(node, isExistingNode, util.isAcItem(node), filter);
-                canRead = result.grants(Permission.READ);
+                    canRead = result.grants(Permission.READ);
                 } else {
                     /*
                      simplified evaluation focusing on READ permission. this allows

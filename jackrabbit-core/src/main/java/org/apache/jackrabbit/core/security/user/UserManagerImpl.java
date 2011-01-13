@@ -376,7 +376,7 @@ public class UserManagerImpl extends ProtectedItemModifier
      */
     public MembershipCache getMembershipCache() {
         return membershipCache;
-    }
+    }  
 
     /**
      * Maximum number of properties on the group membership node structure under
@@ -962,7 +962,7 @@ public class UserManagerImpl extends ProtectedItemModifier
         }
         if (!isGroup && EveryonePrincipal.NAME.equals(principal.getName())) {
             throw new IllegalArgumentException("'everyone' is a reserved group principal name.");
-    }
+        }
     }
 
     private static int parseMembershipSplitSize(Object param) {

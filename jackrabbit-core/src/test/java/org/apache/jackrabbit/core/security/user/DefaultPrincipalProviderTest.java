@@ -196,7 +196,8 @@ public class DefaultPrincipalProviderTest extends AbstractUserTest {
         } else {
             assertEquals(1, pit.getSize());
             assertEquals(EveryonePrincipal.getInstance(), pit.nextPrincipal());
-}    }
+        }
+    }
 
     public void testEveryonePrincipal2() throws Exception {
         Group g = null;

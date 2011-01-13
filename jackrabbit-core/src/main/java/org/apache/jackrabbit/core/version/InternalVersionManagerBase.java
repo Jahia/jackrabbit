@@ -611,20 +611,20 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
             InternalVersionHistoryImpl history,
             NodeStateEx node, boolean simple, Calendar created)
             throws RepositoryException {
-            String versionName = calculateCheckinVersionName(history, node, simple);
-            InternalVersionImpl v = history.checkin(
-                    NameFactoryImpl.getInstance().create("", versionName),
-                    node, created);
+        String versionName = calculateCheckinVersionName(history, node, simple);
+        InternalVersionImpl v = history.checkin(
+                NameFactoryImpl.getInstance().create("", versionName),
+                node, created);
 
-            // check for jcr:activity
+        // check for jcr:activity
         if (node.hasProperty(JCR_ACTIVITY)) {
             NodeId actId = node.getPropertyValue(JCR_ACTIVITY).getNodeId();
-                InternalActivityImpl act = (InternalActivityImpl) getItem(actId);
-                act.addVersion(v);
-            }
-
-            return v;
+            InternalActivityImpl act = (InternalActivityImpl) getItem(actId);
+            act.addVersion(v);
         }
+
+        return v;
+    }
 
     /**
      * Calculates the name of the new version that will be created by a

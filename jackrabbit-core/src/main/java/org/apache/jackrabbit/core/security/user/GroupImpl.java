@@ -97,8 +97,8 @@ class GroupImpl extends AuthorizableImpl implements Group {
         if (isEveryone()) {
             return userManager.findAuthorizables(getSession().getJCRName(P_PRINCIPAL_NAME), null, UserManager.SEARCH_TYPE_AUTHORIZABLE);
         } else {
-        return getMembers(false, UserManager.SEARCH_TYPE_AUTHORIZABLE);
-    }
+            return getMembers(false, UserManager.SEARCH_TYPE_AUTHORIZABLE);
+        }
     }
 
     /**
@@ -108,8 +108,8 @@ class GroupImpl extends AuthorizableImpl implements Group {
         if (isEveryone()) {
             return getDeclaredMembers();
         } else {
-        return getMembers(true, UserManager.SEARCH_TYPE_AUTHORIZABLE);
-    }
+            return getMembers(true, UserManager.SEARCH_TYPE_AUTHORIZABLE);
+        }
     }
 
     public boolean isDeclaredMember(Authorizable authorizable) throws RepositoryException {
@@ -293,14 +293,14 @@ class GroupImpl extends AuthorizableImpl implements Group {
             try {
                 if (isEveryone()) {
                     return !getPrincipal().equals(member);
-            }
+                }
             } catch (RepositoryException e) {
                 // continue using regular membership evaluation
             }
-
+           
             Collection<Principal> members = getMembers();
             return members.contains(member);
-                }
+        }
 
         /**
          * @return Always <code>false</code>. Group membership must be edited

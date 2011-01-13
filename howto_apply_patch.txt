@@ -1,8 +1,15 @@
 
 How to apply patches from the official Jackrabbit version to this forked version :
 
-1. svn diff -r OLD_REVISION_NUMBER > rOLD_REVISION_NUMBER-rNEW_REVISION_NUMBER.patch
-2. patch -p0 -E -i /Users/loom/java/technologies/apache-svn/jackrabbit/trunk/rOLD_REVISION_NUMBER-rNEW_REVISION_NUMBER.patch
-3. Compile using : mvn clean install (don't use package)
-4. Use the deploy_jars.sh script file to deploy both the code and the source code JARs. The deploy_sources_jar.sh
+1. svn diff -r OLD_REVISION_NUMBER[:NEW_REVISION_NUMBER] > rOLD_REVISION_NUMBER-rNEW_REVISION_NUMBER.patch
+
+2. Replace all version numbers in the fork to the same version number you are merging to, in order to avoid merge problems in the pom.xml file, you can then change it later again. Here is an example, replace all : <version>2.2.1-pre-rev1049525-patch3</version> with <version>2.2.1</version> only in files named pom.xml
+
+3. patch -p0 -E -i /Users/loom/java/technologies/apache-svn/jackrabbit/trunk/rOLD_REVISION_NUMBER-rNEW_REVISION_NUMBER.patch
+
+4. Verify patch has been correctly applied with diff tool such as FileMerge on Mac OS X or Araxis Merge on Windows. Also make sure to check all the *.rej files generated.
+
+5. Compile using : mvn clean install (don't use package)
+
+6. Use the deploy_jars.sh script file to deploy both the code and the source code JARs. The deploy_sources_jar.sh
 is no longer needed but left in case someone was still needing it.

@@ -406,10 +406,10 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
         return (InternalVersion) escFactory.doSourced(
                 (SessionImpl) session,
                 new SourcedTarget() {
-            public Object run() throws RepositoryException {
+                    public Object run() throws RepositoryException {
                         return checkin(node, created);
-                }
-        });
+                    }
+                });
     }
 
     /**

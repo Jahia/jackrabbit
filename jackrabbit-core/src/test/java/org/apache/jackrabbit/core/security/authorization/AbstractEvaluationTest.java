@@ -51,7 +51,7 @@ public abstract class AbstractEvaluationTest extends AbstractAccessControlTest {
     private String uid;
     protected User testUser;
     protected Credentials creds;
-    
+
     protected Group testGroup;    
     
     private Session testSession;
@@ -86,40 +86,40 @@ public abstract class AbstractEvaluationTest extends AbstractAccessControlTest {
     @Override
     protected void tearDown() throws Exception {
         try {
-        for (String path : toClear) {
-            try {
-                AccessControlPolicy[] policies = acMgr.getPolicies(path);
-                for (AccessControlPolicy policy : policies) {
-                    acMgr.removePolicy(path, policy);
+            for (String path : toClear) {
+                try {
+                    AccessControlPolicy[] policies = acMgr.getPolicies(path);
+                    for (AccessControlPolicy policy : policies) {
+                        acMgr.removePolicy(path, policy);
+                    }
+                    superuser.save();
+                } catch (RepositoryException e) {
+                    // log error and ignore
+                    log.debug(e.getMessage());
                 }
-                superuser.save();
-            } catch (RepositoryException e) {
-                // log error and ignore
-                log.debug(e.getMessage());
             }
-        }
 
-        if (testSession != null && testSession.isLive()) {
-            testSession.logout();
-        }
+            if (testSession != null && testSession.isLive()) {
+                testSession.logout();
+            }
             if (testGroup != null && testUser != null) {
                 if (testGroup.isDeclaredMember(testUser)) {
                     testGroup.removeMember(testUser);
                 }
                 testGroup.remove();
             }
-        if (uid != null) {
-            Authorizable a = getUserManager(superuser).getAuthorizable(uid);
-            if (a != null) {
-                a.remove();
+            if (uid != null) {
+                Authorizable a = getUserManager(superuser).getAuthorizable(uid);
+                if (a != null) {
+                    a.remove();
                 }
             }
             if (!getUserManager(superuser).isAutoSave() && superuser.hasPendingChanges()) {
                 superuser.save();
-        }
+            }
         } finally {
-        super.tearDown();
-    }
+            super.tearDown();
+        }
     }
 
     protected static UserManager getUserManager(Session session) throws

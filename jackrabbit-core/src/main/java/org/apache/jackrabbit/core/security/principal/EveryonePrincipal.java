@@ -70,7 +70,7 @@ public final class EveryonePrincipal implements java.security.acl.Group, Jackrab
             return true;
         } else if (obj instanceof JackrabbitPrincipal) {
             return NAME.equals(((JackrabbitPrincipal) obj).getName());
-    }
+        }
         return false;
-}
+    }
 }

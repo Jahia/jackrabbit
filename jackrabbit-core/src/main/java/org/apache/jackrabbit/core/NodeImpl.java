@@ -556,7 +556,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
      * @param id
      * @param newName
      * @throws RepositoryException
-     * @deprecated use #renameChildNode(NodeId, Name, boolean) 
+     * @deprecated use #renameChildNode(NodeId, Name, boolean)
      */
     protected void renameChildNode(Name oldName, int index, NodeId id,
                                    Name newName)
@@ -615,8 +615,8 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
 
         // notify target of removal
         try {
-        NodeImpl childNode = itemMgr.getNode(childId, getNodeId());
-        childNode.onRemove(getNodeId());
+            NodeImpl childNode = itemMgr.getNode(childId, getNodeId());
+            childNode.onRemove(getNodeId());
         } catch (ItemNotFoundException e) {
             boolean ignoreError = false;
             if (sessionContext.getSessionImpl().autoFixCorruptions()) {
@@ -681,9 +681,9 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
                 NodeId childId = entry.getId();
                 //NodeImpl childNode = (NodeImpl) itemMgr.getItem(childId);
                 try {
-                NodeImpl childNode = itemMgr.getNode(childId, getNodeId());
-                childNode.onRemove(thisState.getNodeId());
-                // remove the child node entry
+                    NodeImpl childNode = itemMgr.getNode(childId, getNodeId());
+                    childNode.onRemove(thisState.getNodeId());
+                    // remove the child node entry
                 } catch (ItemNotFoundException e) {
                     boolean ignoreError = false;
                     if (parentId != null && sessionContext.getSessionImpl().autoFixCorruptions()) {
@@ -1454,7 +1454,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
             log.debug(msg);
             throw new AccessDeniedException(msg);
         }
-        
+
         ArrayList<ChildNodeEntry> list = new ArrayList<ChildNodeEntry>(data.getNodeState().getChildNodeEntries());
         int srcInd = -1, destInd = -1;
         for (int i = 0; i < list.size(); i++) {

@@ -234,7 +234,7 @@ public class InternalXAVersionManager extends InternalVersionManagerBase
             throws RepositoryException {
         if (isInXA()) {
             return checkin(node, created);
-            } else {
+        } else {
             return vMgr.checkin(session, node, created);
         }
     }

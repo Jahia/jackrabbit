@@ -50,7 +50,7 @@ class EntryFilterImpl implements EntryFilter {
             public String getPath() throws RepositoryException {
                 Path p = sessionImpl.getHierarchyManager().getPath(id);
                 return sessionImpl.getJCRPath(p);
-    }
+            }
         };
     }
 
@@ -138,4 +138,5 @@ class EntryFilterImpl implements EntryFilter {
 
         String getPath() throws RepositoryException;
 
-}}
+    }
+}

@@ -44,7 +44,7 @@ import java.util.Iterator;
 
 /**
  * This evaluator for {@link org.apache.jackrabbit.api.security.user.Query}s use XPath
- * and some minimal client side filtering.  
+ * and some minimal client side filtering.
  */
 public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
     static final Logger log = LoggerFactory.getLogger(XPathQueryEvaluator.class);
@@ -62,8 +62,8 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
 
     public Iterator<Authorizable> eval() throws RepositoryException {
         xPath.append("//element(*,")
-             .append(getNtName(builder.getSelector()))
-             .append(')');
+                .append(getNtName(builder.getSelector()))
+                .append(')');
 
         Value bound = builder.getBound();
         long offset = builder.getOffset();
@@ -80,7 +80,7 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
                 log.warn("Ignoring bound {} since no sort order is specified");
             } else {
                 Condition boundCondition = builder.property(sortCol, getCollation(sortDir), bound);
-                condition = condition == null 
+                condition = condition == null
                         ? boundCondition
                         : builder.and(condition, boundCondition);
             }
@@ -94,9 +94,9 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
 
         if (sortCol != null) {
             xPath.append(" order by ")
-                 .append(sortCol)
-                 .append(' ')
-                 .append(sortDir.getDirection());
+                    .append(sortCol)
+                    .append(' ')
+                    .append(sortDir.getDirection());
         }
 
         QueryManager queryManager = session.getWorkspace().getQueryManager();
@@ -112,9 +112,9 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
             if (offset > 0) {
                 query.setOffset(offset);
             }
-        if (maxCount > 0) {
-            query.setLimit(maxCount);
-        }
+            if (maxCount > 0) {
+                query.setLimit(maxCount);
+            }
             return toAuthorizables(execute(query));
         } else {
             Iterator<Authorizable> result = toAuthorizables(execute(query));
@@ -129,16 +129,16 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
         String repPrincipal = session.getJCRName(UserConstants.P_PRINCIPAL_NAME);
 
         xPath.append('(')
-             .append("jcr:like(")
-             .append(repPrincipal)
-             .append(",'")
-             .append(condition.getPattern())
-             .append("')")
-             .append(" or ")
-             .append("jcr:like(fn:name(.),'")
-             .append(escape(condition.getPattern()))
-             .append("')")
-             .append(')');
+                .append("jcr:like(")
+                .append(repPrincipal)
+                .append(",'")
+                .append(condition.getPattern())
+                .append("')")
+                .append(" or ")
+                .append("jcr:like(fn:name(.),'")
+                .append(escape(condition.getPattern()))
+                .append("')")
+                .append(')');
     }
 
     public void visit(XPathQueryBuilder.PropertyCondition condition) throws RepositoryException {
@@ -147,29 +147,29 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
             xPath.append(condition.getRelPath());
         } else if (relOp == RelationOp.LIKE) {
             xPath.append("jcr:like(")
-                 .append(condition.getRelPath())
-                 .append(",'")
-                 .append(condition.getPattern())
-                 .append("')");
+                    .append(condition.getRelPath())
+                    .append(",'")
+                    .append(condition.getPattern())
+                    .append("')");
         } else {
             xPath.append(condition.getRelPath())
-                 .append(condition.getOp().getOp())
-                 .append(format(condition.getValue()));
+                    .append(condition.getOp().getOp())
+                    .append(format(condition.getValue()));
         }
     }
 
     public void visit(XPathQueryBuilder.ContainsCondition condition) {
         xPath.append("jcr:contains(")
-             .append(condition.getRelPath())
-             .append(",'")
-             .append(condition.getSearchExpr())
-             .append("')");
+                .append(condition.getRelPath())
+                .append(",'")
+                .append(condition.getSearchExpr())
+                .append("')");
     }
 
     public void visit(XPathQueryBuilder.ImpersonationCondition condition) {
         xPath.append("@rep:impersonators='")
-             .append(condition.getName())
-             .append('\'');
+                .append(condition.getName())
+                .append('\'');
     }
 
     public void visit(XPathQueryBuilder.NotCondition condition) throws RepositoryException {
@@ -207,8 +207,8 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
     /**
      * Escape <code>string</code> for matching in jcr escaped node names
      *
-     * @param string  string to escape
-     * @return  escaped string
+     * @param string string to escape
+     * @return escaped string
      */
     public static String escape(String string) {
         StringBuilder result = new StringBuilder();
@@ -301,38 +301,38 @@ public class XPathQueryEvaluator implements XPathQueryBuilder.ConditionVisitor {
                                           boolean declaredMembersOnly) throws RepositoryException {
 
         Predicate<Authorizable> predicate;
-            Authorizable groupAuth = userManager.getAuthorizable(groupName);
-            if (groupAuth == null || !groupAuth.isGroup()) {
-                predicate = Predicates.FALSE();
+        Authorizable groupAuth = userManager.getAuthorizable(groupName);
+        if (groupAuth == null || !groupAuth.isGroup()) {
+            predicate = Predicates.FALSE();
         } else {
-                final Group group = (Group) groupAuth;
-                if (declaredMembersOnly) {
-                    predicate = new Predicate<Authorizable>() {
-                        public boolean evaluate(Authorizable authorizable) {
-                            try {
-                                return authorizable != null && group.isDeclaredMember(authorizable);
-                            } catch (RepositoryException e) {
-                                log.warn("Cannot determine whether {} is member of group {}", authorizable, group);
-                                log.debug(e.getMessage(), e);
-                                return false;
-                            }
+            final Group group = (Group) groupAuth;
+            if (declaredMembersOnly) {
+                predicate = new Predicate<Authorizable>() {
+                    public boolean evaluate(Authorizable authorizable) {
+                        try {
+                            return authorizable != null && group.isDeclaredMember(authorizable);
+                        } catch (RepositoryException e) {
+                            log.warn("Cannot determine whether {} is member of group {}", authorizable, group);
+                            log.debug(e.getMessage(), e);
+                            return false;
                         }
-                    };
+                    }
+                };
 
             } else {
-                    predicate = new Predicate<Authorizable>() {
-                        public boolean evaluate(Authorizable authorizable) {
-                            try {
-                                return authorizable != null && group.isMember(authorizable);
-                            } catch (RepositoryException e) {
-                                log.warn("Cannot determine whether {} is member of group {}", authorizable, group);
-                                log.debug(e.getMessage(), e);
-                                return false;
-                            }
+                predicate = new Predicate<Authorizable>() {
+                    public boolean evaluate(Authorizable authorizable) {
+                        try {
+                            return authorizable != null && group.isMember(authorizable);
+                        } catch (RepositoryException e) {
+                            log.warn("Cannot determine whether {} is member of group {}", authorizable, group);
+                            log.debug(e.getMessage(), e);
+                            return false;
                         }
-                    };
-                }
+                    }
+                };
             }
+        }
 
         return Iterators.filterIterator(authorizables, predicate);
     }
