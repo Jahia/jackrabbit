@@ -575,7 +575,8 @@ abstract public class VersionManagerImplRestore extends VersionManagerImplBase {
 
                 // check existing version of item exists
                 if (restoredChild == null) {
-// Jahia patch - Do not restore childVersionHistory nodes                    
+                    // Jahia patch - Do not restore childVersionHistory nodes
+                    v = null;
 //                    if (v == null) {
 //                        // if version selector was unable to select version,
 //                        // choose the initial one
