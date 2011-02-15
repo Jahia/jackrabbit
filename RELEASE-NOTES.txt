@@ -1,4 +1,4 @@
-Release Notes -- Apache Jackrabbit -- Version 2.2.1
+Release Notes -- Apache Jackrabbit -- Version 2.2.4
 
 Introduction
 ------------
@@ -7,27 +7,23 @@ This is Apache Jackrabbit(TM) 2.2, a fully compliant implementation of the
 Content Repository for Java(TM) Technology API, version 2.0 (JCR 2.0) as
 specified in the Java Specification Request 283 (JSR 283).
 
-Apache Jackrabbit 2.2.1 is patch release that contains fixes and
-improvements over Jackrabbit 2.2.0. This release is fully compatible
-with earlier 2.x.x releases.
+Apache Jackrabbit 2.2.4 is patch release that contains fixes and
+improvements over previous 2.2.x releases. This release is fully
+compatible with earlier 2.x.x releases.
 
 Changes in this release
 -----------------------
 
-Improvements
-
-  [JCR-2835] Poor performance of ISDESCENDANTNODE on SQL 2 queries
-  [JCR-2841] Avoid path resolution in case of non-wildcard ACEs ...
-  [JCR-2845] NodeBasedGroup#isMember(Principal) should have shortcut ...
-
 Bug fixes
 
-  [JCR-1301] Trouble undeploying jackrabbit-webapp from Tomcat
-  [JCR-2836] Unclosed threads in Jackrabbit
-  [JCR-2840] Inconsistencies if "everyone" Group is created by User Management
-  [JCR-2843] ConstraintSplitter.getSelectorNames doesn't support ...
-  [JCR-2844] MaxCount not working correctly in user/group query when ...
-  [JCR-2850] RMI problems prevent proper startup of the Jackrabbit webapp
+  [JCR-2855] Writers blocked forever when waiting on update operations
+  [JCR-2865] a dead lock in DefaultISMLocking
+  [JCR-2868] A failure to connect to a MySQL database when JackRabbit ...
+  [JCR-2869] AccessControlManager#setPolicy may fail for new ...
+  [JCR-2870] Transient Repository cannot be used more than once when ...
+  [JCR-2872] DataStore: changing the modified date fails if the file is ...
+  [JCR-2881] Deadlock on version operations in a clustered environment
+  [JCR-2882] DatabaseJournal: java.lang.IllegalStateException: already in ...
 
 For more detailed information about all the changes in this and other
 Jackrabbit releases, please see the Jackrabbit issue tracker at

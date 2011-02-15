@@ -102,6 +102,7 @@ import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.ManagedMLRUItemStateCacheFactory;
 import org.apache.jackrabbit.core.state.SharedItemStateManager;
 import org.apache.jackrabbit.core.util.RepositoryLockMechanism;
+import org.apache.jackrabbit.core.version.InternalVersionManager;
 import org.apache.jackrabbit.core.version.InternalVersionManagerImpl;
 import org.apache.jackrabbit.core.xml.ClonedInputSource;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
@@ -391,6 +392,8 @@ public class RepositoryImpl extends AbstractRepository
                     // startup exception and only log it
                     log.error("In addition to startup fail, another unexpected problem " +
                     		"occurred while shutting down the repository again.", t);
+                    // Clear the repository lock if it was left in place
+                    repLock.release();
                 }
             }
         }
@@ -1113,7 +1116,10 @@ public class RepositoryImpl extends AbstractRepository
         }
 
         try {
-            context.getInternalVersionManager().close();
+            InternalVersionManager m = context.getInternalVersionManager();
+            if (m != null) {
+                m.close();
+            }
         } catch (Exception e) {
             log.error("Error while closing Version Manager.", e);
         }
@@ -2010,13 +2016,7 @@ public class RepositoryImpl extends AbstractRepository
                     new File(config.getHomeDir()), fs,
                     config.getPersistenceManagerConfig());
 
-            // JCR-2551: Recovery from a lost version history
-            if (Boolean.getBoolean("org.apache.jackrabbit.version.recovery")) {
-                RepositoryChecker checker = new RepositoryChecker(
-                        persistMgr, context.getInternalVersionManager());
-                checker.check(ROOT_NODE_ID, true);
-                checker.fix();
-            }
+            doVersionRecovery();
 
             ISMLocking ismLocking = config.getISMLocking();
 
@@ -2048,6 +2048,19 @@ public class RepositoryImpl extends AbstractRepository
 
             // register the observation factory of that workspace
             delegatingDispatcher.addDispatcher(dispatcher);
+        }
+
+        /**
+         * If necessary, recover from a lost version history.
+         */
+        protected void doVersionRecovery() throws RepositoryException {
+            // JCR-2551: Recovery from a lost version history
+            if (Boolean.getBoolean("org.apache.jackrabbit.version.recovery")) {
+                RepositoryChecker checker = new RepositoryChecker(
+                        persistMgr, context.getInternalVersionManager());
+                checker.check(ROOT_NODE_ID, true);
+                checker.fix();
+            }
         }
 
         /**
