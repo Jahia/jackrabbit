@@ -86,10 +86,17 @@ public class JackrabbitQueryParser extends QueryParser {
                     // escape tilde so we can use it for similarity query
                     rewritten.append("\\");
                 }
+                if (escaped) {
+                    rewritten.append('\\');
+                    escaped = false;
+                }
                 rewritten.append('~');
             } else if (textsearch.charAt(i) == ':') {
                 // fields as known in lucene are not supported
                 rewritten.append("\\:");
+                if (escaped) {
+                    escaped = false;
+                }
             } else {
                 if (escaped) {
                     rewritten.append('\\');
