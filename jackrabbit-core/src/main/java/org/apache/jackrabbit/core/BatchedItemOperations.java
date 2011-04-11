@@ -1251,7 +1251,7 @@ public class BatchedItemOperations extends ItemValidator {
         prop.setMultiValued(def.isMultiple());
 
         // compute system generated values if necessary
-        new NodeTypeInstanceHandler(session.getUserID()).setDefaultValues(
+        session.getNodeTypeInstanceHandler().setDefaultValues(
                 prop, parent, def);
 
         // now add new property entry to parent

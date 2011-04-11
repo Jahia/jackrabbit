@@ -460,6 +460,14 @@ public class SessionImpl extends AbstractSession
     }
 
     /**
+     * Returns the node type instance handler for this session
+     * @return the node type instance handler.
+     */
+    public NodeTypeInstanceHandler getNodeTypeInstanceHandler() throws RepositoryException {
+        return context.getWorkspace().getNodeTypeInstanceHandlerFactory().getNodeTypeInstanceHandler(userId);
+    }
+
+    /**
      * Sets the named attribute. If the value is <code>null</code>, then
      * the named attribute is removed.
      *

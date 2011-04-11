@@ -138,6 +138,11 @@ public class WorkspaceImpl extends AbstractWorkspace
     private RetentionRegistry retentionRegistry;
 
     /**
+     * The NodeTypeInstanceHandlerFactory used to initialize new nodes
+     */
+    private NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory;
+
+    /**
      * Creates a new workspace instance
      *
      * @param context component context of this session
@@ -542,6 +547,23 @@ public class WorkspaceImpl extends AbstractWorkspace
                 context.getRepository().getRetentionRegistry(wspConfig.getName());
         }
         return retentionRegistry;
+    }
+
+    /**
+     * Return the internal NodeType instance handler associated to this workspace.
+     * If not already done, creates a new instance.
+     *
+     * @return effective NodeType Instance Handler for this workspace
+     * @throws RepositoryException if an error occurs
+     */
+    synchronized NodeTypeInstanceHandlerFactory getNodeTypeInstanceHandlerFactory() throws RepositoryException {
+        // check state of this instance
+        sanityCheck();
+        if (nodeTypeInstanceHandlerFactory == null) {
+            nodeTypeInstanceHandlerFactory =
+                context.getRepository().getNodeTypeInstanceHandlerFactory(wspConfig.getName());
+        }
+        return nodeTypeInstanceHandlerFactory;
     }
 
     //------------------------------------------------------------< Workspace >

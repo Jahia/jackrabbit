@@ -891,6 +891,21 @@ public class RepositoryImpl extends AbstractRepository
     }
 
     /**
+     * Returns the {@link NodeTypeInstanceHandlerFactory} for the workspace with name
+     * <code>workspaceName</code>
+     *
+     * @param workspaceName workspace name
+     * @return <code>NodeTypeInstanceHandlerFactory</code> for the workspace
+     * @throws NoSuchWorkspaceException if such a workspace does not exist
+     * @throws RepositoryException      if some other error occurs
+     */
+    NodeTypeInstanceHandlerFactory getNodeTypeInstanceHandlerFactory(String workspaceName) throws NoSuchWorkspaceException, RepositoryException {
+        // check sanity of this instance
+        sanityCheck();
+        return getWorkspaceInfo(workspaceName).getNodeTypeInstanceHandlerFactory();
+    }
+
+    /**
      * Returns the {@link SystemSession} for the workspace with name
      * <code>workspaceName</code>
      *
@@ -1662,6 +1677,12 @@ public class RepositoryImpl extends AbstractRepository
         private RetentionRegistryImpl retentionReg;
 
         /**
+         * internal manager for evaluation of effective retention policies
+         * and holds
+         */
+        private NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory;
+
+        /**
          * flag indicating whether this instance has been initialized.
          */
         private boolean initialized;
@@ -1921,6 +1942,24 @@ public class RepositoryImpl extends AbstractRepository
                     retentionReg = new RetentionRegistryImpl(getSystemSession(), fs);
                 }
                 return retentionReg;
+            }
+        }
+
+        /**
+         * Return manager used for evaluating effect retention and holds.
+         *
+         * @return
+         * @throws RepositoryException
+         */
+        protected NodeTypeInstanceHandlerFactory getNodeTypeInstanceHandlerFactory() throws RepositoryException {
+            if (!isInitialized()) {
+                throw new IllegalStateException("workspace '" + getName() + "' not initialized");
+            }
+            synchronized (this) {
+                if (nodeTypeInstanceHandlerFactory == null) {
+                    nodeTypeInstanceHandlerFactory = config.getNodeTypeInstanceHandlerFactory();
+                }
+                return nodeTypeInstanceHandlerFactory;
             }
         }
 
