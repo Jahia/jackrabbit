@@ -111,7 +111,7 @@
     it is used to create the initial workspace if there's no workspace yet
     and for creating additional workspaces through the api
 -->
-<!ELEMENT Workspace (FileSystem,PersistenceManager,SearchIndex?,ISMLocking?,WorkspaceSecurity?,Import?)>
+<!ELEMENT Workspace (FileSystem,PersistenceManager,SearchIndex?,ISMLocking?,WorkspaceSecurity?,Import?,NodeTypeInstanceHandler?)>
 <!ATTLIST Workspace name CDATA #REQUIRED>
 
 <!--
@@ -179,6 +179,13 @@
 -->
 <!ELEMENT ISMLocking (param*)>
 <!ATTLIST ISMLocking class CDATA #REQUIRED>
+
+<!--
+    the NodeTypeInstanceHandler element configures the implementation
+    to be used to initialize new node instances.
+-->
+<!ELEMENT NodeTypeInstanceHandler (param*)>
+<!ATTLIST NodeTypeInstanceHandler class CDATA #REQUIRED>
 
 <!--
     the RepositoryLockMechanism element configures the mechanism
