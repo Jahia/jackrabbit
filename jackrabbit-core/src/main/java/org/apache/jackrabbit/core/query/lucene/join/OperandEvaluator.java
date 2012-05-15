@@ -158,7 +158,8 @@ public class OperandEvaluator {
         } else if (operand instanceof NodeName) {
             NodeName nn = (NodeName) operand;
             Node node = row.getNode(nn.getSelectorName());
-            return new Value[] { factory.createValue(node.getName(), NAME) };
+            return node != null ? new Value[] { factory.createValue(
+                    node.getName(), NAME) } : new Value[0];
         } else if (operand instanceof Length) {
             return getLengthValues((Length) operand, row);
         } else if (operand instanceof LowerCase) {
@@ -254,12 +255,17 @@ public class OperandEvaluator {
      */
     private Value[] getNodeLocalNameValues(NodeLocalName operand, Row row)
             throws RepositoryException {
-        String name = row.getNode(operand.getSelectorName()).getName();
-        int colon = name.indexOf(':');
-        if (colon != -1) {
-            name = name.substring(colon + 1);
+        Node node = row.getNode(operand.getSelectorName());
+        if (node != null) {
+            String name = node.getName();
+            int colon = name.indexOf(':');
+            if (colon != -1) {
+                name = name.substring(colon + 1);
+            }
+            return new Value[] { factory.createValue(name, NAME) };
+        } else {
+            return new Value[0];
         }
-        return new Value[] { factory.createValue(name, NAME) };
     }
 
     /**
