@@ -40,7 +40,6 @@ import org.xml.sax.SAXException;
 /**
  * <code>SysViewImportHandler</code>  ...
  */
-@SuppressWarnings({"ThrowableInstanceNeverThrown"})
 class SysViewImportHandler extends TargetImportHandler {
 
     /**
@@ -111,6 +110,7 @@ class SysViewImportHandler extends TargetImportHandler {
     /**
      * {@inheritDoc}
      */
+    @Override
     public void startElement(String namespaceURI, String localName,
                              String qName, Attributes atts)
             throws SAXException {
@@ -154,7 +154,7 @@ class SysViewImportHandler extends TargetImportHandler {
 
             // property name (value of sv:name attribute)
             String svName = getAttribute(atts, NameConstants.SV_NAME);
-            if (name == null) {
+            if (svName == null) {
                 throw new SAXException(new InvalidSerializedDataException(
                         "missing mandatory sv:name attribute of element sv:property"));
             }
@@ -198,6 +198,7 @@ class SysViewImportHandler extends TargetImportHandler {
     /**
      * {@inheritDoc}
      */
+    @Override
     public void characters(char[] ch, int start, int length)
             throws SAXException {
         if (currentPropValue != null) {
@@ -214,6 +215,7 @@ class SysViewImportHandler extends TargetImportHandler {
     /**
      * {@inheritDoc}
      */
+    @Override
     public void ignorableWhitespace(char[] ch, int start, int length)
             throws SAXException {
         if (currentPropValue != null) {
@@ -233,6 +235,7 @@ class SysViewImportHandler extends TargetImportHandler {
     /**
      * {@inheritDoc}
      */
+    @Override
     public void endElement(String namespaceURI, String localName, String qName)
             throws SAXException {
         Name name = NameFactoryImpl.getInstance().create(namespaceURI, localName);
@@ -321,7 +324,7 @@ class SysViewImportHandler extends TargetImportHandler {
     /**
      * The state of parsing the XML stream.
      */
-    class ImportState {
+    static class ImportState {
         /**
          * name of current node
          */

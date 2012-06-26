@@ -16,8 +16,8 @@
  */
 package org.apache.jackrabbit.core.security.authorization.principalbased;
 
-import org.apache.commons.collections.map.LRUMap;
 import org.apache.jackrabbit.api.security.principal.PrincipalManager;
+import org.apache.jackrabbit.core.cache.GrowingLRUMap;
 import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.id.ItemId;
@@ -31,6 +31,8 @@ import org.apache.jackrabbit.core.security.authorization.AccessControlListener;
 import org.apache.jackrabbit.core.security.authorization.AccessControlModifications;
 import org.apache.jackrabbit.core.security.authorization.CompiledPermissions;
 import org.apache.jackrabbit.core.security.authorization.Permission;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeBits;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeManagerImpl;
 import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.security.authorization.UnmodifiableAccessControlList;
 import org.apache.jackrabbit.spi.Path;
@@ -67,7 +69,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * <code>CombinedProvider</code>...
+ * <code>ACLProvider</code>...
  */
 public class ACLProvider extends AbstractAccessControlProvider implements AccessControlConstants {
 
@@ -77,7 +79,6 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
     private ACLEditor editor;
 
     private EntriesCache entriesCache;
-    private int readBits;
 
     //----------------------------------------------< AccessControlProvider >---
     /**
@@ -97,9 +98,8 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
             acRoot = root.addNode(N_ACCESSCONTROL, NT_REP_ACCESS_CONTROL, null);
         }
 
-        editor = new ACLEditor(session, resolver.getQPath(acRoot.getPath()));
+        editor = new ACLEditor(session, session.getQPath(acRoot.getPath()));
         entriesCache = new EntriesCache(session, editor, acRoot.getPath());
-        readBits = PrivilegeRegistry.getBits(new Privilege[] {session.getAccessControlManager().privilegeFromName(Privilege.JCR_READ)});
 
         // TODO: replace by configurable default policy (see JCR-2331)
         if (!configuration.containsKey(PARAM_OMIT_DEFAULT_PERMISSIONS)) {
@@ -155,7 +155,10 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
             log.debug("... policy for principal  '"+principal.getName()+"'  already present.");
         }
     }
-    
+
+    /**
+     * @see org.apache.jackrabbit.core.security.authorization.AccessControlProvider#close()
+     */
     @Override
     public void close() {
         super.close();        
@@ -166,6 +169,12 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
      * @see org.apache.jackrabbit.core.security.authorization.AccessControlProvider#getEffectivePolicies(org.apache.jackrabbit.spi.Path,org.apache.jackrabbit.core.security.authorization.CompiledPermissions)
      */
     public AccessControlPolicy[] getEffectivePolicies(Path absPath, CompiledPermissions permissions) throws ItemNotFoundException, RepositoryException {
+        if (absPath == null) {
+            // TODO: JCR-2774
+            log.warn("TODO: JCR-2774 - Repository level permissions.");
+            return new AccessControlPolicy[0];
+        }
+
         String jcrPath = session.getJCRPath(absPath);
         String pName = ISO9075.encode(session.getJCRName(ACLTemplate.P_NODE_PATH));
         int ancestorCnt = absPath.getAncestorCount();
@@ -307,12 +316,7 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
         private boolean canReadAll;
 
         @SuppressWarnings("unchecked")
-        private final Map<ItemId, Boolean> readCache = new LRUMap(1024) {
-            @Override
-            protected boolean removeLRU(LinkEntry entry) {
-                return size() > 5000;
-            }
-        };
+        private final Map<ItemId, Boolean> readCache = new GrowingLRUMap(1024, 5000);
 
         private final Object monitor = new Object();
 
@@ -362,7 +366,7 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
             if (canReadAll) {
                 for (AccessControlEntry entry : entries) {
                     AccessControlEntryImpl ace = (AccessControlEntryImpl) entry;
-                    if (!ace.isAllow() && ((ace.getPrivilegeBits() & readBits) == readBits)) {
+                    if (!ace.isAllow() && ace.getPrivilegeBits().includesRead()) {
                         // found an ace that defines read deny for a sub tree
                         // -> canReadAll is false.
                         canReadAll = false;
@@ -389,6 +393,20 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
             return buildResult(jcrPath, isAcItem);
         }
 
+        @Override
+        protected Result buildRepositoryResult() throws RepositoryException {
+            log.warn("TODO: JCR-2774 - Repository level permissions.");
+            PrivilegeManagerImpl pm = getPrivilegeManagerImpl();
+            return new Result(Permission.NONE, Permission.NONE, PrivilegeBits.EMPTY, PrivilegeBits.EMPTY);        
+        }
+
+        /**
+         * @see AbstractCompiledPermissions#getPrivilegeManagerImpl()
+         */
+        @Override
+        protected PrivilegeManagerImpl getPrivilegeManagerImpl() throws RepositoryException {
+            return ACLProvider.this.getPrivilegeManagerImpl();
+        }
 
         /**
          * Loop over all entries and evaluate allows/denies for those matching
@@ -396,7 +414,7 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
          * 
          * @param targetPath Path used for the evaluation; pointing to an
          * existing or non-existing item.
-         * @param isAcItem the item
+         * @param isAcItem the item.
          * @return the result
          * @throws RepositoryException if an error occurs
          */
@@ -404,10 +422,11 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
                                    boolean isAcItem) throws RepositoryException {
             int allows = Permission.NONE;
             int denies = Permission.NONE;
-            int allowPrivileges = PrivilegeRegistry.NO_PRIVILEGE;
-            int denyPrivileges = PrivilegeRegistry.NO_PRIVILEGE;
-            int parentAllows = PrivilegeRegistry.NO_PRIVILEGE;
-            int parentDenies = PrivilegeRegistry.NO_PRIVILEGE;
+
+            PrivilegeBits allowBits = PrivilegeBits.getInstance();
+            PrivilegeBits denyBits = PrivilegeBits.getInstance();
+            PrivilegeBits parentAllowBits = PrivilegeBits.getInstance();
+            PrivilegeBits parentDenyBits = PrivilegeBits.getInstance();
 
             String parentPath = Text.getRelativeParent(targetPath, 1);
             for (AccessControlEntry entry : entries) {
@@ -416,30 +435,31 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
                     continue;
                 }
                 ACLTemplate.Entry entr = (ACLTemplate.Entry) entry;
-                int privs = entr.getPrivilegeBits();
+                PrivilegeBits privs = entr.getPrivilegeBits();
 
                 if (!"".equals(parentPath) && entr.matches(parentPath)) {
                     if (entr.isAllow()) {
-                        parentAllows |= Permission.diff(privs, parentDenies);
+                        parentAllowBits.addDifference(privs, parentDenyBits);
                     } else {
-                        parentDenies |= Permission.diff(privs, parentAllows);
+                        parentDenyBits.addDifference(privs, parentAllowBits);
                     }
                 }
 
                 boolean matches = entr.matches(targetPath);
                 if (matches) {
                     if (entr.isAllow()) {
-                        allowPrivileges |= Permission.diff(privs, denyPrivileges);
-                        int permissions = PrivilegeRegistry.calculatePermissions(allowPrivileges, parentAllows, true, isAcItem);
+                        allowBits.addDifference(privs, denyBits);
+                        int permissions = PrivilegeRegistry.calculatePermissions(allowBits, parentAllowBits, true, isAcItem);
                         allows |= Permission.diff(permissions, denies);
                     } else {
-                        denyPrivileges |= Permission.diff(privs, allowPrivileges);
-                        int permissions = PrivilegeRegistry.calculatePermissions(denyPrivileges, parentDenies, false, isAcItem);
+                        denyBits.addDifference(privs, allowBits);
+                        int permissions = PrivilegeRegistry.calculatePermissions(denyBits, parentDenyBits, false, isAcItem);
                         denies |= Permission.diff(permissions, allows);
                     }
                 }
             }
-            return new Result(allows, denies, allowPrivileges, denyPrivileges);
+
+            return new Result(allows, denies, allowBits, denyBits);
         }
 
         //--------------------------------------------< CompiledPermissions >---

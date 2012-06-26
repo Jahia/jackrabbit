@@ -24,8 +24,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Executor;
-
 import javax.jcr.NamespaceException;
 import javax.jcr.Node;
 import javax.jcr.RepositoryException;
@@ -38,7 +36,6 @@ import javax.jcr.query.qom.QueryObjectModel;
 import org.apache.jackrabbit.core.config.SearchConfig;
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.id.NodeId;
-import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
 import org.apache.jackrabbit.core.observation.EventImpl;
 import org.apache.jackrabbit.core.observation.SynchronousEventListener;
 import org.apache.jackrabbit.core.persistence.PersistenceManager;
@@ -46,6 +43,7 @@ import org.apache.jackrabbit.core.query.AbstractQueryImpl;
 import org.apache.jackrabbit.core.query.QueryHandler;
 import org.apache.jackrabbit.core.query.QueryHandlerContext;
 import org.apache.jackrabbit.core.query.QueryHandlerFactory;
+import org.apache.jackrabbit.core.query.QueryObjectModelImpl;
 import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.NodeState;
@@ -113,28 +111,28 @@ public class SearchManager implements SynchronousEventListener {
     /**
      * Creates a new <code>SearchManager</code>.
      *
-     * @param config         the search configuration.
-     * @param nsReg          the namespace registry.
-     * @param ntReg          the node type registry.
-     * @param itemMgr        the shared item state manager.
-     * @param pm             the underlying persistence manager.
-     * @param rootNodeId     the id of the root node.
-     * @param parentMgr      the parent search manager or <code>null</code> if
-     *                       there is no parent search manager.
-     * @param excludedNodeId id of the node that should be excluded from
-     *                       indexing. Any descendant of that node will also be
-     *                       excluded from indexing.
+     * @param workspace          the workspace name
+     * @param repositoryContext  the repository context        
+     * @param qhf                the query handler factory
+     * @param itemMgr            the shared item state manager.
+     * @param pm                 the underlying persistence manager.
+     * @param rootNodeId         the id of the root node.
+     * @param parentMgr          the parent search manager or <code>null</code> if
+     *                           there is no parent search manager.
+     * @param excludedNodeId     id of the node that should be excluded from
+     *                           indexing. Any descendant of that node will also be
+     *                           excluded from indexing.
      * @throws RepositoryException if the search manager cannot be initialized
      */
     public SearchManager(
+            String workspace,
             RepositoryContext repositoryContext,
             QueryHandlerFactory qhf,
-                         SharedItemStateManager itemMgr,
-                         PersistenceManager pm,
-                         NodeId rootNodeId,
-                         SearchManager parentMgr,
-                         NodeId excludedNodeId,
-                         Executor executor) throws RepositoryException {
+            SharedItemStateManager itemMgr,
+            PersistenceManager pm,
+            NodeId rootNodeId,
+            SearchManager parentMgr,
+            NodeId excludedNodeId) throws RepositoryException {
         this.nsReg = repositoryContext.getNamespaceRegistry();
         this.itemMgr = itemMgr;
         this.parentHandler = (parentMgr != null) ? parentMgr.handler : null;
@@ -170,10 +168,9 @@ public class SearchManager implements SynchronousEventListener {
         }
 
         // initialize query handler
-        this.handler = qhf.getQueryHandler(new QueryHandlerContext(
-                repositoryContext,
-                itemMgr, pm, rootNodeId,
-                parentHandler, excludedNodeId, executor));
+        this.handler = qhf.getQueryHandler(new QueryHandlerContext(workspace,
+                repositoryContext, itemMgr, pm, rootNodeId, parentHandler,
+                excludedNodeId));
     }
 
     /**
@@ -333,10 +330,6 @@ public class SearchManager implements SynchronousEventListener {
                 long type = e.getType();
                 if (type == Event.NODE_ADDED) {
                     addedNodes.put(e.getChildId(), e);
-                    // quick'n dirty fix for JCR-905
-                    if (e.isExternal()) {
-                        removedNodes.add(e.getChildId());
-                    }
                     if (e.isShareableChildNode()) {
                         // simply re-index shareable nodes
                         removedNodes.add(e.getChildId());

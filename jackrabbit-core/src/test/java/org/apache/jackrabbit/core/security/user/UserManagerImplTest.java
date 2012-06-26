@@ -25,22 +25,22 @@ import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.security.TestPrincipal;
 import org.apache.jackrabbit.core.security.principal.EveryonePrincipal;
-import org.apache.jackrabbit.test.NotExecutableException;
 import org.apache.jackrabbit.spi.commons.conversion.NameResolver;
+import org.apache.jackrabbit.test.NotExecutableException;
 
 import javax.jcr.Credentials;
+import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
 import javax.jcr.Value;
-import javax.jcr.Node;
 import java.security.Principal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.List;
-import java.util.ArrayList;
 
 /**
  * <code>UserManagerImplTest</code>...

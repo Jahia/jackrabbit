@@ -103,7 +103,7 @@ public class Text {
 
         MessageDigest md = MessageDigest.getInstance(algorithm);
         byte[] digest = md.digest(data);
-        StringBuffer res = new StringBuffer(digest.length * 2);
+        StringBuilder res = new StringBuilder(digest.length * 2);
         for (byte b : digest) {
             res.append(hexTable[(b >> 4) & 15]);
             res.append(hexTable[b & 15]);
@@ -126,7 +126,7 @@ public class Text {
 
     /**
      * returns an array of strings decomposed of the original string, split at
-     * every occurance of 'ch'.
+     * every occurrence of 'ch'.
      *
      * @param str          the string to decompose
      * @param ch           the character to use a split pattern
@@ -167,7 +167,7 @@ public class Text {
      * @return the concatenated string
      */
     public static String implode(String[] arr, String delim) {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         for (int i = 0; i < arr.length; i++) {
             if (i > 0) {
                 buf.append(delim);
@@ -195,7 +195,7 @@ public class Text {
             return text;
         }
         int lastPos = 0;
-        StringBuffer sb = new StringBuffer(text.length());
+        StringBuilder sb = new StringBuilder(text.length());
         while (pos != -1) {
             sb.append(text.substring(lastPos, pos));
             sb.append(newString);
@@ -219,7 +219,7 @@ public class Text {
         if (text == null) {
             throw new IllegalArgumentException("null argument");
         }
-        StringBuffer buf = null;
+        StringBuilder buf = null;
         int length = text.length();
         int pos = 0;
         for (int i = 0; i < length; i++) {
@@ -231,7 +231,7 @@ public class Text {
                 case '"':
                 case '\'':
                     if (buf == null) {
-                        buf = new StringBuffer();
+                        buf = new StringBuilder();
                     }
                     if (i > 0) {
                         buf.append(text.substring(pos, i));
@@ -338,7 +338,7 @@ public class Text {
         try {
             BitSet validChars = isPath ? URISaveEx : URISave;
             byte[] bytes = string.getBytes("utf-8");
-            StringBuffer out = new StringBuffer(bytes.length);
+            StringBuilder out = new StringBuilder(bytes.length);
             for (byte aByte : bytes) {
                 int c = aByte & 0xff;
                 if (validChars.get(c) && c != escape) {
@@ -464,14 +464,40 @@ public class Text {
      * @return the escaped name
      */
     public static String escapeIllegalJcrChars(String name) {
-        StringBuffer buffer = new StringBuffer(name.length() * 2);
+        return escapeIllegalChars(name, "%/:[]*|\t\r\n");
+    }
+
+    /**
+     * Escapes all illegal JCR 1.0 name characters of a string.
+     * Use {@link #unescapeIllegalJcrChars(String)} for decoding.
+     * <p>
+     * QName EBNF:<br>
+     * <xmp>
+     * simplename ::= onecharsimplename | twocharsimplename | threeormorecharname
+     * onecharsimplename ::= (* Any Unicode character except: '.', '/', ':', '[', ']', '*', ''', '"', '|' or any whitespace character *)
+     * twocharsimplename ::= '.' onecharsimplename | onecharsimplename '.' | onecharsimplename onecharsimplename
+     * threeormorecharname ::= nonspace string nonspace
+     * string ::= char | string char
+     * char ::= nonspace | ' '
+     * nonspace ::= (* Any Unicode character except: '/', ':', '[', ']', '*', ''', '"', '|' or any whitespace character *)
+     * </xmp>
+     *
+     * @since Apache Jackrabbit 2.3.2 and 2.2.10
+     * @see <a href="https://issues.apache.org/jira/browse/JCR-3128">JCR-3128</a>
+     * @param name the name to escape
+     * @return the escaped name
+     */
+    public static String escapeIllegalJcr10Chars(String name) {
+        return escapeIllegalChars(name, "%/:[]*'\"|\t\r\n");
+    }
+
+    private static String escapeIllegalChars(String name, String illegal) {
+        StringBuilder buffer = new StringBuilder(name.length() * 2);
         for (int i = 0; i < name.length(); i++) {
             char ch = name.charAt(i);
-            if (ch == '%' || ch == '/' || ch == ':' || ch == '[' || ch == ']'
-                || ch == '*' || ch == '|'
-                || (ch == '.' && name.length() < 3)
-                || (ch == ' ' && (i == 0 || i == name.length() - 1))
-                || ch == '\t' || ch == '\r' || ch == '\n') {
+            if (illegal.indexOf(ch) != -1
+                    || (ch == '.' && name.length() < 3)
+                    || (ch == ' ' && (i == 0 || i == name.length() - 1))) {
                 buffer.append('%');
                 buffer.append(Character.toUpperCase(Character.forDigit(ch / 16, 16)));
                 buffer.append(Character.toUpperCase(Character.forDigit(ch % 16, 16)));
@@ -492,7 +518,7 @@ public class Text {
      * @return the escaped string
      */
     public static String escapeIllegalXpathSearchChars(String s) {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         sb.append(s.substring(0, (s.length() - 1)));
         char c = s.charAt(s.length() - 1);
         // NOTE: keep this in sync with _ESCAPED_CHAR below!
@@ -515,7 +541,7 @@ public class Text {
      * @return the unescaped name
      */
     public static String unescapeIllegalJcrChars(String name) {
-        StringBuffer buffer = new StringBuffer(name.length());
+        StringBuilder buffer = new StringBuilder(name.length());
         int i = name.indexOf('%');
         while (i > -1 && i + 2 < name.length()) {
             buffer.append(name.toCharArray(), 0, i);
@@ -732,7 +758,7 @@ public class Text {
     public static String replaceVariables(Properties variables, String value,
                                           boolean ignoreMissing)
             throws IllegalArgumentException {
-        StringBuffer result = new StringBuffer();
+        StringBuilder result = new StringBuilder();
 
         // Value:
         // +--+-+--------+-+-----------------+

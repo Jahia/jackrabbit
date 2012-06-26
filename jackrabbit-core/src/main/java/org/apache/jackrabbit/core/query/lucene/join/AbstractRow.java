@@ -26,6 +26,8 @@ import javax.jcr.query.Row;
 import javax.jcr.query.qom.Operand;
 import javax.jcr.query.qom.PropertyValue;
 
+import org.apache.jackrabbit.commons.query.qom.OperandEvaluator;
+
 abstract class AbstractRow implements Row {
 
     private final Map<String, PropertyValue> columns;
@@ -40,8 +42,9 @@ abstract class AbstractRow implements Row {
 
     public Value[] getValues() throws RepositoryException {
         Value[] values = new Value[columns.size()];
-        for (Operand operand : columns.values()) {
-            values = evaluator.getValues(operand, this);
+        int i = 0;
+        for (String columnName : columns.keySet()) {
+            values[i++] = getValue(columnName);
         }
         return values;
     }

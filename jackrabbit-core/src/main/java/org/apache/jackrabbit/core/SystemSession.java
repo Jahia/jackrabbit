@@ -17,7 +17,6 @@
 package org.apache.jackrabbit.core;
 
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Set;
 import java.security.Principal;
 
@@ -30,6 +29,7 @@ import javax.jcr.security.AccessControlPolicy;
 import javax.jcr.security.Privilege;
 import javax.security.auth.Subject;
 
+import org.apache.jackrabbit.api.security.authorization.PrivilegeManager;
 import org.apache.jackrabbit.core.config.WorkspaceConfig;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.security.AMContext;
@@ -37,7 +37,6 @@ import org.apache.jackrabbit.core.security.AbstractAccessControlManager;
 import org.apache.jackrabbit.core.security.AccessManager;
 import org.apache.jackrabbit.core.security.SystemPrincipal;
 import org.apache.jackrabbit.core.security.authorization.AccessControlProvider;
-import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.security.authorization.WorkspaceAccessManager;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
@@ -59,11 +58,8 @@ class SystemSession extends SessionImpl {
             RepositoryContext repositoryContext, WorkspaceConfig wspConfig)
             throws RepositoryException {
         // create subject with SystemPrincipal
-        Set<SystemPrincipal> principals = new HashSet<SystemPrincipal>();
-        principals.add(new SystemPrincipal());
-        Subject subject =
-                new Subject(true, principals, Collections.EMPTY_SET,
-                        Collections.EMPTY_SET);
+        Set<SystemPrincipal> principals = Collections.singleton(new SystemPrincipal());
+        Subject subject = new Subject(true, principals, Collections.emptySet(), Collections.emptySet());
         return new SystemSession(repositoryContext, subject, wspConfig);
     }
 
@@ -86,6 +82,7 @@ class SystemSession extends SessionImpl {
      *
      * @return the name of <code>SystemPrincipal</code>.
      */
+    @Override
     protected String retrieveUserId(Subject subject, String workspaceName) throws RepositoryException {
         return new SystemPrincipal().getName();
     }
@@ -105,16 +102,33 @@ class SystemSession extends SessionImpl {
         return new SystemAccessManager();
     }
 
+    /**
+     * Always returns <code>true</code>.
+     *
+     * @return <code>true</code> as this is an system session instance.
+     */
+    @Override
+    public boolean isSystem() {
+        return true;
+    }
+
+    /**
+     * Always returns <code>false</code>.
+     *
+     * @return <code>false</code> as this is an system session instance.
+     */
+    @Override
+    public boolean isAdmin() {
+        return false;
+    }
+
     //--------------------------------------------------------< inner classes >
     /**
      * An access manager that grants access to everything.
      */
     private class SystemAccessManager extends AbstractAccessControlManager implements AccessManager {
 
-        private final PrivilegeRegistry privilegeRegistry;
-
         SystemAccessManager() {
-            privilegeRegistry = new PrivilegeRegistry(SystemSession.this);
         }
 
         //----------------------------------------------------< AccessManager >
@@ -155,6 +169,13 @@ class SystemSession extends SessionImpl {
          * {@inheritDoc}
          */
         public void checkPermission(Path absPath, int permissions) throws AccessDeniedException, RepositoryException {
+            // allow everything
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        public void checkRepositoryPermission(int permissions) throws AccessDeniedException, RepositoryException {
             // allow everything
         }
 
@@ -212,6 +233,7 @@ class SystemSession extends SessionImpl {
         /**
          * @see AbstractAccessControlManager#checkInitialized()
          */
+        @Override
         protected void checkInitialized() throws IllegalStateException {
             // nop
         }
@@ -219,30 +241,34 @@ class SystemSession extends SessionImpl {
         /**
          * @see AbstractAccessControlManager#checkPermission(String,int)
          */
+        @Override
         protected void checkPermission(String absPath, int permission) throws
                 AccessDeniedException, PathNotFoundException, RepositoryException {
             // allow everything
         }
 
         /**
-         * @see AbstractAccessControlManager#getPrivilegeRegistry()
+         * @see AbstractAccessControlManager#getPrivilegeManager()
          */
-        protected PrivilegeRegistry getPrivilegeRegistry()
-                throws RepositoryException {
-            return privilegeRegistry;
+        @Override
+        protected PrivilegeManager getPrivilegeManager() throws RepositoryException {
+            return context.getPrivilegeManager();
         }
 
         /**
          * @see AbstractAccessControlManager#checkValidNodePath(String)
          */
+        @Override
         protected void checkValidNodePath(String absPath)
                 throws PathNotFoundException, RepositoryException {
-            Path p = getQPath(absPath);
-            if (!p.isAbsolute()) {
-                throw new RepositoryException("Absolute path expected.");
-            }
-            if (context.getHierarchyManager().resolveNodePath(p) == null) {
-                throw new PathNotFoundException("No such node " + absPath);
+            if (absPath != null) {
+                Path p = getQPath(absPath);
+                if (!p.isAbsolute()) {
+                    throw new RepositoryException("Absolute path expected.");
+                }
+                if (context.getHierarchyManager().resolveNodePath(p) == null) {
+                    throw new PathNotFoundException("No such node " + absPath);
+                }
             }
         }
 
@@ -263,7 +289,7 @@ class SystemSession extends SessionImpl {
         public Privilege[] getPrivileges(String absPath)
                 throws PathNotFoundException, RepositoryException {
             checkValidNodePath(absPath);
-            return new Privilege[] {getPrivilegeRegistry().getPrivilege(Privilege.JCR_ALL)};
+            return new Privilege[] {privilegeFromName(Privilege.JCR_ALL)};
         }
 
         /**

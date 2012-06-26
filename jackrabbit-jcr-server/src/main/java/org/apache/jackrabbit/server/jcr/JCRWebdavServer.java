@@ -16,14 +16,19 @@
  */
 package org.apache.jackrabbit.server.jcr;
 
+import org.apache.jackrabbit.commons.webdav.JcrRemotingConstants;
 import org.apache.jackrabbit.server.SessionProvider;
+import org.apache.jackrabbit.spi.commons.SessionExtensions;
+import org.apache.jackrabbit.util.Text;
 import org.apache.jackrabbit.webdav.DavException;
+import org.apache.jackrabbit.webdav.DavMethods;
 import org.apache.jackrabbit.webdav.DavSession;
 import org.apache.jackrabbit.webdav.DavSessionProvider;
 import org.apache.jackrabbit.webdav.WebdavRequest;
 import org.apache.jackrabbit.webdav.header.IfHeader;
 import org.apache.jackrabbit.webdav.jcr.JcrDavException;
 import org.apache.jackrabbit.webdav.jcr.JcrDavSession;
+import org.apache.jackrabbit.webdav.util.LinkHeaderFieldParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,13 +36,17 @@ import javax.jcr.LoginException;
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
+import javax.jcr.UnsupportedRepositoryOperationException;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletResponse;
-import java.util.HashMap;
+
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * <code>JCRWebdavServer</code>...
@@ -48,7 +57,7 @@ public class JCRWebdavServer implements DavSessionProvider {
     private static Logger log = LoggerFactory.getLogger(JCRWebdavServer.class);
 
     /** the session cache */
-    private final SessionCache cache = new SessionCache();
+    private final SessionCache cache;
 
     /** the jcr repository */
     private final Repository repository;
@@ -64,6 +73,19 @@ public class JCRWebdavServer implements DavSessionProvider {
     public JCRWebdavServer(Repository repository, SessionProvider sessionProvider) {
         this.repository = repository;
         this.sessionProvider = sessionProvider;
+        cache = new SessionCache();
+    }
+
+    /**
+     * Creates a new JCRWebdavServer that operates on the given repository.
+     *
+     * @param repository
+     * @param concurrencyLevel 
+     */
+    public JCRWebdavServer(Repository repository, SessionProvider sessionProvider, int concurrencyLevel) {
+        this.repository = repository;
+        this.sessionProvider = sessionProvider;
+        cache = new SessionCache(concurrencyLevel);
     }
 
     //---------------------------------------< DavSessionProvider interface >---
@@ -142,9 +164,32 @@ public class JCRWebdavServer implements DavSessionProvider {
      */
     private class SessionCache {
 
-        private Map<DavSession, Set<Object>> sessionMap = new HashMap<DavSession, Set<Object>>();
-        private Map<Object, DavSession> referenceToSessionMap = new HashMap<Object, DavSession>();
+        private static final int CONCURRENCY_LEVEL_DEFAULT = 50;
+        private static final int INITIAL_CAPACITY = 50;
+    	private static final int INITIAL_CAPACITY_REF_TO_SESSION = 3 * INITIAL_CAPACITY;
+    	
+        private ConcurrentMap<DavSession, Set<Object>> sessionMap;
+        private ConcurrentMap<Object, DavSession> referenceToSessionMap;
 
+        /**
+         * Create a new session cache with the {@link #CONCURRENCY_LEVEL_DEFAULT default concurrency level}.
+         */
+        private SessionCache() {
+            this(CONCURRENCY_LEVEL_DEFAULT);
+        }
+
+        /**
+         * Create a new session cache with the specified the level of concurrency
+         * for this server.
+         * 
+         * @param cacheConcurrencyLevel A positive int value specifying the
+         * concurrency level of the server.
+         */
+        private SessionCache(int cacheConcurrencyLevel) {
+        	sessionMap = new ConcurrentHashMap<DavSession, Set<Object>>(INITIAL_CAPACITY, .75f, cacheConcurrencyLevel);
+        	referenceToSessionMap = new ConcurrentHashMap<Object, DavSession>(INITIAL_CAPACITY_REF_TO_SESSION, .75f, cacheConcurrencyLevel);
+        }
+        
         /**
          * Try to retrieve <code>DavSession</code> if a TransactionId or
          * SubscriptionId is present in the request header. If no cached session
@@ -186,6 +231,8 @@ public class JCRWebdavServer implements DavSessionProvider {
             if (session == null) {
                 Session repSession = getRepositorySession(request);
                 session = new DavSessionImpl(repSession);
+                
+                // TODO: review again if using ConcurrentMap#putIfAbsent() was more appropriate.
                 sessionMap.put(session, new HashSet<Object>());
                 log.debug("login: User '" + repSession.getUserID() + "' logged in.");
             } else {
@@ -282,8 +329,21 @@ public class JCRWebdavServer implements DavSessionProvider {
          */
         private Session getRepositorySession(WebdavRequest request) throws DavException {
             try {
-                String workspaceName = request.getRequestLocator().getWorkspaceName();
-                return sessionProvider.getSession(request, repository, workspaceName);
+                String workspaceName = null;
+                if (DavMethods.DAV_MKWORKSPACE != DavMethods.getMethodCode(request.getMethod())) {
+                    workspaceName = request.getRequestLocator().getWorkspaceName();
+                }
+
+                Session session = sessionProvider.getSession(
+                        request, repository, workspaceName);
+
+                // extract information from Link header fields
+                LinkHeaderFieldParser lhfp =
+                        new LinkHeaderFieldParser(request.getHeaders("Link"));
+                setJcrUserData(session, lhfp);
+                setSessionIdentifier(session, lhfp);
+
+                return session;
             } catch (LoginException e) {
                 // LoginException results in UNAUTHORIZED,
                 throw new JcrDavException(e);
@@ -292,6 +352,53 @@ public class JCRWebdavServer implements DavSessionProvider {
                 throw new JcrDavException(e);
             } catch (ServletException e) {
                 throw new DavException(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
+        }
+
+        /**
+         * Find first link relation for JCR user data and set it as
+         * the user data of the observation manager of the given session.
+         */
+        private void setJcrUserData(
+                Session session, LinkHeaderFieldParser lhfp)
+                throws RepositoryException {
+            String data = null;
+
+            // extract User Data string from RFC 2397 "data" URI
+            // only supports the simple case of "data:,..." for now
+            String target = lhfp.getFirstTargetForRelation(
+                    JcrRemotingConstants.RELATION_USER_DATA);
+            if (target != null) {
+                try {
+                    URI uri = new URI(target);
+                    // Poor Man's data: URI parsing
+                    if ("data".equalsIgnoreCase(uri.getScheme())) {
+                        String sspart = uri.getRawSchemeSpecificPart();
+                        if (sspart.startsWith(",")) {
+                            data = Text.unescape(sspart.substring(1));
+                        }
+                    }
+                } catch (URISyntaxException ex) {
+                    // not a URI, skip
+                }
+            }
+
+            try {
+                session.getWorkspace().getObservationManager().setUserData(data);
+            } catch (UnsupportedRepositoryOperationException ignore) {
+            }
+        }
+
+        /**
+         * Find first link relation for remote session identifier and set
+         * it as an attribute of the given session.
+         */
+        private void setSessionIdentifier(
+                Session session, LinkHeaderFieldParser lhfp) {
+            if (session instanceof SessionExtensions) {
+                String name = JcrRemotingConstants.RELATION_REMOTE_SESSION_ID;
+                String id = lhfp.getFirstTargetForRelation(name);
+                ((SessionExtensions) session).setAttribute(name, id);
             }
         }
 

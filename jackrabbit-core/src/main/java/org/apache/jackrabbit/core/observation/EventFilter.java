@@ -16,7 +16,6 @@
  */
 package org.apache.jackrabbit.core.observation;
 
-import java.util.Iterator;
 import java.util.Set;
 
 import org.apache.jackrabbit.core.SessionImpl;
@@ -26,6 +25,7 @@ import org.apache.jackrabbit.spi.Path;
 
 import javax.jcr.RepositoryException;
 import javax.jcr.nodetype.NodeType;
+import javax.jcr.observation.Event;
 
 /**
  * The <code>EventFilter</code> class implements the filter logic based
@@ -69,7 +69,7 @@ public class EventFilter {
 
     /**
      * If <code>noLocal</code> is true this filter will block events from
-     * the session that registerd this filter.
+     * the session that registered this filter.
      */
     private final boolean noLocal;
 
@@ -133,6 +133,11 @@ public class EventFilter {
             return true;
         }
 
+        // UUIDs, types, and paths do not need to match for persist
+        if (eventState.getType() == Event.PERSIST) {
+            return false;
+        }
+
         // check UUIDs
         NodeId parentId = eventState.getParentId();
         if (ids != null) {
@@ -150,8 +155,8 @@ public class EventFilter {
             Set<NodeType> eventTypes = eventState.getNodeTypes(session.getNodeTypeManager());
             boolean match = false;
             for (int i = 0; i < nodeTypes.length && !match; i++) {
-                for (Iterator<NodeType> iter = eventTypes.iterator(); iter.hasNext();) {
-                    NodeTypeImpl nodeType = (NodeTypeImpl) iter.next();
+                for (NodeType eventType : eventTypes) {
+                    NodeTypeImpl nodeType = (NodeTypeImpl) eventType;
                     match |= nodeType.getQName().equals(nodeTypes[i].getQName())
                             || nodeType.isDerivedFrom(nodeTypes[i].getQName());
                 }
@@ -189,6 +194,7 @@ public class EventFilter {
          *
          * @return always <code>true</code>.
          */
+        @Override
         boolean blocks(EventState eventState) {
             return true;
         }

@@ -16,8 +16,10 @@
  */
 package org.apache.jackrabbit.core.query;
 
-import javax.jcr.Session;
 import javax.jcr.Node;
+import javax.jcr.Session;
+
+import org.apache.jackrabbit.core.TestHelper;
 
 /**
  * <code>AbstractIndexingTest</code> is a base class for all indexing
@@ -25,7 +27,7 @@ import javax.jcr.Node;
  */
 public class AbstractIndexingTest extends AbstractQueryTest {
 
-    protected static final String WORKSPACE_NAME = "indexing-test";
+    private static final String WORKSPACE_NAME = "indexing-test";
 
     protected Session session;
 
@@ -33,7 +35,7 @@ public class AbstractIndexingTest extends AbstractQueryTest {
 
     protected void setUp() throws Exception {
         super.setUp();
-        session = getHelper().getSuperuserSession(WORKSPACE_NAME);
+        session = getHelper().getSuperuserSession(getWorkspaceName());
         testRootNode = cleanUpTestRoot(session);
         // overwrite query manager
         qm = session.getWorkspace().getQueryManager();
@@ -47,5 +49,17 @@ public class AbstractIndexingTest extends AbstractQueryTest {
         }
         testRootNode = null;
         super.tearDown();
+    }
+
+    protected String getWorkspaceName() {
+        return WORKSPACE_NAME;
+    }
+
+    /**
+     * wait for async text-extraction tasks to finish
+     */
+    protected void waitForTextExtractionTasksToFinish() throws Exception {
+        TestHelper.waitForTextExtractionTasksToFinish(session);
+        getSearchIndex().flush();
     }
 }

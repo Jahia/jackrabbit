@@ -16,6 +16,8 @@
  */
 package org.apache.jackrabbit.core.state;
 
+import java.util.List;
+
 import org.apache.commons.collections.map.LinkedMap;
 import org.apache.jackrabbit.core.cache.CacheManager;
 import org.apache.jackrabbit.core.cache.ConcurrentCache;
@@ -45,7 +47,7 @@ public class MLRUItemStateCache implements ItemStateCache {
     private volatile long numWrites = 0;
 
     private final ConcurrentCache<ItemId, ItemState> cache =
-        new ConcurrentCache<ItemId, ItemState>();
+        new ConcurrentCache<ItemId, ItemState>(MLRUItemStateCache.class.getSimpleName());
 
     public MLRUItemStateCache(CacheManager cacheMgr) {
         cache.setMaxMemorySize(DEFAULT_MAX_MEM);
@@ -73,7 +75,8 @@ public class MLRUItemStateCache implements ItemStateCache {
      * {@inheritDoc}
      */
     public ItemState[] retrieveAll() {
-        return cache.values();
+        List<ItemState> values = cache.values();
+        return values.toArray(new ItemState[values.size()]);
     }
 
     /**

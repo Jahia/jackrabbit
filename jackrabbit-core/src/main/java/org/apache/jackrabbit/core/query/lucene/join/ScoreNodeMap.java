@@ -37,11 +37,11 @@ public final class ScoreNodeMap {
     /**
      * Adds <code>scoreNodes</code> to this map under the given <code>key</code>.
      * If there already exists a mapping with the given <code>key</code> the
-     * <code>scoreNodes</code> are added to the existingmapping. The add
+     * <code>scoreNodes</code> are added to the existing mapping. The add
      * operation works as follows:
      * <ul>
      * <li>If the existing value for <code>key</code> is a <code>ScoreNode[]</code>,
-     * then the value is turned into a <code>List</code> and the exising value
+     * then the value is turned into a <code>List</code> and the existing value
      * as well as the new value are added to the <code>List</code>. Finally
      * the <code>List</code> is uses as the new value for the mapping.
      * </li>
@@ -59,7 +59,9 @@ public final class ScoreNodeMap {
             existing = nodes;
             map.put(key, existing);
         } else if (existing instanceof List) {
-            ((List) existing).add(nodes);
+            @SuppressWarnings("unchecked")
+            List<ScoreNode[]> existingNodes = (List<ScoreNode[]>) existing;
+            existingNodes.add(nodes);
         } else {
             // ScoreNode[]
             List<ScoreNode[]> tmp = new ArrayList<ScoreNode[]>();
@@ -83,6 +85,7 @@ public final class ScoreNodeMap {
         if (sn == null) {
             return null;
         } else if (sn instanceof List) {
+            @SuppressWarnings("unchecked")
             List<ScoreNode[]> list = (List<ScoreNode[]>) sn;
             return list.toArray(new ScoreNode[list.size()][]);
         } else {

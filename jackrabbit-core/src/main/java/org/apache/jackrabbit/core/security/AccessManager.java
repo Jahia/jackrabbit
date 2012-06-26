@@ -117,7 +117,17 @@ public interface AccessManager {
      * @throws RepositoryException   it another error occurs
      */
     void checkPermission(Path absPath, int permissions) throws AccessDeniedException, RepositoryException;
-    
+
+    /**
+     * Determines whether the specified <code>permissions</code> are granted
+     * on the repository level.
+     *
+     * @param permissions The permissions to check.
+     * @throws AccessDeniedException if permissions are denied.
+     * @throws RepositoryException if another error occurs.
+     */
+    void checkRepositoryPermission(int permissions) throws AccessDeniedException, RepositoryException;
+
     /**
      * Determines whether the specified <code>permissions</code> are granted
      * on the item with the specified <code>id</code> (i.e. the <i>target</i> item).
@@ -193,7 +203,7 @@ public interface AccessManager {
     /**
      * Determines whether the subject of the current context is granted access
      * to the given workspace. Note that an implementation is free to test for
-     * the existance of a workspace with the specified name. In this case
+     * the existence of a workspace with the specified name. In this case
      * the expected return value is <code>false</code>, if no such workspace
      * exists.
      *

@@ -16,13 +16,15 @@
  */
 package org.apache.jackrabbit.core.persistence;
 
-import org.apache.jackrabbit.core.data.DataStore;
-import org.apache.jackrabbit.core.fs.FileSystem;
-import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
-import org.apache.jackrabbit.core.id.NodeId;
+import java.io.File;
 
 import javax.jcr.NamespaceRegistry;
-import java.io.File;
+
+import org.apache.jackrabbit.core.data.DataStore;
+import org.apache.jackrabbit.core.fs.FileSystem;
+import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
+import org.apache.jackrabbit.core.stats.RepositoryStatisticsImpl;
 
 /**
  * A <code>PMContext</code> is used to provide context information for a
@@ -62,6 +64,9 @@ public class PMContext {
      */
     private final DataStore dataStore;
 
+    /** Repository statistics collector. */
+    private final RepositoryStatisticsImpl stats;
+
     /**
      * Creates a new <code>PMContext</code>.
      *
@@ -72,17 +77,19 @@ public class PMContext {
      * @param ntReg        node type registry
      */
     public PMContext(File homeDir,
-                     FileSystem fs,
-                     NodeId rootNodeId,
-                     NamespaceRegistry nsReg,
-                     NodeTypeRegistry ntReg,
-                     DataStore dataStore) {
+            FileSystem fs,
+            NodeId rootNodeId,
+            NamespaceRegistry nsReg,
+            NodeTypeRegistry ntReg,
+            DataStore dataStore,
+            RepositoryStatisticsImpl stats) {
         this.physicalHomeDir = homeDir;
         this.fs = fs;
         this.rootNodeId = rootNodeId;
         this.nsReg = nsReg;
         this.ntReg = ntReg;
         this.dataStore = dataStore;
+        this.stats = stats;
     }
 
 
@@ -136,4 +143,15 @@ public class PMContext {
     public DataStore getDataStore() {
         return dataStore;
     }
+
+
+    /**
+     * Returns the repository statistics collector.
+     *
+     * @return repository statistics
+     */
+    public RepositoryStatisticsImpl getRepositoryStatistics() {
+        return stats;
+    }
+
 }

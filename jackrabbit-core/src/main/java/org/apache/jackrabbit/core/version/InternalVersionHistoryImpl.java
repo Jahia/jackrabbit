@@ -48,7 +48,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     /**
      * default logger
      */
-    private static Logger log = LoggerFactory.getLogger(InternalVersionHistory.class);
+    private static Logger log = LoggerFactory.getLogger(InternalVersionHistoryImpl.class);
 
     /**
      * The last current time that was returned by {@link #getCurrentTime()}.
@@ -111,10 +111,11 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
             throws RepositoryException {
         super(vMgr, node);
         init();
+        fixLegacy();
     }
 
     /**
-     * Initialies the history and loads all internal caches
+     * Initializes the history and loads all internal caches
      *
      * @throws RepositoryException if an error occurs
      */
@@ -160,8 +161,11 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
             }
             nameCache.put(child.getName(), child.getId());
         }
+    }
 
-        // fix legacy
+
+    // fix legacy
+    private void fixLegacy() throws RepositoryException {
         if (rootVersion.getSuccessors().isEmpty()) {
             for (Name versionName : nameCache.keySet()) {
                 InternalVersionImpl v = createVersionInstance(versionName);
@@ -209,7 +213,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
             }
             return v;
         } catch (RepositoryException e) {
-            throw new IllegalArgumentException("Failed to create version " + name + ".");
+            throw new InconsistentVersioningState("Failed to create version " + name + " in VHR " + historyId + ".", historyId, null);
         }
     }
 
@@ -234,7 +238,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
                     v = new InternalVersionImpl(this, child, child.getName());
                 }
             } catch (RepositoryException e) {
-                throw new InternalError("Version does not have a jcr:frozenNode: " + child.getNodeId());
+                throw new InconsistentVersioningState("Version does not have a jcr:frozenNode: " + child.getNodeId(), historyId, e);
             }
         }
         return v;
@@ -243,6 +247,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
+    @Override
     public NodeId getId() {
         return historyId;
     }
@@ -250,6 +255,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
+    @Override
     public InternalVersionItem getParent() {
         return null;
     }
@@ -352,7 +358,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     public synchronized Name[] getVersionNames() {
         return nameCache.keySet().toArray(new Name[nameCache.size()]);
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -561,7 +567,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
             predecessors = new InternalValue[]{InternalValue.create(last)};
         }
 
-        NodeId versionId = new NodeId();
+        NodeId versionId = vMgr.getNodeIdFactory().newNodeId();
         NodeStateEx vNode = node.addNode(name, NameConstants.NT_VERSION, versionId, true);
 
         // check for jcr:activity
@@ -617,7 +623,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
             NodeState nodeState, NodeId copiedFrom) throws RepositoryException {
 
         // create history node
-        NodeId historyId = new NodeId();
+        NodeId historyId = vMgr.getNodeIdFactory().newNodeId();
         NodeStateEx pNode = parent.addNode(name, NameConstants.NT_VERSIONHISTORY, historyId, true);
 
         // set the versionable uuid
@@ -633,7 +639,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
         }
 
         // create root version
-        NodeId versionId = new NodeId();
+        NodeId versionId = vMgr.getNodeIdFactory().newNodeId();
         NodeStateEx vNode = pNode.addNode(NameConstants.JCR_ROOTVERSION, NameConstants.NT_VERSION, versionId, true);
 
         // initialize 'created' and 'predecessors'

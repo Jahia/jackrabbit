@@ -18,6 +18,8 @@ package org.apache.jackrabbit.test.api.version;
 
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Set;
+
 import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.UnsupportedRepositoryOperationException;
@@ -131,6 +133,7 @@ public class VersionLabelTest extends AbstractVersionTest {
      *
      * @see VersionHistory#addVersionLabel(String, String, boolean)
      */
+    @SuppressWarnings("deprecation")
     public void testAddVersionCheckVersionLabelsNode() throws RepositoryException {
         vHistory.addVersionLabel(rootVersion.getName(), versionLabel, false);
 
@@ -203,6 +206,7 @@ public class VersionLabelTest extends AbstractVersionTest {
      *
      * @throws RepositoryException
      */
+    @SuppressWarnings("deprecation")
     public void testAddDuplicateVersionLabel() throws RepositoryException {
         vHistory.addVersionLabel(rootVersion.getName(), versionLabel, false);
         try {
@@ -243,6 +247,7 @@ public class VersionLabelTest extends AbstractVersionTest {
      * @throws RepositoryException
      * @see VersionHistory#addVersionLabel(String, String, boolean)  with boolan flag equals true.
      */
+    @SuppressWarnings("deprecation")
     public void testMoveLabel() throws RepositoryException {
         vHistory.addVersionLabel(rootVersion.getName(), versionLabel, false);
         try {
@@ -335,9 +340,10 @@ public class VersionLabelTest extends AbstractVersionTest {
      * @throws RepositoryException
      * @see javax.jcr.version.VersionHistory#getVersionLabels()
      */
+    @SuppressWarnings("deprecation")
     public void testGetVersionLabels() throws RepositoryException {
 
-        HashSet testLabels = new HashSet(Arrays.asList(vHistory.getVersionLabels()));
+        Set<String> testLabels = new HashSet<String>(Arrays.asList(vHistory.getVersionLabels()));
         versionableNode.checkout();
         Version v = versionableNode.checkin();
 
@@ -366,7 +372,7 @@ public class VersionLabelTest extends AbstractVersionTest {
      */
     public void testGetVersionLabelsJcr2() throws RepositoryException {
 
-        HashSet testLabels = new HashSet(Arrays.asList(vHistory.getVersionLabels()));
+        Set<String> testLabels = new HashSet<String>(Arrays.asList(vHistory.getVersionLabels()));
 
         VersionManager versionManager = versionableNode.getSession().getWorkspace().getVersionManager();
         String path = versionableNode.getPath();
@@ -397,9 +403,10 @@ public class VersionLabelTest extends AbstractVersionTest {
      * @throws RepositoryException
      * @see VersionHistory#getVersionLabels(javax.jcr.version.Version)
      */
+    @SuppressWarnings("deprecation")
     public void testGetVersionLabelsForVersion() throws RepositoryException {
 
-        HashSet testLabels = new HashSet(Arrays.asList(vHistory.getVersionLabels(rootVersion)));
+        Set<String> testLabels = new HashSet<String>(Arrays.asList(vHistory.getVersionLabels(rootVersion)));
 
         vHistory.addVersionLabel(rootVersion.getName(), versionLabel, false);
         testLabels.add(versionLabel);
@@ -430,7 +437,7 @@ public class VersionLabelTest extends AbstractVersionTest {
      */
     public void testGetVersionLabelsForVersionJcr2() throws RepositoryException {
 
-        HashSet testLabels = new HashSet(Arrays.asList(vHistory.getVersionLabels(rootVersion)));
+        Set<String> testLabels = new HashSet<String>(Arrays.asList(vHistory.getVersionLabels(rootVersion)));
 
         vHistory.addVersionLabel(rootVersion.getName(), versionLabel, false);
         testLabels.add(versionLabel);
@@ -460,6 +467,7 @@ public class VersionLabelTest extends AbstractVersionTest {
      * @throws javax.jcr.RepositoryException
      * @see javax.jcr.Node#restoreByLabel(String, boolean)
      */
+    @SuppressWarnings("deprecation")
     public void testRestoreByLabelNonVersionableNode() throws RepositoryException {
         try {
             nonVersionableNode.restoreByLabel(versionLabel, true);

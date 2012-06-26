@@ -22,14 +22,10 @@ import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.nodetype.EffectiveNodeType;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.QNodeDefinition;
-import org.apache.jackrabbit.spi.QNodeTypeDefinition;
 import org.apache.jackrabbit.spi.QPropertyDefinition;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
 
 import javax.jcr.nodetype.NoSuchNodeTypeException;
-import javax.jcr.nodetype.NodeDefinition;
-import javax.jcr.nodetype.NodeType;
-import javax.jcr.nodetype.PropertyDefinition;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
@@ -48,6 +44,7 @@ class NodeStateMerger {
      * in order to avoid an <code>InvalidItemStateException</code>.
      * <p/>
      * See http://issues.apache.org/jira/browse/JCR-584.
+     * See also http://issues.apache.org/jira/browse/JCR-3290.
      *
      * @param state node state whose modified overlayed state should be
      *        merged
@@ -113,8 +110,8 @@ class NodeStateMerger {
                     ArrayList<ChildNodeEntry> removed = new ArrayList<ChildNodeEntry>();
 
                     for (ChildNodeEntry cne : state.getAddedChildNodeEntries()) {
-
-                        if (context.isAdded(cne.getId()) || context.isModified(cne.getId())) {
+                        // locally added or moved?
+                        if (context.isAdded(cne.getId()) || (context.isModified(cne.getId()) && isParent(state, cne, context))) {
                             // a new child node entry has been added to this state;
                             // check for name collisions with other state
                             if (overlayedState.hasChildNodeEntry(cne.getName())) {
@@ -129,17 +126,14 @@ class NodeStateMerger {
                             }
 
                             added.add(cne);
-                        } else {
-                            // externally added
                         }
                     }
 
                     for (ChildNodeEntry cne : state.getRemovedChildNodeEntries()) {
+                        // locally removed?
                         if (context.isDeleted(cne.getId()) || context.isModified(cne.getId())) {
                             // a child node entry has been removed from this node state
                             removed.add(cne);
-                        } else {
-                            // externally removed
                         }
                     }
 
@@ -346,6 +340,14 @@ class NodeStateMerger {
         return false;
     }
 
+    private static boolean isParent(NodeState state, ChildNodeEntry entry, MergeContext context) {
+        try {
+            return state.getId().equals(context.getNodeState(entry.getId()).getParentId());
+        } catch (ItemStateException e) {
+            return false;
+        }
+    }
+
     private static boolean isAutoCreated(ChildNodeEntry cne, EffectiveNodeType ent) {
         for (QNodeDefinition def : ent.getAutoCreateNodeDefs()) {
             if (def.getName().equals(cne.getName())) {
@@ -375,5 +377,6 @@ class NodeStateMerger {
         boolean isModified(ItemId id);
         boolean allowsSameNameSiblings(NodeId id);
         EffectiveNodeType getEffectiveNodeType(Name ntName) throws NoSuchNodeTypeException;
+        NodeState getNodeState(NodeId id) throws ItemStateException;
     }
 }

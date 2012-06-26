@@ -40,7 +40,7 @@ import java.util.Set;
  * <p/>
  * The result of the comparison can be categorized as one of the following types:
  * <p/>
- * <b><code>NONE</code></b> inidcates that there is no modification at all.
+ * <b><code>NONE</code></b> indicates that there is no modification at all.
  * <p/>
  * A <b><code>TRIVIAL</code></b> modification has no impact on the consistency
  * of existing content. The following modifications are considered
@@ -357,9 +357,9 @@ public class NodeTypeDefDiff {
         return result;
     }
 
-    private String modificationTypeToString(int modifcationType) {
+    private String modificationTypeToString(int modificationType) {
         String typeString = "unknown";
-        switch (modifcationType) {
+        switch (modificationType) {
             case NONE:
                 typeString = "NONE";
                 break;
@@ -512,16 +512,25 @@ public class NodeTypeDefDiff {
 
                 if (!set1.equals(set2)) {
                     // valueConstraints have been modified
-                    if (set2.containsAll(set1)) {
-                        // new set is a superset of old set
-                        // => constraints have been removed
-                        // (TRIVIAL change, since constraints are OR'ed)
+                    if (set2.isEmpty()) {
+                        // all existing constraints have been cleared
+                        // => TRIVIAL change
+                        type = TRIVIAL;
+                    } else if (set1.isEmpty()) {
+                        // constraints have been set on a previously unconstrained property
+                        // => MAJOR change
+                        type = MAJOR;
+                    } else if (set2.containsAll(set1)) {
+                        // new set is a superset of old set,
+                        // i.e. constraints have been weakened
+                        // (since constraints are OR'ed)
+                        // => TRIVIAL change
                         type = TRIVIAL;
                     } else {
                         // constraint have been removed/modified (MAJOR change);
                         // since we're unable to semantically compare
                         // value constraints (e.g. regular expressions), all
-                        // modifications are considered a MAJOR change.
+                        // such modifications are considered a MAJOR change.
                         type = MAJOR;
                     }
                 }

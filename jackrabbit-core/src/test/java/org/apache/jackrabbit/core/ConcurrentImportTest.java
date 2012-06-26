@@ -20,18 +20,20 @@ import java.util.UUID;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import javax.jcr.RepositoryException;
-import javax.jcr.Session;
-import javax.jcr.Node;
 import javax.jcr.ImportUUIDBehavior;
 import javax.jcr.InvalidItemStateException;
+import javax.jcr.Node;
+import javax.jcr.RepositoryException;
+import javax.jcr.Session;
 
+import org.apache.jackrabbit.JcrConstants;
+import org.apache.jackrabbit.core.persistence.check.ConsistencyReport;
+import org.apache.jackrabbit.spi.Name;
+import org.apache.jackrabbit.test.NotExecutableException;
+import org.xml.sax.Attributes;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
-import org.xml.sax.Attributes;
 import org.xml.sax.helpers.AttributesImpl;
-import org.apache.jackrabbit.spi.Name;
-import org.apache.jackrabbit.JcrConstants;
 
 /**
  * <code>ConcurrentVersioningTest</code> contains test cases that run version
@@ -51,9 +53,14 @@ public class ConcurrentImportTest extends AbstractConcurrencyTest {
      * performed by the threads.
      */
     private static final int NUM_NODES = 10;
-
+    
     public void testConcurrentImport() throws RepositoryException {
-        concurrentImport(new String[]{JcrConstants.MIX_REFERENCEABLE}, false);
+        try {
+            concurrentImport(new String[]{JcrConstants.MIX_REFERENCEABLE}, false);
+        }
+        finally {
+            checkConsistency();
+        }
     }
 
     public void testConcurrentImportSynced() throws RepositoryException {
@@ -87,10 +94,13 @@ public class ConcurrentImportTest extends AbstractConcurrencyTest {
                         }
                         try {
                             session.refresh(false);
-                            addNode(test, uuid, JcrConstants.NT_UNSTRUCTURED, uuid, mixins);
                             try {
+                                addNode(test, uuid,
+                                        JcrConstants.NT_UNSTRUCTURED, uuid,
+                                        mixins);
                                 session.save();
-                                log.println("Added " + test.getPath() + "/" + uuid);
+                                log.println("Added " + test.getPath() + "/"
+                                        + uuid);
                                 log.flush();
                             } catch (InvalidItemStateException e) {
                                 log.println("Ignoring expected error: " + e.toString());
@@ -203,4 +213,12 @@ public class ConcurrentImportTest extends AbstractConcurrencyTest {
 
     }
 
+    private void checkConsistency() throws RepositoryException {
+        try {
+            ConsistencyReport rep = TestHelper.checkConsistency(testRootNode.getSession(), false, null);
+            assertEquals("Found broken nodes in repository: " + rep, 0, rep.getItems().size());
+        } catch (NotExecutableException ex) {
+            // ignore
+        }
+    }
 }

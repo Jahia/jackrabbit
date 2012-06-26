@@ -28,9 +28,17 @@ public interface CacheAccessListener {
     int ACCESS_INTERVAL = 127;
 
     /**
-     * The cache calls this method after a number of accessed.
+     * The cache calls this method after a number of cache accesses.<br>
+     * 
+     * For statistical purposes, the cache access count since the last call is
+     * included. In normal circumstances this is equal to
+     * {@link CacheAccessListener#ACCESS_INTERVAL}
+     * 
+     * @param accessCount
+     *            number of cache accesses since the last call
+     * 
      */
-    void cacheAccessed();
+    void cacheAccessed(long accessCount);
 
     /**
      * Called after the cache is no longer used.

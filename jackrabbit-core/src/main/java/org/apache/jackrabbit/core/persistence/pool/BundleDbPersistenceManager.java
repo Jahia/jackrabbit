@@ -22,12 +22,10 @@ import java.io.File;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.sql.Blob;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 
 import javax.jcr.RepositoryException;
@@ -190,8 +188,8 @@ public class BundleDbPersistenceManager
     /**
      * {@inheritDoc}
      */
-    public void setConnectionFactory(ConnectionFactory connnectionFactory) {
-        this.connectionFactory = connnectionFactory;
+    public void setConnectionFactory(ConnectionFactory connectionFactory) {
+        this.connectionFactory = connectionFactory;
     }
 
     /**
@@ -491,6 +489,10 @@ public class BundleDbPersistenceManager
                 } catch (SQLException e2) {
                     DbUtility.logException("rollback failed", e2);
                 }
+
+                // if we got here due to a constraint violation and we
+                // are running in test mode, we really want to stop
+                assert !isIntegrityConstraintViolation(e.getCause());
             }
             failures++;
             log.error("Failed to persist ChangeLog (stacktrace on DEBUG log level), blockOnConnectionLoss = "
@@ -507,6 +509,15 @@ public class BundleDbPersistenceManager
             }
         }
         throw lastException;
+    }
+
+    private boolean isIntegrityConstraintViolation(Throwable t) {
+        if (t instanceof SQLException) {
+            String state = ((SQLException) t).getSQLState();
+            return state != null && state.startsWith("23");
+        } else {
+            return false;
+        }
     }
 
     /**
@@ -686,211 +697,6 @@ public class BundleDbPersistenceManager
     }
 
     /**
-     * Checks a single bundle for inconsistencies, ie. inexistent child nodes
-     * and inexistent parents.
-     *
-     * @param id node id for the bundle to check
-     * @param bundle the bundle to check
-     * @param fix if <code>true</code>, repair things that can be repaired
-     * @param modifications if <code>fix == true</code>, collect the repaired
-     * {@linkplain NodePropBundle bundles} here
-     */
-    protected void checkBundleConsistency(NodeId id, NodePropBundle bundle,
-                                          boolean fix, Collection<NodePropBundle> modifications) {
-        //log.info(name + ": checking bundle '" + id + "'");
-
-        // skip all system nodes except root node
-        if (id.toString().endsWith("babecafebabe")
-                && !id.toString().equals("cafebabe-cafe-babe-cafe-babecafebabe")) {
-            return;
-        }
-
-        // look at the node's children
-        Collection<NodePropBundle.ChildNodeEntry> missingChildren = new ArrayList<NodePropBundle.ChildNodeEntry>();
-        for (NodePropBundle.ChildNodeEntry entry : bundle.getChildNodeEntries()) {
-
-            // skip check for system nodes (root, system root, version storage, node types)
-            if (entry.getId().toString().endsWith("babecafebabe")) {
-                continue;
-            }
-
-            try {
-                // analyze child node bundles
-                NodePropBundle child = loadBundle(entry.getId());
-                if (child == null) {
-                    log.error(
-                            "NodeState '" + id + "' references inexistent child"
-                            + " '" + entry.getName() + "' with id "
-                            + "'" + entry.getId() + "'");
-                    missingChildren.add(entry);
-                } else {
-                    NodeId cp = child.getParentId();
-                    if (cp == null) {
-                        log.error("ChildNode has invalid parent uuid: <null>");
-                    } else if (!cp.equals(id)) {
-                        log.error("ChildNode has invalid parent uuid: '" + cp + "' (instead of '" + id + "')");
-                    }
-                }
-            } catch (ItemStateException e) {
-                // problem already logged (loadBundle called with logDetailedErrors=true)
-            }
-        }
-        // remove child node entry (if fixing is enabled)
-        if (fix && !missingChildren.isEmpty()) {
-            for (NodePropBundle.ChildNodeEntry entry : missingChildren) {
-                bundle.getChildNodeEntries().remove(entry);
-            }
-            modifications.add(bundle);
-        }
-
-        // check parent reference
-        NodeId parentId = bundle.getParentId();
-        try {
-            // skip root nodes (that point to itself)
-            if (parentId != null && !id.toString().endsWith("babecafebabe")) {
-                if (loadBundle(parentId) == null) {
-                    log.error("NodeState '" + id + "' references inexistent parent uuid '" + parentId + "'");
-                }
-            }
-        } catch (ItemStateException e) {
-            log.error("Error reading node '" + parentId + "' (parent of '" + id + "'): " + e);
-        }
-    }
-
-    public void checkConsistency(String[] uuids, boolean recursive, boolean fix) {
-        int count = 0;
-        int total = 0;
-        Collection<NodePropBundle> modifications = new ArrayList<NodePropBundle>();        
-        
-        if (uuids == null) {
-            // get all node bundles in the database with a single sql statement,
-            // which is (probably) faster than loading each bundle and traversing the tree              
-            ResultSet rs = null;
-            try {               
-                String sql = "select count(*) from " + schemaObjectPrefix + "BUNDLE";
-                rs = conHelper.exec(sql, new Object[0], false, 0);
-                try {
-                    if (!rs.next()) {
-                        log.error("Could not retrieve total number of bundles. empty result set.");
-                        return;
-                    }
-                    total = rs.getInt(1);
-                } finally {
-                    DbUtility.close(rs);
-                }
-                if (getStorageModel() == SM_BINARY_KEYS) {
-                    sql = "select NODE_ID from " + schemaObjectPrefix + "BUNDLE";
-                } else {
-                    sql = "select NODE_ID_HI, NODE_ID_LO from " + schemaObjectPrefix + "BUNDLE";
-                }
-                rs = conHelper.exec(sql, new Object[0], false, 0);
-
-                // iterate over all node bundles in the db
-                while (rs.next()) {
-                    NodeId id;
-                    if (getStorageModel() == SM_BINARY_KEYS) {
-                        id = new NodeId(rs.getBytes(1));
-                    } else {
-                        id = new NodeId(rs.getLong(1), rs.getLong(2));
-                    }
-
-                    // issuing 2nd statement to circumvent issue JCR-1474
-                    ResultSet bRs = null;
-                    try {
-                        bRs = conHelper.exec(bundleSelectSQL, getKey(id), false, 0);
-                        if (!bRs.next()) {
-                            throw new SQLException("bundle cannot be retrieved?");
-                        }
-                        // parse and check bundle
-                        NodePropBundle bundle = readBundle(id, bRs, 1);
-                        checkBundleConsistency(id, bundle, fix, modifications);
-                    } catch (SQLException e) {
-                        log.error("Unable to parse bundle " + id, e);
-                    } finally {
-                        DbUtility.close(bRs);
-                    }
-
-                    count++;
-                    if (count % 1000 == 0) {
-                        log.info(name + ": checked " + count + "/" + total + " bundles...");
-                    }
-                }
-            } catch (Exception e) {
-                log.error("Error loading bundle", e);
-            } finally {                 
-                DbUtility.close(rs);
-                total = count;
-            }
-        } else {
-            // check only given uuids, handle recursive flag
-
-            // 1) convert uuid array to modifiable list
-            // 2) for each uuid do
-            //     a) load node bundle
-            //     b) check bundle, store any bundle-to-be-modified in collection
-            //     c) if recursive, add child uuids to list of uuids
-
-            List<NodeId> idList = new ArrayList<NodeId>(uuids.length);
-            // convert uuid string array to list of UUID objects
-            for (int i = 0; i < uuids.length; i++) {
-                try {
-                    idList.add(new NodeId(uuids[i]));
-                } catch (IllegalArgumentException e) {
-                    log.error("Invalid uuid for consistency check, skipping: '" + uuids[i] + "': " + e);
-                }
-            }
-            
-            // iterate over UUIDs (including ones that are newly added inside the loop!)
-            for (int i = 0; i < idList.size(); i++) {
-                NodeId id = idList.get(i);
-                try {
-                    // load the node from the database
-                    NodePropBundle bundle = loadBundle(id);
-
-                    if (bundle == null) {
-                        log.error("No bundle found for uuid '" + id + "'");
-                        continue;
-                    }
-
-                    checkBundleConsistency(id, bundle, fix, modifications);
-
-                    if (recursive) {
-                        for (NodePropBundle.ChildNodeEntry entry : bundle.getChildNodeEntries()) {
-                            idList.add(entry.getId());
-                        }
-                    }
-
-                    count++;
-                    if (count % 1000 == 0) {
-                        log.info(name + ": checked " + count + "/" + idList.size() + " bundles...");
-                    }
-                } catch (ItemStateException e) {
-                    // problem already logged (loadBundle called with logDetailedErrors=true)
-                }
-            }
-
-            total = idList.size();
-        }
-
-        // repair collected broken bundles
-        if (fix && !modifications.isEmpty()) {
-            log.info(name + ": Fixing " + modifications.size() + " inconsistent bundle(s)...");
-            for (NodePropBundle bundle : modifications) {
-                try {
-                    log.info(name + ": Fixing bundle '" + bundle.getId() + "'");
-                    bundle.markOld(); // use UPDATE instead of INSERT
-                    storeBundle(bundle);
-                    evictBundle(bundle.getId());
-                } catch (ItemStateException e) {
-                    log.error(name + ": Error storing fixed bundle: " + e);
-                }
-            }
-        }
-
-        log.info(name + ": checked " + count + "/" + total + " bundles.");
-    }
-
-    /**
      * {@inheritDoc}
      */
     public synchronized void close() throws Exception {
@@ -963,7 +769,7 @@ public class BundleDbPersistenceManager
     /**
      * {@inheritDoc}
      */
-    public synchronized Iterable<NodeId> getAllNodeIds(NodeId bigger, int maxCount)
+    public synchronized List<NodeId> getAllNodeIds(NodeId bigger, int maxCount)
             throws ItemStateException, RepositoryException {
         ResultSet rs = null;
         try {
@@ -975,7 +781,7 @@ public class BundleDbPersistenceManager
                 lowId = bigger;
                 keys = getKey(bigger);
             }
-            if (maxCount > 0) {
+            if (getStorageModel() == SM_LONGLONG_KEYS  && maxCount > 0) {
                 // get some more rows, in case the first row is smaller
                 // only required for SM_LONGLONG_KEYS
                 // probability is very low to get get the wrong first key, < 1 : 2^64
@@ -992,11 +798,12 @@ public class BundleDbPersistenceManager
                     long high = rs.getLong(1);
                     long low = rs.getLong(2);
                     current = new NodeId(high, low);
-                }
-                if (lowId != null) {
-                    // skip the keys that are smaller or equal (see above, maxCount += 10)
-                    if (current.compareTo(lowId) <= 0) {
-                        continue;
+                    if (lowId != null) {
+                        // skip the keys that are smaller or equal (see above, maxCount += 10)
+                        // only required for SM_LONGLONG_KEYS
+                        if (current.compareTo(lowId) <= 0) {
+                            continue;
+                        }
                     }
                 }
                 result.add(current);
@@ -1081,11 +888,21 @@ public class BundleDbPersistenceManager
             Object[] params = createParams(bundle.getId(), out.toByteArray(), true);
             conHelper.update(sql, params);
         } catch (Exception e) {
-            String msg = "failed to write bundle: " + bundle.getId();
+            String msg;
+
+            if (isIntegrityConstraintViolation(e)) {
+                // we should never get an integrity constraint violation here
+                // other PMs may not be able to detect this and end up with
+                // corrupted data
+                msg = "FATAL error while writing the bundle: " + bundle.getId();
+            } else {
+                msg = "failed to write bundle: " + bundle.getId();
+            }
+
             log.error(msg, e);
             throw new ItemStateException(msg, e);
         }
-    }
+   }
 
     /**
      * {@inheritDoc}
@@ -1241,7 +1058,7 @@ public class BundleDbPersistenceManager
             nodeReferenceSelectSQL = "select REFS_DATA from " + schemaObjectPrefix + "REFS where NODE_ID = ?";
             nodeReferenceDeleteSQL = "delete from " + schemaObjectPrefix + "REFS where NODE_ID = ?";
 
-            bundleSelectAllIdsSQL = "select NODE_ID from " + schemaObjectPrefix + "BUNDLE";
+            bundleSelectAllIdsSQL = "select NODE_ID from " + schemaObjectPrefix + "BUNDLE ORDER BY NODE_ID";
             bundleSelectAllIdsFromSQL = "select NODE_ID from " + schemaObjectPrefix + "BUNDLE WHERE NODE_ID > ? ORDER BY NODE_ID";
         } else {
             bundleInsertSQL = "insert into " + schemaObjectPrefix + "BUNDLE (BUNDLE_DATA, NODE_ID_HI, NODE_ID_LO) values (?, ?, ?)";
@@ -1258,7 +1075,8 @@ public class BundleDbPersistenceManager
             nodeReferenceSelectSQL = "select REFS_DATA from " + schemaObjectPrefix + "REFS where NODE_ID_HI = ? and NODE_ID_LO = ?";
             nodeReferenceDeleteSQL = "delete from " + schemaObjectPrefix + "REFS where NODE_ID_HI = ? and NODE_ID_LO = ?";
 
-            bundleSelectAllIdsSQL = "select NODE_ID_HI, NODE_ID_LO from " + schemaObjectPrefix + "BUNDLE";
+            bundleSelectAllIdsSQL = "select NODE_ID_HI, NODE_ID_LO from " + schemaObjectPrefix 
+                + "BUNDLE ORDER BY NODE_ID_HI, NODE_ID_LO";
             // need to use HI and LO parameters
             // this is not the exact statement, but not all databases support WHERE (NODE_ID_HI, NODE_ID_LOW) >= (?, ?)
             bundleSelectAllIdsFromSQL =
@@ -1326,7 +1144,7 @@ public class BundleDbPersistenceManager
          * {@inheritDoc}
          */
         public String createId(PropertyId id, int index) {
-            StringBuffer buf = new StringBuffer();
+            StringBuilder buf = new StringBuilder();
             buf.append(id.getParentId().toString());
             buf.append('.');
             buf.append(getNsIndex().stringToIndex(id.getName().getNamespaceURI()));

@@ -97,15 +97,15 @@ public class ItemDefinitionProviderImpl implements ItemDefinitionProvider {
 
     public QPropertyDefinition getQPropertyDefinition(Name[] parentNodeTypeNames,
                                                       Name propertyName,
-                                                      int propertType,
+                                                      int propertyType,
                                                       boolean isMultiValued,
                                                       PropertyId propertyId) throws RepositoryException {
         QPropertyDefinition definition;
         try {
             EffectiveNodeType ent = entProvider.getEffectiveNodeType(parentNodeTypeNames);
-            definition = getQPropertyDefinition(ent, propertyName, propertType, isMultiValued, true);
+            definition = getQPropertyDefinition(ent, propertyName, propertyType, isMultiValued, true);
         } catch (RepositoryException e) {
-            log.debug("Cannot determine property defintion of {}: {}", propertyId, e);
+            log.debug("Cannot determine property definition of {}: {}", propertyId, e);
             definition = getPropertyDefinition(service, sessionInfo, propertyId);
         }
         return definition;
@@ -323,13 +323,11 @@ public class ItemDefinitionProviderImpl implements ItemDefinitionProvider {
                                 throw new ConstraintViolationException("ambiguous property definitions found: " + match + " vs " + pd);
                             }
 
-                            if (match != null && match.getRequiredType() == PropertyType.STRING) {
-                                // If we already found a match, and that was of PropertyType.STRING,
-                                // then do not overwrite it. The whole reason there are multiple
-                                // potential matches is that the client did not specify the type,
-                                // thus obviously specified a String.
-                            }
-                            else {
+                            // If we already found a match, and that was of PropertyType.STRING,
+                            // then do not overwrite it. The whole reason there are multiple
+                            // potential matches is that the client did not specify the type,
+                            // thus obviously specified a String.
+                            if (match == null || match.getRequiredType() != PropertyType.STRING) {
                                 // found best possible match
                                 match = pd;
                             }

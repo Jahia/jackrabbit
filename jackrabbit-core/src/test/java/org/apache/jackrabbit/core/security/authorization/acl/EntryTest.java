@@ -16,12 +16,13 @@
  */
 package org.apache.jackrabbit.core.security.authorization.acl;
 
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
 import org.apache.jackrabbit.api.security.JackrabbitAccessControlEntry;
+import org.apache.jackrabbit.api.security.authorization.PrivilegeManager;
 import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.security.authorization.AbstractEntryTest;
-import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.test.NotExecutableException;
 
 import javax.jcr.RepositoryException;
@@ -46,8 +47,9 @@ public class EntryTest extends AbstractEntryTest {
         super.setUp();
 
         SessionImpl s = (SessionImpl) superuser;
+        PrivilegeManager privMgr = ((JackrabbitWorkspace) superuser.getWorkspace()).getPrivilegeManager();
 
-        acl = new ACLTemplate(testPath, s.getPrincipalManager(), new PrivilegeRegistry(s), s.getValueFactory(), s);
+        acl = new ACLTemplate(testPath, s.getPrincipalManager(), privMgr, s.getValueFactory(), s);
     }
 
     @Override
@@ -56,13 +58,33 @@ public class EntryTest extends AbstractEntryTest {
         return acl.createEntry(principal, privileges, isAllow, Collections.<String, Value>emptyMap());
     }
 
+    @Override
+    protected JackrabbitAccessControlEntry createEntry(Principal principal, Privilege[] privileges, boolean isAllow, Map<String, Value> restrictions) throws RepositoryException {
+        return acl.createEntry(principal, privileges, isAllow, restrictions);
+    }
+
+    @Override
+    protected JackrabbitAccessControlEntry createEntryFromBase(JackrabbitAccessControlEntry base, Privilege[] privileges, boolean isAllow) throws RepositoryException, NotExecutableException {
+        if (base instanceof ACLTemplate.Entry) {
+            return acl.createEntry((ACLTemplate.Entry) base, privileges, isAllow);
+        } else {
+            throw new NotExecutableException();
+        }
+    }
+
+    @Override
+    protected Map<String, Value> getTestRestrictions() throws RepositoryException {
+        String restrName = ((SessionImpl) superuser).getJCRName(ACLTemplate.P_GLOB);
+        return Collections.singletonMap(restrName, superuser.getValueFactory().createValue("/.*"));        
+    }
+
     public void testIsLocal() throws NotExecutableException, RepositoryException {
         ACLTemplate.Entry entry = (ACLTemplate.Entry) createEntry(new String[] {Privilege.JCR_READ}, true);
 
         // false since acl has been created from path only -> no id
         assertFalse(entry.isLocal(((NodeImpl) testRootNode).getNodeId()));
         // false since internal id is null -> will never match.
-        assertFalse(entry.isLocal(new NodeId()));
+        assertFalse(entry.isLocal(NodeId.randomId()));
     }
 
     public void testIsLocal2()  throws NotExecutableException, RepositoryException {
@@ -80,14 +102,14 @@ public class EntryTest extends AbstractEntryTest {
         assertTrue(acls[0] instanceof ACLTemplate);
 
         ACLTemplate acl = (ACLTemplate) acls[0];
-        assertEquals(path, acl.getPath());       
+        assertEquals(path, acl.getPath());
 
         ACLTemplate.Entry entry = acl.createEntry(testPrincipal, new Privilege[] {acMgr.privilegeFromName(Privilege.JCR_READ)}, true, Collections.<String,Value>emptyMap());
 
         // node is must be present + must match to testrootnodes id.
         assertTrue(entry.isLocal(((NodeImpl) testRootNode).getNodeId()));
         // but not to a random id.
-        assertFalse(entry.isLocal(new NodeId()));
+        assertFalse(entry.isLocal(NodeId.randomId()));
     }
 
     public void testRestrictions() throws RepositoryException {

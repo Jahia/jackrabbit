@@ -712,7 +712,6 @@ public final class GQL {
                         value.append(c);
                         break;
                     }
-                case '\'':
                 case '~':
                 case '^':
                 case '[':
@@ -889,7 +888,7 @@ public final class GQL {
     /**
      * A name expression.
      */
-    private class NameExpression implements Expression {
+    private static class NameExpression implements Expression {
 
         private final String value;
 
@@ -961,11 +960,13 @@ public final class GQL {
                 }
             }
             buffer.append(", '");
+            // properly escape apostrophe. See JCR-3157
+            String escapedValue = value.replaceAll("'", "\\\\''");
             if (value.indexOf(' ') != -1) {
                 // phrase
-                buffer.append('"').append(value).append('"');
+                buffer.append('"').append(escapedValue).append('"');
             } else {
-                buffer.append(value);
+                buffer.append(escapedValue);
             }
             buffer.append("')");
             if (prohibited) {

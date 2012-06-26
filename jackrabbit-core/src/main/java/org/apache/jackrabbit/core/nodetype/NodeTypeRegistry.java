@@ -77,6 +77,20 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
             "/nodetypes/custom_nodetypes.xml";
 
     /**
+     * Feature flag for the unfortunate behavior in Jackrabbit 2.1 and 2.2
+     * where the exception from {@link #checkForReferencesInContent(Name)}
+     * was never thrown because of a mistaken commit for
+     * <a href="https://issues.apache.org/jira/browse/JCR-2587">JCR-2587</a>.
+     * Setting this flag to <code>true</code> (the default value comes from
+     * the "disableCheckForReferencesInContentException" system property)
+     * will disable the exception thrown by default by the method.
+     *
+     * @see <a href="https://issues.apache.org/jira/browse/JCR-3223">JCR-3223</a>
+     */
+    public static volatile boolean disableCheckForReferencesInContentException =
+            Boolean.getBoolean("disableCheckForReferencesInContentException");
+
+    /**
      * resource holding custom node type definitions which are represented as
      * nodes in the repository; it is needed in order to make the registrations
      * persistent.
@@ -103,7 +117,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
     private final NamespaceRegistry nsReg;
 
     /**
-     * Listeners (soft references)
+     * Listeners (weak references)
      */
     @SuppressWarnings("unchecked")
     private final Map<NodeTypeRegistryListener, NodeTypeRegistryListener> listeners =
@@ -293,7 +307,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
                 Set<Name> dependents = getDependentNodeTypes(ntName);
                 dependents.removeAll(ntNames);
                 if (dependents.size() > 0) {
-                    StringBuffer msg = new StringBuffer();
+                    StringBuilder msg = new StringBuilder();
                     msg.append(ntName).append(" can not be removed because the following node types depend on it: ");
                     for (Name dependent : dependents) {
                         msg.append(dependent);
@@ -386,35 +400,65 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
             throws NoSuchNodeTypeException, InvalidNodeTypeDefException,
             RepositoryException {
 
-        EffectiveNodeType entNew = null;
+        EffectiveNodeType entNew;
 
         synchronized (this) {
 
-        Name name = ntd.getName();
-        if (!registeredNTDefs.containsKey(name)) {
-            throw new NoSuchNodeTypeException(name.toString());
-        }
-        if (builtInNTDefs.contains(name)) {
-            throw new RepositoryException(name.toString()
-                    + ": can't reregister built-in node type.");
-        }
+            Name name = ntd.getName();
+            if (!registeredNTDefs.containsKey(name)) {
+                throw new NoSuchNodeTypeException(name.toString());
+            }
+            if (builtInNTDefs.contains(name)) {
+                throw new RepositoryException(name.toString()
+                        + ": can't reregister built-in node type.");
+            }
 
-        /**
-         * validate new node type definition
-         */
-        ntd = checkNtBaseSubtyping(ntd, registeredNTDefs);
-        validateNodeTypeDef(ntd, entCache, registeredNTDefs, nsReg, false);
+            /**
+             * validate new node type definition
+             */
+            ntd = checkNtBaseSubtyping(ntd, registeredNTDefs);
+            validateNodeTypeDef(ntd, entCache, registeredNTDefs, nsReg, false);
 
-        /**
-         * build diff of current and new definition and determine type of change
-         */
-        QNodeTypeDefinition ntdOld = registeredNTDefs.get(name);
-        NodeTypeDefDiff diff = NodeTypeDefDiff.create(ntdOld, ntd);
-        if (!diff.isModified()) {
-            // the definition has not been modified, there's nothing to do here...
-            return getEffectiveNodeType(name);
-        }
-        if (diff.isTrivial() || diff.isMajor()) {
+            /**
+             * build diff of current and new definition and determine type of change
+             */
+            QNodeTypeDefinition ntdOld = registeredNTDefs.get(name);
+            NodeTypeDefDiff diff = NodeTypeDefDiff.create(ntdOld, ntd);
+            if (!diff.isModified()) {
+                // the definition has not been modified, there's nothing to do here...
+                return getEffectiveNodeType(name);
+            }
+
+            if (!diff.isTrivial() && !diff.isMajor()) {
+
+                // TODO Implement checkForConflictingContent()
+                // make sure existing content would not conflict
+                // with new node type definition
+                //checkForConflictingContent(ntd);
+                //
+                // unregister old node type definition
+                //internalUnregister(name);
+                // register new definition
+                //EffectiveNodeType entNew = internalRegister(ntd);
+                //
+                // persist modified node type definitions
+                //customNTDefs.remove(name);
+                //customNTDefs.add(ntd);
+                //persistCustomNodeTypeDefs(customNTDefs);
+                //
+                // notify listeners
+                //notifyReRegistered(name);
+                //return entNew;
+
+                String message =
+                    "The following node type change contains non-trivial changes."
+                    + "Up until now only trivial changes are supported."
+                    + " (see javadoc for "
+                    + NodeTypeDefDiff.class.getName()
+                    + "):\n" + diff.toString();
+                throw new RepositoryException(message);
+            }
+
             /**
              * the change is trivial and has no effect on current content
              * (e.g. that would be the case when non-mandatory properties had
@@ -435,8 +479,6 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
 
             // notify listeners
             notifyReRegistered(name);
-
-        }
 
         }
 
@@ -605,7 +647,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
                 String type = aPd.getRequiredType() == 0 ? "null" : PropertyType.nameFromValue(aPd.getRequiredType());
                 builder.append("\t\tRequiredType\t" + type + "\n");
                 QValueConstraint[] vca = aPd.getValueConstraints();
-                StringBuffer constraints = new StringBuffer();
+                StringBuilder constraints = new StringBuilder();
                 if (vca == null) {
                     constraints.append("<null>");
                 } else {
@@ -618,7 +660,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
                 }
                 builder.append("\t\tValueConstraints\t" + constraints + "\n");
                 QValue[] defVals = aPd.getDefaultValues();
-                StringBuffer defaultValues = new StringBuffer();
+                StringBuilder defaultValues = new StringBuilder();
                 if (defVals == null) {
                     defaultValues.append("<null>");
                 } else {
@@ -950,7 +992,18 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
      */
     protected void checkForReferencesInContent(Name nodeTypeName)
             throws RepositoryException {
-        // throw new RepositoryException("not yet implemented");
+        if (!disableCheckForReferencesInContentException) {
+            throw new RepositoryException(
+                    "The check for the existence of content using the"
+                    + " given node type is not yet implemented, so to"
+                    + " guarantee repository consistency the request to"
+                    + " unregister the type is denied. Contributions to"
+                    + " implement this feature would be welcome! To restore"
+                    + " the broken behavior of previous Jackrabbit versions"
+                    + " where this check was simply skipped, please set the"
+                    + " disableCheckForReferencesInContentException system"
+                    + " property to true.");
+        }
     }
 
     //-------------------------------------------------------< implementation >
@@ -1103,7 +1156,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
         for (Name nt : supertypes) {
             int pos = inheritanceChain.lastIndexOf(nt);
             if (pos >= 0) {
-                StringBuffer buf = new StringBuffer();
+                StringBuilder buf = new StringBuilder();
                 for (int j = 0; j < inheritanceChain.size(); j++) {
                     if (j == pos) {
                         buf.append("--> ");
@@ -1144,7 +1197,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
         for (Name nt : childNodeNTs) {
             int pos = definingParentNTs.lastIndexOf(nt);
             if (pos >= 0) {
-                StringBuffer buf = new StringBuffer();
+                StringBuilder buf = new StringBuilder();
                 for (int j = 0; j < definingParentNTs.size(); j++) {
                     if (j == pos) {
                         buf.append("--> ");

@@ -18,7 +18,9 @@ package org.apache.jackrabbit.test.api;
 
 import org.apache.jackrabbit.test.AbstractJCRTest;
 import org.apache.jackrabbit.test.NotExecutableException;
+import org.apache.jackrabbit.test.api.util.InputStreamWrapper;
 
+import javax.jcr.Binary;
 import javax.jcr.Session;
 import javax.jcr.ValueFactory;
 import javax.jcr.Node;
@@ -29,7 +31,6 @@ import javax.jcr.PathNotFoundException;
 import javax.jcr.Value;
 import javax.jcr.ValueFormatException;
 import java.util.Calendar;
-import java.util.ArrayList;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
@@ -51,13 +52,10 @@ public class ValueFactoryTest extends AbstractJCRTest {
     private static final double doubleValue = 3.1414926;
     private static final long  longValue = Long.MAX_VALUE;
     private Node referenceNode = null;
-    private Node notReferenceableNode = null;
     private static final String stringValue = "a string";
     private static String nameValue = "aName";
     private static String pathValue = "/a/Path[1]";
     private byte[] binaryValue = null;
-
-    private  ArrayList values = new ArrayList();
 
     private String dateValueFail = nameValue;
     private static final String doubleValueFail = nameValue;
@@ -318,5 +316,22 @@ public class ValueFactoryTest extends AbstractJCRTest {
             }
         }
 
+    }
+
+    /**
+     * Tests whether a passed <code>InputStream</code> is closed
+     * by the implementation.
+     *
+     * @throws RepositoryException
+     */
+    public void testInputStream() throws RepositoryException {
+        InputStreamWrapper in = new InputStreamWrapper(new ByteArrayInputStream(binaryValue));
+        valueFactory.createValue(in);
+        assertTrue("ValueFactory.createValue(InputStream) is expected to close the passed input stream", in.isClosed());
+
+        in = new InputStreamWrapper(new ByteArrayInputStream(binaryValue));
+        Binary bin = valueFactory.createBinary(in);
+        assertTrue("ValueFactory.createBinary(InputStream) is expected to close the passed input stream", in.isClosed());
+        bin.dispose();
     }
 }

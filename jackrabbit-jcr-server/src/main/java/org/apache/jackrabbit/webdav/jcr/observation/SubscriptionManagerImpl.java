@@ -53,7 +53,7 @@ import java.util.ArrayList;
 // todo: make sure all expired subscriptions are removed!
 public class SubscriptionManagerImpl implements SubscriptionManager, TransactionListener {
 
-    private static Logger log = LoggerFactory.getLogger(SubscriptionManager.class);
+    private static Logger log = LoggerFactory.getLogger(SubscriptionManagerImpl.class);
 
     /**
      * Map containing all {@link org.apache.jackrabbit.webdav.observation.Subscription subscriptions}.
@@ -206,7 +206,7 @@ public class SubscriptionManagerImpl implements SubscriptionManager, Transaction
      * @param subscriptionId
      * @param resource
      * @return <code>Subscription</code> with the given id.
-     * @throws DavException if an error occured while retrieving the <code>Subscription</code>
+     * @throws DavException if an error occurred while retrieving the <code>Subscription</code>
      */
     private SubscriptionImpl validate(String subscriptionId, ObservationResource resource)
             throws DavException {
@@ -271,7 +271,7 @@ public class SubscriptionManagerImpl implements SubscriptionManager, Transaction
      * present in the internal map. This allows to hide the subscription Id
      * from other sessions, that did create the subscription.
      */
-    private class WrappedSubscription implements Subscription {
+    private static class WrappedSubscription implements Subscription {
 
         private final Subscription delegatee;
 
@@ -287,6 +287,14 @@ public class SubscriptionManagerImpl implements SubscriptionManager, Transaction
 
         public Element toXml(Document document) {
             return delegatee.toXml(document);
+        }
+
+        public boolean eventsProvideNodeTypeInformation() {
+            return delegatee.eventsProvideNodeTypeInformation();
+        }
+
+        public boolean eventsProvideNoLocalFlag() {
+            return delegatee.eventsProvideNoLocalFlag();
         }
     }
 

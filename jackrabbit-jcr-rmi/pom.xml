@@ -22,7 +22,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-parent</artifactId>
-    <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     <relativePath>../jackrabbit-parent/pom.xml</relativePath>
   </parent>
 
@@ -51,9 +51,9 @@
             <id>rmic</id>
             <phase>process-classes</phase>
             <configuration>
-              <tasks>
+              <target>
                 <rmic base="${project.build.outputDirectory}" verify="true" classpathref="maven.compile.classpath" />
-              </tasks>
+              </target>
             </configuration>
             <goals>
               <goal>run</goal>
@@ -93,6 +93,39 @@
         </configuration>
       </plugin>
     </plugins>
+    <pluginManagement>
+    	<plugins>
+    		<!--This plugin's configuration is used to store Eclipse m2e settings only. It has no influence on the Maven build itself.-->
+    		<plugin>
+    			<groupId>org.eclipse.m2e</groupId>
+    			<artifactId>lifecycle-mapping</artifactId>
+    			<version>1.0.0</version>
+    			<configuration>
+    				<lifecycleMappingMetadata>
+    					<pluginExecutions>
+    						<pluginExecution>
+    							<pluginExecutionFilter>
+    								<groupId>
+    									org.apache.maven.plugins
+    								</groupId>
+    								<artifactId>
+    									maven-antrun-plugin
+    								</artifactId>
+    								<versionRange>[1.6,)</versionRange>
+    								<goals>
+    									<goal>run</goal>
+    								</goals>
+    							</pluginExecutionFilter>
+    							<action>
+    								<ignore />
+    							</action>
+    						</pluginExecution>
+    					</pluginExecutions>
+    				</lifecycleMappingMetadata>
+    			</configuration>
+    		</plugin>
+    	</plugins>
+    </pluginManagement>
   </build>
 
   <profiles>
@@ -611,6 +644,38 @@ org.apache.jackrabbit.test.api.version.WorkspaceRestoreTest#testWorkspaceRestore
 org.apache.jackrabbit.test.api.version.WorkspaceRestoreTest#testWorkspaceRestoreWithRemoveExistingJcr2
 org.apache.jackrabbit.test.api.version.WorkspaceRestoreTest#testWorkspaceRestoreWithUUIDConflict
 org.apache.jackrabbit.test.api.version.WorkspaceRestoreTest#testWorkspaceRestoreWithUUIDConflictJcr2
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testSetPolicy
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testSetAllPolicies
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testGetPolicyAfterSet
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testResetPolicy
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testSetPolicyIsTransient
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testGetPolicyAfterSave
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testNodeIsModifiedAfterSecondSetPolicy
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testNodeIsModifiedAfterSetPolicy
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testRemovePolicy
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testRemovePolicyIsTransient
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testNodeIsModifiedAfterRemovePolicy
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testSetPolicyOnNewNode
+org.apache.jackrabbit.test.api.security.AccessControlPolicyTest#testRemoveTransientlyAddedPolicy
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAccessControlEntry
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAggregatePrivilege
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAggregatedPrivilegesSeparately
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddPrivilegesPresentInEntries
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAccessControlEntryAndSetPolicy
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAccessControlEntryIsTransient
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAccessControlEntryInvalidPrincipal
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAccessControlEntryEmptyPrivilegeArray
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAccessControlEntryInvalidPrivilege
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testRemoveAddedAccessControlEntry
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testRemoveAccessControlEntryAndSetPolicy
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testRemoveAccessControlEntryIsTransient
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testRemoveIllegalAccessControlEntry
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAccessControlEntryTwice
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testAddAccessControlEntryAgain
+org.apache.jackrabbit.test.api.security.AccessControlListTest#testExtendPrivileges
+org.apache.jackrabbit.test.api.security.RSessionAccessControlPolicyTest#testSetPolicy
+<!-- JCRRMI-26 -->
+org.apache.jackrabbit.test.api.observation.EventJournalTest
                   </value>
                 </property>
                 <property>
@@ -654,7 +719,7 @@ org.apache.jackrabbit.test.api.version.WorkspaceRestoreTest#testWorkspaceRestore
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-commons</artifactId>
-        <version>2.2.4-rev1068882-patch8</version>
+        <version>2.4.2-rev1346887-patch8</version>
       <scope>provided</scope>
     </dependency>
     
@@ -662,7 +727,7 @@ org.apache.jackrabbit.test.api.version.WorkspaceRestoreTest#testWorkspaceRestore
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-api</artifactId>
-        <version>2.2.4-rev1068882-patch8</version>
+        <version>2.4.2-rev1346887-patch8</version>
       <scope>provided</scope>
     </dependency>
 
@@ -675,13 +740,13 @@ org.apache.jackrabbit.test.api.version.WorkspaceRestoreTest#testWorkspaceRestore
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-core</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-tests</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <scope>test</scope>
     </dependency>
     <dependency>

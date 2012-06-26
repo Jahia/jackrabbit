@@ -26,15 +26,52 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-parent</artifactId>
-    <version>2.2.4-rev1068882-patch8</version>
+    <version>2.4.2-rev1346887-patch8</version>
     <relativePath>../jackrabbit-parent/pom.xml</relativePath>
   </parent>
   <artifactId>jackrabbit-webdav</artifactId>
+  <packaging>bundle</packaging>
   <name>Jackrabbit WebDAV Library</name>
-  <description>WebDAV library used by the Jackrabbit WebDAV support</description>
+  <description>Generic WebDAV Library</description>
 
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <extensions>true</extensions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>clirr-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <excludes>
+<!-- http://clirr.sourceforge.net/clirr-core/exegesis.html#7012_-_Method_Added_to_Interface -->
+<!-- This is not a problem for us, so exclude. -->
+<exclude>org/apache/jackrabbit/webdav/observation/Subscription</exclude>
+<exclude>org/apache/jackrabbit/webdav/DavCompliance</exclude>
+<exclude>org/apache/jackrabbit/webdav/DavMethods</exclude>
+<exclude>org/apache/jackrabbit/webdav/DavResourceIteratorImpl</exclude>
+<exclude>org/apache/jackrabbit/webdav/security/report/PrincipalMatchReport</exclude>
+<exclude>org/apache/jackrabbit/webdav/security/report/SearchablePropertyReport*</exclude>
+              </excludes>
+              <comparisonArtifacts>
+                <comparisonArtifact>
+                  <groupId>${project.groupId}</groupId>
+                  <artifactId>${project.artifactId}</artifactId>
+                  <version>${clirr.baseline.version}</version>
+                </comparisonArtifact>
+              </comparisonArtifacts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
@@ -52,7 +89,12 @@
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-commons</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
+    </dependency>
+    <dependency>
+      <groupId>biz.aQute</groupId>
+      <artifactId>bndlib</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>

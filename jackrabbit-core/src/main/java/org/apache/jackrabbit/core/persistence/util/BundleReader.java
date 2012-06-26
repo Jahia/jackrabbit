@@ -40,12 +40,17 @@ import java.math.BigDecimal;
 import javax.jcr.PropertyType;
 
 /**
- * Bundle deserializater. See the {@link BundleWriter} class for details of
+ * Bundle deserializer. See the {@link BundleWriter} class for details of
  * the serialization format.
  *
  * @see BundleWriter
  */
 class BundleReader {
+
+    /*
+     * Implementation note: if you change this class, also change BundleDumper
+     * accordingly.
+     */
 
     /** Logger instance */
     private static Logger log = LoggerFactory.getLogger(BundleReader.class);
@@ -398,15 +403,21 @@ class BundleReader {
                     if (version >= BundleBinding.VERSION_3) {
                         val = InternalValue.valueOf(
                                 readString(), entry.getType());
+                } else {
+                    // because writeUTF(String) has a size limit of 64k,
+                    // Strings are serialized as <length><byte[]>
+                    int len = in.readInt();
+                    byte[] bytes = new byte[len];
+                    in.readFully(bytes);
+                    String stringVal = new String(bytes, "UTF-8");
+
+                    // https://issues.apache.org/jira/browse/JCR-3083
+                    if (PropertyType.DATE == entry.getType()) {
+                        val = InternalValue.createDate(stringVal);
                     } else {
-                        // because writeUTF(String) has a size limit of 64k,
-                        // Strings are serialized as <length><byte[]>
-                        int len = in.readInt();
-                        byte[] bytes = new byte[len];
-                        in.readFully(bytes);
-                        val = InternalValue.valueOf(
-                                new String(bytes, "UTF-8"), entry.getType());
+                        val = InternalValue.valueOf(stringVal, entry.getType());
                     }
+                }
             }
             values[i] = val;
         }
@@ -549,8 +560,13 @@ class BundleReader {
         long b;
         do {
             b = in.readUnsignedByte();
-            value = (b & 0x7f) << 57 | value >>> 7;
-            bits += 7;
+            if (bits < 57) {
+                value = (b & 0x7f) << 57 | value >>> 7;
+                bits += 7;
+            } else {
+                value = (b & 0x01) << 63 | value >>> 1;
+                bits = 64;
+            }
         } while ((b & 0x80) != 0);
         value = value >>> (64 - bits);
         if ((value & 1) != 0) {
@@ -573,7 +589,7 @@ class BundleReader {
         TimeZone tz;
         if ((ts & 1) == 0) {
             tz = COMMON_TIMEZONES[0];
-            ts >>= 1; 
+            ts >>= 1;
         } else if ((ts & 2) == 0) {
             tz = COMMON_TIMEZONES[((int) ts >> 2) & 0x1f]; // 5 bits;
             ts >>= 7;

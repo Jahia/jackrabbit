@@ -19,6 +19,8 @@ package org.apache.jackrabbit.core.query.lucene;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -41,17 +43,34 @@ import javax.xml.parsers.ParserConfigurationException;
 
 import org.apache.jackrabbit.core.HierarchyManager;
 import org.apache.jackrabbit.core.SessionImpl;
+import org.apache.jackrabbit.core.cluster.ChangeLogRecord;
+import org.apache.jackrabbit.core.cluster.ClusterNode;
+import org.apache.jackrabbit.core.cluster.ClusterRecord;
+import org.apache.jackrabbit.core.cluster.ClusterRecordDeserializer;
+import org.apache.jackrabbit.core.cluster.ClusterRecordProcessor;
+import org.apache.jackrabbit.core.cluster.LockRecord;
+import org.apache.jackrabbit.core.cluster.NamespaceRecord;
+import org.apache.jackrabbit.core.cluster.NodeTypeRecord;
+import org.apache.jackrabbit.core.cluster.PrivilegeRecord;
+import org.apache.jackrabbit.core.cluster.WorkspaceRecord;
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.fs.FileSystemException;
 import org.apache.jackrabbit.core.fs.FileSystemResource;
 import org.apache.jackrabbit.core.fs.local.LocalFileSystem;
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.journal.Journal;
+import org.apache.jackrabbit.core.journal.JournalException;
+import org.apache.jackrabbit.core.journal.Record;
+import org.apache.jackrabbit.core.journal.RecordIterator;
 import org.apache.jackrabbit.core.query.*;
 import org.apache.jackrabbit.core.query.lucene.directory.DirectoryManager;
 import org.apache.jackrabbit.core.query.lucene.directory.FSDirectoryManager;
+import org.apache.jackrabbit.core.query.lucene.hits.AbstractHitCollector;
 import org.apache.jackrabbit.core.session.SessionContext;
+import org.apache.jackrabbit.core.state.ItemState;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.ItemStateManager;
+import org.apache.jackrabbit.core.state.NoSuchItemStateException;
 import org.apache.jackrabbit.core.state.NodeState;
 import org.apache.jackrabbit.core.state.PropertyState;
 import org.apache.jackrabbit.spi.Name;
@@ -63,22 +82,27 @@ import org.apache.jackrabbit.spi.commons.query.DefaultQueryNodeFactory;
 import org.apache.jackrabbit.spi.commons.query.qom.OrderingImpl;
 import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelTree;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.Token;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
+import org.apache.lucene.analysis.tokenattributes.TermAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.MultiReader;
+import org.apache.lucene.index.Payload;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermDocs;
-import org.apache.lucene.search.HitCollector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Similarity;
 import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.SortComparatorSource;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.util.Version;
+import org.apache.tika.config.TikaConfig;
+import org.apache.tika.fork.ForkParser;
+import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.Parser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -206,9 +230,21 @@ public class SearchIndex extends AbstractQueryHandler {
     private final JackrabbitAnalyzer analyzer = new JackrabbitAnalyzer();
 
     /**
-     * The parser for extracting text content from binary properties.
+     * Path of the Tika configuration file used for text extraction.
      */
-    private final JackrabbitParser parser = new JackrabbitParser();
+    private String tikaConfigPath = null;
+
+    /**
+     * Java command used to fork external parser processes,
+     * or <code>null</code> (the default) for in-process text extraction.
+     */
+    private String forkJavaCommand = null;
+
+    /**
+     * The Tika parser for extracting text content from binary properties.
+     * Initialized by the {@link #getParser()} method during first access.
+     */
+    private Parser parser = null;
 
     /**
      * The namespace mappings used internally.
@@ -440,9 +476,9 @@ public class SearchIndex extends AbstractQueryHandler {
     private int termInfosIndexDivisor = DEFAULT_TERM_INFOS_INDEX_DIVISOR;
 
     /**
-     * The sort comparator source for indexed properties.
+     * The field comparator source for indexed properties.
      */
-    private SortComparatorSource scs;
+    private SharedFieldComparatorSource scs;
 
     /**
      * Flag that indicates whether the hierarchy cache should be initialized
@@ -507,11 +543,14 @@ public class SearchIndex extends AbstractQueryHandler {
             }
         }
 
-        scs = new SharedFieldSortComparator(
+        scs = new SharedFieldComparatorSource(
                 FieldNames.PROPERTIES, context.getItemStateManager(),
                 context.getHierarchyManager(), nsMappings);
         indexingConfig = createIndexingConfiguration(nsMappings);
         analyzer.setIndexingConfig(indexingConfig);
+
+        // initialize the Tika parser
+        parser = createParser();
 
         index = new MultiIndex(this, excludedIDs);
         if (index.numDocs() == 0) {
@@ -524,6 +563,7 @@ public class SearchIndex extends AbstractQueryHandler {
             }
             index.createInitialIndex(context.getItemStateManager(),
                     context.getRootId(), rootPath);
+            checkPendingJournalChanges(context);
         }
         if (consistencyCheckEnabled
                 && (index.getRedoLogApplied() || forceConsistencyCheck)) {
@@ -611,7 +651,6 @@ public class SearchIndex extends AbstractQueryHandler {
             if (state != null) {
                 NodeId id = state.getNodeId();
                 addedIds.add(id);
-                removedIds.remove(id);
                 retrieveAggregateRoot(state, aggregateRoots);
 
                 try {
@@ -711,7 +750,8 @@ public class SearchIndex extends AbstractQueryHandler {
             try {
                 Query q = new TermQuery(new Term(
                         FieldNames.WEAK_REFS, id.toString()));
-                searcher.search(q, new HitCollector() {
+                searcher.search(q, new AbstractHitCollector() {
+                    @Override
                     public void collect(int doc, float score) {
                         docs.add(doc);
                     }
@@ -748,7 +788,7 @@ public class SearchIndex extends AbstractQueryHandler {
     public void flush() throws RepositoryException {
         try {
             index.waitUntilIndexingQueueIsEmpty();
-            index.flush();
+            index.safeFlush();
             // flush may have pushed nodes into the indexing queue
             // -> wait again
             index.waitUntilIndexingQueueIsEmpty();
@@ -789,8 +829,8 @@ public class SearchIndex extends AbstractQueryHandler {
      * @param orderSpecs      the order specs for the sort order properties.
      *                        <code>true</code> indicates ascending order,
      *                        <code>false</code> indicates descending.
-     * @param resultFetchHint a hint on how many results should be fetched.
-     * @return the query hits.
+     * @param orderFuncs      functions for the properties for sort order. 
+     * @param resultFetchHint a hint on how many results should be fetched.  @return the query hits.
      * @throws IOException if an error occurs while searching the index.
      */
     public MultiColumnQueryHits executeQuery(SessionImpl session,
@@ -798,11 +838,11 @@ public class SearchIndex extends AbstractQueryHandler {
                                              Query query,
                                              Path[] orderProps,
                                              boolean[] orderSpecs,
-                                             long resultFetchHint)
+                                             String[] orderFuncs, long resultFetchHint)
             throws IOException {
         checkOpen();
 
-        Sort sort = new Sort(createSortFields(orderProps, orderSpecs));
+        Sort sort = new Sort(createSortFields(orderProps, orderSpecs, orderFuncs));
 
         final IndexReader reader = getIndexReader(queryImpl.needsSystemTree());
         JackrabbitIndexSearcher searcher = new JackrabbitIndexSearcher(
@@ -882,6 +922,47 @@ public class SearchIndex extends AbstractQueryHandler {
     }
 
     /**
+     * Returns the path of the Tika configuration used for text extraction.
+     *
+     * @return path of the Tika configuration file
+     */
+    public String getTikaConfigPath() {
+        return tikaConfigPath;
+    }
+
+    /**
+     * Sets the path of the Tika configuration used for text extraction.
+     * The path can be either a file system or a class resource path.
+     * The default setting is the tika-config.xml class resource relative
+     * to org.apache.core.query.lucene.
+     *
+     * @param tikaConfigPath path of the Tika configuration file
+     */
+    public void setTikaConfigPath(String tikaConfigPath) {
+        this.tikaConfigPath = tikaConfigPath;
+    }
+
+    /**
+     * Returns the java command used to fork external parser processes,
+     * or <code>null</code> (the default) for in-process text extraction.
+     *
+     * @return fork java command
+     */
+    public String getForkJavaCommand() {
+        return forkJavaCommand;
+    }
+
+    /**
+     * Sets the java command used to fork external parser processes.
+     *
+     * @param command fork java command,
+     *                or <code>null</code> for in-process extraction
+     */
+    public void setForkJavaCommand(String command) {
+        this.forkJavaCommand = command;
+    }
+
+    /**
      * Returns the parser used for extracting text content
      * from binary properties for full text indexing.
      *
@@ -889,6 +970,49 @@ public class SearchIndex extends AbstractQueryHandler {
      */
     public Parser getParser() {
         return parser;
+    }
+
+    private Parser createParser() {
+        URL url = null;
+        if (tikaConfigPath != null) {
+            File file = new File(tikaConfigPath);
+            if (file.exists()) {
+                try {
+                    url = file.toURI().toURL();
+                } catch (MalformedURLException e) {
+                    log.warn("Invalid Tika configuration path: " + file, e);
+                }
+            } else {
+                ClassLoader loader = SearchIndex.class.getClassLoader();
+                url = loader.getResource(tikaConfigPath);
+            }
+        }
+        if (url == null) {
+            url = SearchIndex.class.getResource("tika-config.xml");
+        }
+
+        TikaConfig config = null;
+        if (url != null) {
+            try {
+                config = new TikaConfig(url);
+            } catch (Exception e) {
+                log.warn("Tika configuration not available: " + url, e);
+            }
+        }
+        if (config == null) {
+            config = TikaConfig.getDefaultConfig();
+        }
+
+        if (forkJavaCommand != null) {
+            ForkParser forkParser = new ForkParser(
+                    SearchIndex.class.getClassLoader(),
+                    new AutoDetectParser(config));
+            forkParser.setJavaCommand(forkJavaCommand);
+            forkParser.setPoolSize(extractorPoolSize);
+            return forkParser;
+        } else {
+            return new AutoDetectParser(config);
+        }
     }
 
     /**
@@ -1034,10 +1158,11 @@ public class SearchIndex extends AbstractQueryHandler {
      *
      * @param orderProps the order properties.
      * @param orderSpecs the order specs for the properties.
+     * @param orderFuncs the functions for the properties. 
      * @return an array of sort fields
      */
     protected SortField[] createSortFields(Path[] orderProps,
-                                           boolean[] orderSpecs) {
+                                           boolean[] orderSpecs, String[] orderFuncs) {
         List<SortField> sortFields = new ArrayList<SortField>();
         for (int i = 0; i < orderProps.length; i++) {
             if (orderProps[i].getLength() == 1
@@ -1048,7 +1173,13 @@ public class SearchIndex extends AbstractQueryHandler {
                 // are first.
                 sortFields.add(new SortField(null, SortField.SCORE, orderSpecs[i]));
             } else {
-                sortFields.add(new SortField(orderProps[i].getString(), scs, !orderSpecs[i]));
+                if ("upper-case".equals(orderFuncs[i])) {
+                    sortFields.add(new SortField(orderProps[i].getString(), new UpperCaseSortComparator(scs), !orderSpecs[i]));
+                } else if ("lower-case".equals(orderFuncs[i])) {
+                    sortFields.add(new SortField(orderProps[i].getString(), new LowerCaseSortComparator(scs), !orderSpecs[i]));
+                } else {
+                    sortFields.add(new SortField(orderProps[i].getString(), scs, !orderSpecs[i]));
+                }
             }
         }
         return sortFields.toArray(new SortField[sortFields.size()]);
@@ -1109,9 +1240,9 @@ public class SearchIndex extends AbstractQueryHandler {
     }
 
     /**
-     * @return the sort comparator source for this index.
+     * @return the field comparator source for this index.
      */
-    protected SortComparatorSource getSortComparatorSource() {
+    protected SharedFieldComparatorSource getSortComparatorSource() {
         return scs;
     }
 
@@ -1362,18 +1493,20 @@ public class SearchIndex extends AbstractQueryHandler {
                                 for (Fieldable fulltextField : fulltextFields) {
                                     doc.add(fulltextField);
                                 }
-                                doc.add(new Field(FieldNames.AGGREGATED_NODE_UUID, aggregate.getNodeId().toString(), Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
+                                doc.add(new Field(
+                                        FieldNames.AGGREGATED_NODE_UUID, false,
+                                        aggregate.getNodeId().toString(),
+                                        Field.Store.NO,
+                                        Field.Index.NOT_ANALYZED_NO_NORMS,
+                                        Field.TermVector.NO));
                             }
                         }
                         // make sure that fulltext fields are aligned properly
                         // first all stored fields, then remaining
-                        List<Fieldable> fulltextFields = new ArrayList<Fieldable>();
-                        fulltextFields.addAll(removeFields(doc, FieldNames.FULLTEXT));
-                        Collections.sort(fulltextFields, new Comparator<Fieldable>() {
-                            public int compare(Fieldable o1, Fieldable o2) {
-                                return Boolean.valueOf(o2.isStored()).compareTo(o1.isStored());
-                            }
-                        });
+                        Fieldable[] fulltextFields = doc
+                                .getFieldables(FieldNames.FULLTEXT);
+                        doc.removeFields(FieldNames.FULLTEXT);
+                        Arrays.sort(fulltextFields, FIELDS_COMPARATOR_STORED);
                         for (Fieldable f : fulltextFields) {
                             doc.add(f);
                         }
@@ -1389,11 +1522,17 @@ public class SearchIndex extends AbstractQueryHandler {
                             try {
                                 // find the right fields to transfer
                                 Fieldable[] fields = aDoc.getFieldables(FieldNames.PROPERTIES);
-                                Token t = new Token();
                                 for (Fieldable field : fields) {
+
                                     // assume properties fields use SingleTokenStream
-                                    t = field.tokenStreamValue().next(t);
-                                    String value = new String(t.termBuffer(), 0, t.termLength());
+                                    TokenStream tokenStream = field.tokenStreamValue();
+                                    TermAttribute termAttribute = tokenStream.addAttribute(TermAttribute.class);
+                                    PayloadAttribute payloadAttribute = tokenStream.addAttribute(PayloadAttribute.class);
+                                    tokenStream.incrementToken();
+                                    tokenStream.end();
+                                    tokenStream.close();
+
+                                    String value = new String(termAttribute.termBuffer(), 0, termAttribute.termLength());
                                     if (value.startsWith(namePrefix)) {
                                         // extract value
                                         value = value.substring(namePrefix.length());
@@ -1401,9 +1540,16 @@ public class SearchIndex extends AbstractQueryHandler {
                                         Path p = getRelativePath(state, propState);
                                         String path = getNamespaceMappings().translatePath(p);
                                         value = FieldNames.createNamedValue(path, value);
-                                        t.setTermBuffer(value);
-                                        doc.add(new Field(field.name(), new SingletonTokenStream(t)));
-                                        doc.add(new Field(FieldNames.AGGREGATED_NODE_UUID, parent.getNodeId().toString(), Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
+                                        termAttribute.setTermBuffer(value);
+                                        doc.add(new Field(field.name(),
+                                                new SingletonTokenStream(value, (Payload) payloadAttribute.getPayload().clone())));
+                                        doc.add(new Field(
+                                                FieldNames.AGGREGATED_NODE_UUID,
+                                                false,
+                                                parent.getNodeId().toString(),
+                                                Field.Store.NO,
+                                                Field.Index.NOT_ANALYZED_NO_NORMS,
+                                                Field.TermVector.NO));
                                     }
                                 }
                             } finally {
@@ -1417,29 +1563,24 @@ public class SearchIndex extends AbstractQueryHandler {
                         break;
                     }
                 }
+            } catch (NoSuchItemStateException e) {
+                // do not fail if aggregate cannot be created
+                log.info(
+                        "Exception while building indexing aggregate for {}. Node is not available {}.",
+                        state.getNodeId(), e.getMessage());
             } catch (Exception e) {
                 // do not fail if aggregate cannot be created
-                log.warn("Exception while building indexing aggregate for"
-                        + " node with id: " + state.getNodeId(), e);
+                log.warn("Exception while building indexing aggregate for "
+                        + state.getNodeId(), e);
             }
         }
     }
 
-    /**
-     * Removes the fields with the given <code>name</code> from the
-     * <code>document</code> and returns them in a collection.
-     *
-     * @param document the document.
-     * @param name     the name of the fields to remove.
-     * @return the removed fields.
-     */
-    protected final Collection<Fieldable> removeFields(Document document,
-                                                 String name) {
-        List<Fieldable> fields = new ArrayList<Fieldable>();
-        fields.addAll(Arrays.asList(document.getFieldables(name)));
-        document.removeFields(FieldNames.FULLTEXT);
-        return fields;
-    }
+    private static final Comparator<Fieldable> FIELDS_COMPARATOR_STORED = new Comparator<Fieldable>() {
+        public int compare(Fieldable o1, Fieldable o2) {
+            return Boolean.valueOf(o2.isStored()).compareTo(o1.isStored());
+        }
+    };
 
     /**
      * Returns the relative path from <code>nodeState</code> to
@@ -1475,29 +1616,73 @@ public class SearchIndex extends AbstractQueryHandler {
 
     /**
      * Retrieves the root of the indexing aggregate for <code>state</code> and
-     * puts it into <code>map</code>.
+     * puts it into <code>aggregates</code>  map.
      *
      * @param state the node state for which we want to retrieve the aggregate
      *              root.
-     * @param map   aggregate roots are collected in this map.
+     * @param aggregates aggregate roots are collected in this map.
      */
-    protected void retrieveAggregateRoot(
-            NodeState state, Map<NodeId, NodeState> map) {
-        if (indexingConfig != null) {
-            AggregateRule[] aggregateRules = indexingConfig.getAggregateRules();
-            if (aggregateRules == null) {
-                return;
-            }
+    protected void retrieveAggregateRoot(NodeState state,
+            Map<NodeId, NodeState> aggregates) {
+        retrieveAggregateRoot(state, aggregates, state.getNodeId().toString(), 0);
+    }
+    
+    /**
+     * Retrieves the root of the indexing aggregate for <code>state</code> and
+     * puts it into <code>aggregates</code> map.
+     * 
+     * @param state
+     *            the node state for which we want to retrieve the aggregate
+     *            root.
+     * @param aggregates
+     *            aggregate roots are collected in this map.
+     * @param originNodeId
+     *            the originating node, used for reporting only
+     * @param level
+     *            current aggregation level, used to limit recursive aggregation
+     *            of nodes that have the same type
+     */
+    private void retrieveAggregateRoot(NodeState state,
+            Map<NodeId, NodeState> aggregates, String originNodeId, long level) {
+        if (indexingConfig == null) {
+            return;
+        }
+        AggregateRule[] aggregateRules = indexingConfig.getAggregateRules();
+        if (aggregateRules == null) {
+            return;
+        }
+        for (AggregateRule aggregateRule : aggregateRules) {
+            NodeState root = null;
             try {
-                for (AggregateRule aggregateRule : aggregateRules) {
-                    NodeState root = aggregateRule.getAggregateRoot(state);
-                    if (root != null) {
-                        map.put(root.getNodeId(), root);
-                    }
-                }
+                root = aggregateRule.getAggregateRoot(state);
             } catch (Exception e) {
-                log.warn("Unable to get aggregate root for "
-                        + state.getNodeId(), e);
+                log.warn("Unable to get aggregate root for " + state.getNodeId(), e);
+            }
+            if (root == null) {
+                continue;
+            }
+            if (root.getNodeTypeName().equals(state.getNodeTypeName())) {
+                level++;
+            } else {
+                level = 0;
+            }
+
+            // JCR-2989 Support for embedded index aggregates
+            if ((aggregateRule.getRecursiveAggregationLimit() == 0)
+                    || (aggregateRule.getRecursiveAggregationLimit() != 0 && level <= aggregateRule
+                            .getRecursiveAggregationLimit())) {
+
+                // check if the update parent is already in the
+                // map, then all its parents are already there so I can
+                // skip this update subtree
+                if (aggregates.put(root.getNodeId(), root) == null) {
+                    retrieveAggregateRoot(root, aggregates, originNodeId, level);
+                }
+            } else {
+                log.warn(
+                        "Reached {} levels of recursive aggregation for nodeId {}, type {}, will stop at nodeId {}. Are you sure this did not occur by mistake? Please check the indexing-configuration.xml.",
+                        new Object[] { level, originNodeId,
+                                root.getNodeTypeName(), root.getNodeId() });
             }
         }
     }
@@ -1506,50 +1691,61 @@ public class SearchIndex extends AbstractQueryHandler {
      * Retrieves the root of the indexing aggregate for <code>removedIds</code>
      * and puts it into <code>map</code>.
      *
-     * @param removedIds     the ids of removed nodes.
-     * @param map            aggregate roots are collected in this map
+     * @param removedIds the ids of removed nodes.
+     * @param aggregates aggregate roots are collected in this map
      */
     protected void retrieveAggregateRoot(
-            Set<NodeId> removedIds, Map<NodeId, NodeState> map) {
-        if (indexingConfig != null) {
-            AggregateRule[] aggregateRules = indexingConfig.getAggregateRules();
-            if (aggregateRules == null) {
-                return;
-            }
-            int found = 0;
-            long time = System.currentTimeMillis();
+            Set<NodeId> removedIds, Map<NodeId, NodeState> aggregates) {
+        if(removedIds.isEmpty() || indexingConfig == null){
+            return;
+        }
+        AggregateRule[] aggregateRules = indexingConfig.getAggregateRules();
+        if (aggregateRules == null) {
+            return;
+        }
+        int found = 0;
+        long time = System.currentTimeMillis();
+        try {
+            CachingMultiIndexReader reader = index.getIndexReader();
             try {
-                CachingMultiIndexReader reader = index.getIndexReader();
+                Term aggregateIds =
+                    new Term(FieldNames.AGGREGATED_NODE_UUID, "");
+                TermDocs tDocs = reader.termDocs();
                 try {
-                    Term aggregateIds =
-                        new Term(FieldNames.AGGREGATED_NODE_UUID, "");
-                    TermDocs tDocs = reader.termDocs();
-                    try {
-                        ItemStateManager ism = getContext().getItemStateManager();
-                        for (NodeId id : removedIds) {
-                            aggregateIds =
-                                aggregateIds.createTerm(id.toString());
-                            tDocs.seek(aggregateIds);
-                            while (tDocs.next()) {
-                                Document doc = reader.document(
-                                        tDocs.doc(), FieldSelectors.UUID);
-                                NodeId nId = new NodeId(doc.get(FieldNames.UUID));
-                                map.put(nId, (NodeState) ism.getItemState(nId));
-                                found++;
-                            }
+                    ItemStateManager ism = getContext().getItemStateManager();
+                    for (NodeId id : removedIds) {
+                        aggregateIds =
+                            aggregateIds.createTerm(id.toString());
+                        tDocs.seek(aggregateIds);
+                        while (tDocs.next()) {
+                            Document doc = reader.document(
+                                    tDocs.doc(), FieldSelectors.UUID);
+                            NodeId nId = new NodeId(doc.get(FieldNames.UUID));
+                            NodeState nodeState = (NodeState) ism.getItemState(nId);
+                            aggregates.put(nId, nodeState);
+                            found++;
+
+                            // JCR-2989 Support for embedded index aggregates
+                            int sizeBefore = aggregates.size();
+                            retrieveAggregateRoot(nodeState, aggregates);
+                            found += aggregates.size() - sizeBefore;
                         }
-                    } finally {
-                        tDocs.close();
                     }
                 } finally {
-                    reader.release();
+                    tDocs.close();
                 }
-            } catch (Exception e) {
-                log.warn("Exception while retrieving aggregate roots", e);
+            } finally {
+                reader.release();
             }
-            time = System.currentTimeMillis() - time;
-            log.debug("Retrieved {} aggregate roots in {} ms.", found, time);
+        } catch (NoSuchItemStateException e) {
+            log.info(
+                    "Exception while retrieving aggregate roots. Node is not available {}.",
+                    e.getMessage());
+        } catch (Exception e) {
+            log.warn("Exception while retrieving aggregate roots", e);
         }
+        time = System.currentTimeMillis() - time;
+        log.debug("Retrieved {} aggregate roots in {} ms.", found, time);
     }
 
     //----------------------------< internal >----------------------------------
@@ -1692,11 +1888,12 @@ public class SearchIndex extends AbstractQueryHandler {
     //--------------------------< properties >----------------------------------
 
     /**
-     * Sets the analyzer in use for indexing. The given analyzer class name
-     * must satisfy the following conditions:
+     * Sets the default analyzer in use for indexing. The given analyzer
+     * class name must satisfy the following conditions:
      * <ul>
      *   <li>the class must exist in the class path</li>
-     *   <li>the class must have a public default constructor</li>
+     *   <li>the class must have a public default constructor, or
+     *       a constructor that takes a Lucene {@link Version} argument</li>
      *   <li>the class must be a Lucene Analyzer</li>
      * </ul>
      * <p>
@@ -1711,21 +1908,16 @@ public class SearchIndex extends AbstractQueryHandler {
      * @param analyzerClassName the analyzer class name
      */
     public void setAnalyzer(String analyzerClassName) {
-        try {
-            Class<?> analyzerClass = Class.forName(analyzerClassName);
-            analyzer.setDefaultAnalyzer((Analyzer) analyzerClass.newInstance());
-        } catch (Exception e) {
-            log.warn("Invalid Analyzer class: " + analyzerClassName, e);
-        }
+        analyzer.setDefaultAnalyzerClass(analyzerClassName);
     }
 
     /**
-     * Returns the class name of the analyzer that is currently in use.
+     * Returns the class name of the default analyzer that is currently in use.
      *
      * @return class name of analyzer in use.
      */
     public String getAnalyzer() {
-        return analyzer.getClass().getName();
+        return analyzer.getDefaultAnalyzerClass();
     }
 
     /**
@@ -1909,7 +2101,9 @@ public class SearchIndex extends AbstractQueryHandler {
      * @deprecated 
      */
     public void setTextFilterClasses(String filterClasses) {
-        parser.setTextFilterClasses(filterClasses);
+        log.warn("The textFilterClasses configuration parameter has"
+                + " been deprecated, and the configured value will"
+                + " be ignored: {}", filterClasses);
     }
 
     /**
@@ -2316,6 +2510,46 @@ public class SearchIndex extends AbstractQueryHandler {
         this.redoLogFactoryClass = className;
     }
 
+    /**
+     * In the case of an initial index build operation, this checks if there are
+     * some new nodes pending in the journal and tries to preemptively delete
+     * them, to keep the index consistent.
+     * 
+     * See JCR-3162
+     * 
+     * @param context
+     * @throws IOException
+     */
+    private void checkPendingJournalChanges(QueryHandlerContext context) {
+        ClusterNode cn = context.getClusterNode();
+        if (cn == null) {
+            return;
+        }
+
+        List<NodeId> addedIds = new ArrayList<NodeId>();
+        long rev = cn.getRevision();
+
+        List<ChangeLogRecord> changes = getChangeLogRecords(rev, context.getWorkspace());
+        Iterator<ChangeLogRecord> iterator = changes.iterator();
+        while (iterator.hasNext()) {
+            ChangeLogRecord record = iterator.next();
+            for (ItemState state : record.getChanges().addedStates()) {
+                if (!state.isNode()) {
+                    continue;
+                }
+                addedIds.add((NodeId) state.getId());
+            }
+        }
+        if (!addedIds.isEmpty()) {
+            Collection<NodeState> empty = Collections.emptyList();
+            try {
+                updateNodes(addedIds.iterator(), empty.iterator());
+            } catch (Exception e) {
+                log.error(e.getMessage(), e);
+            }
+        }
+    }
+
     //----------------------------< internal >----------------------------------
 
     /**
@@ -2328,5 +2562,80 @@ public class SearchIndex extends AbstractQueryHandler {
         if (closed) {
             throw new IOException("query handler closed and cannot be used anymore.");
         }
+    }
+
+    /**
+     * Polls the underlying journal for events of the type ChangeLogRecord that
+     * happened after a given revision, on a given workspace.
+     *
+     * @param revision
+     *            starting revision
+     * @param workspace
+     *            the workspace name
+     * @return
+     */
+    private List<ChangeLogRecord> getChangeLogRecords(long revision,
+            final String workspace) {
+        log.debug(
+                "Get changes from the Journal for revision {} and workspace {}.",
+                revision, workspace);
+        ClusterNode cn = getContext().getClusterNode();
+        if (cn == null) {
+            return Collections.emptyList();
+        }
+        Journal journal = cn.getJournal();
+        final List<ChangeLogRecord> events = new ArrayList<ChangeLogRecord>();
+        ClusterRecordDeserializer deserializer = new ClusterRecordDeserializer();
+        RecordIterator records = null;
+        try {
+            records = journal.getRecords(revision);
+            while (records.hasNext()) {
+                Record record = records.nextRecord();
+                if (!record.getProducerId().equals(cn.getId())) {
+                    continue;
+                }
+                ClusterRecord r = null;
+                try {
+                    r = deserializer.deserialize(record);
+                } catch (JournalException e) {
+                    log.error(
+                            "Unable to read revision '" + record.getRevision()
+                                    + "'.", e);
+                }
+                if (r == null) {
+                    continue;
+                }
+                r.process(new ClusterRecordProcessor() {
+                    public void process(ChangeLogRecord record) {
+                        String eventW = record.getWorkspace();
+                        if (eventW != null ? eventW.equals(workspace) : workspace == null) {
+                            events.add(record);
+                        }
+                    }
+
+                    public void process(LockRecord record) {
+                    }
+
+                    public void process(NamespaceRecord record) {
+                    }
+
+                    public void process(NodeTypeRecord record) {
+                    }
+
+                    public void process(PrivilegeRecord record) {
+                    }
+
+                    public void process(WorkspaceRecord record) {
+                    }
+                });
+            }
+        } catch (JournalException e1) {
+            log.error(e1.getMessage(), e1);
+        } finally {
+            if (records != null) {
+                records.close();
+            }
+        }
+        return events;
     }
 }

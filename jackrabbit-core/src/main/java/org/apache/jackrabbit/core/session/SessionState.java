@@ -16,6 +16,9 @@
  */
 package org.apache.jackrabbit.core.session;
 
+import static org.apache.jackrabbit.api.stats.RepositoryStatistics.Type;
+
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -24,6 +27,7 @@ import javax.jcr.Session;
 
 import org.apache.jackrabbit.core.WorkspaceManager;
 import org.apache.jackrabbit.core.observation.ObservationDispatcher;
+import org.apache.jackrabbit.core.stats.RepositoryStatisticsImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,19 +55,34 @@ public class SessionState {
         LoggerFactory.getLogger(SessionState.class);
 
     /**
-     * Number of nanoseconds in a microsecond.
-     */
-    private static final int NS_PER_US = 1000;
-
-    /**
-     * Number of nanoseconds in a millisecond.
-     */
-    private static final int NS_PER_MS = 1000000;
-
-    /**
      * Component context of this session.
      */
     private final SessionContext context;
+
+    /**
+     * Counter of read operations.
+     */
+    private final AtomicLong readCounter;
+
+    /**
+     * Counter of write operations.
+     */
+    private final AtomicLong writeCounter;
+
+    /**
+     * Duration of read operations.
+     */
+    private final AtomicLong readDuration;
+
+    /**
+     * Duration of write operations.
+     */
+    private final AtomicLong writeDuration;
+    
+    /**
+     * Number of open sessions.
+     */
+    private final AtomicLong sessionCount;
 
     /**
      * The lock used to guarantee synchronized execution of repository
@@ -95,6 +114,16 @@ public class SessionState {
      */
     public SessionState(SessionContext context) {
         this.context = context;
+
+        RepositoryStatisticsImpl statistics =
+                context.getRepositoryContext().getRepositoryStatistics();
+        this.readCounter = statistics.getCounter(Type.SESSION_READ_COUNTER);
+        this.writeCounter = statistics.getCounter(Type.SESSION_WRITE_COUNTER);
+        this.readDuration = statistics.getCounter(Type.SESSION_READ_DURATION);
+        this.writeDuration = statistics.getCounter(Type.SESSION_WRITE_DURATION);
+        this.sessionCount = statistics.getCounter(Type.SESSION_COUNT);
+        statistics.getCounter(Type.SESSION_LOGIN_COUNTER).incrementAndGet();
+        sessionCount.incrementAndGet();
     }
 
     /**
@@ -180,24 +209,24 @@ public class SessionState {
             }
 
             try {
-                // Perform the actual operation, optionally with debug logs
-                if (log.isDebugEnabled()) {
-                    log.debug("Performing {}", operation);
-                    long start = System.nanoTime();
-                    try {
-                        return operation.perform(context);
-                    } finally {
-                        long time = System.nanoTime() - start;
-                        if (time > NS_PER_MS) {
-                            log.debug("Performed {} in {}ms",
-                                    operation, time / NS_PER_MS);
-                        } else {
-                            log.debug("Performed {} in {}us",
-                                    operation, time / NS_PER_US);
-                        }
-                    }
-                } else {
+                // Perform the actual operation
+                log.debug("Performing {}", operation);
+                long start = System.nanoTime();
+                try {
                     return operation.perform(context);
+                } finally {
+                    long time = System.nanoTime() - start;
+
+                    // JCR-3040: Increment the operation counters
+                    if (isWriteOperation) {
+                        writeCounter.incrementAndGet();
+                        writeDuration.addAndGet(time);
+                    } else {
+                        readCounter.incrementAndGet();
+                        readDuration.addAndGet(time);
+                    }
+
+                    log.debug("Performed {} in {}us", operation, time);
                 }
             } finally {
                 isWriteOperation = wasWriteOperation;
@@ -242,6 +271,7 @@ public class SessionState {
         }
         try {
             if (isAlive()) {
+                sessionCount.decrementAndGet();
                 closed = new Exception(
                         "Stack trace of  where " + session
                         + " was originally closed");

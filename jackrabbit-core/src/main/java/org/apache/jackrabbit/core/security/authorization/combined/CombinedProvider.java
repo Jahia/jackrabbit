@@ -23,6 +23,7 @@ import org.apache.jackrabbit.core.security.authorization.CompiledPermissions;
 import org.apache.jackrabbit.core.security.authorization.Permission;
 import org.apache.jackrabbit.core.security.authorization.AccessControlUtils;
 import org.apache.jackrabbit.core.security.authorization.AbstractCompiledPermissions;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeManagerImpl;
 import org.apache.jackrabbit.core.security.authorization.principalbased.ACLProvider;
 import org.apache.jackrabbit.core.ItemImpl;
 import org.apache.jackrabbit.core.id.ItemId;
@@ -57,6 +58,7 @@ public class CombinedProvider extends AbstractAccessControlProvider {
     /**
      * @see AccessControlUtils#isAcItem(Path)
      */
+    @Override
     public boolean isAcItem(Path absPath) throws RepositoryException {
         for (AccessControlProvider provider : providers) {
             if (provider instanceof AccessControlUtils && ((AccessControlUtils) provider).isAcItem(absPath)) {
@@ -69,6 +71,7 @@ public class CombinedProvider extends AbstractAccessControlProvider {
     /**
      * @see AccessControlUtils#isAcItem(ItemImpl)
      */
+    @Override
     public boolean isAcItem(ItemImpl item) throws RepositoryException {
         for (AccessControlProvider provider : providers) {
             if (provider instanceof AccessControlUtils && ((AccessControlUtils) provider).isAcItem(item)) {
@@ -107,13 +110,13 @@ public class CombinedProvider extends AbstractAccessControlProvider {
         providers[0] = new org.apache.jackrabbit.core.security.authorization.acl.ACLProvider();
         Map config = new HashMap(configuration);
         config.put(PARAM_OMIT_DEFAULT_PERMISSIONS, Boolean.TRUE);
-        providers[0].init(systemSession, config);
+        providers[0].init(session, config);
 
         // 2) the principal-base ACL provider which is intended to provide
         //    the default/standard permissions present at an item for a given
         //    set of principals.
         providers[1] = new ACLProvider();
-        providers[1].init(systemSession, configuration);
+        providers[1].init(session, configuration);
     }
 
     /**
@@ -217,7 +220,16 @@ public class CombinedProvider extends AbstractAccessControlProvider {
             }
         }
 
-        //------------------------------------< AbstractCompiledPermissions >---
+        //------------------------------------< AbstractCompiledPermissions >---      
+        /**
+         * @see AbstractCompiledPermissions#getResult(Path)
+         */
+        @Override
+        public Result getResult(Path absPath) throws RepositoryException {
+            // TODO: missing caching
+            return buildResult(absPath);
+        }
+
         /**
          * @see AbstractCompiledPermissions#buildResult(Path)
          */
@@ -231,13 +243,22 @@ public class CombinedProvider extends AbstractAccessControlProvider {
             return res;
         }
 
+        @Override
+        protected Result buildRepositoryResult() throws RepositoryException {
+            Result res = null;
+            for (AbstractCompiledPermissions acp : cPermissions) {
+                Result other = acp.getResult(null);
+                res = (res == null) ? other : res.combine(other);
+            }
+            return res;
+        }
+
         /**
-         * @see AbstractCompiledPermissions#getResult(Path)
+         * @see AbstractCompiledPermissions#getPrivilegeManagerImpl()
          */
         @Override
-        public Result getResult(Path absPath) throws RepositoryException {
-            // TODO: missing caching
-            return buildResult(absPath);
+        protected PrivilegeManagerImpl getPrivilegeManagerImpl() throws RepositoryException {
+            return CombinedProvider.this.getPrivilegeManagerImpl();
         }
 
         //--------------------------------------------< CompiledPermissions >---

@@ -26,6 +26,7 @@ import javax.jcr.security.AccessControlException;
 import javax.jcr.security.Privilege;
 
 import org.apache.jackrabbit.api.JackrabbitSession;
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
 import org.apache.jackrabbit.api.security.JackrabbitAccessControlEntry;
 import org.apache.jackrabbit.api.security.JackrabbitAccessControlList;
 import org.apache.jackrabbit.api.security.principal.PrincipalIterator;
@@ -40,7 +41,8 @@ import org.apache.jackrabbit.test.api.security.AbstractAccessControlTest;
 public abstract class AbstractACLTemplateTest extends AbstractAccessControlTest {
 
     protected Principal testPrincipal;
-    protected PrincipalManager pMgr;
+    protected PrincipalManager principalMgr;
+    protected PrivilegeManagerImpl privilegeMgr;
 
     @Override
     protected void setUp() throws Exception {
@@ -50,17 +52,18 @@ public abstract class AbstractACLTemplateTest extends AbstractAccessControlTest 
             throw new NotExecutableException();
         }
 
-        pMgr = ((JackrabbitSession) superuser).getPrincipalManager();
-        PrincipalIterator it = pMgr.getPrincipals(PrincipalManager.SEARCH_TYPE_NOT_GROUP);
+        principalMgr = ((JackrabbitSession) superuser).getPrincipalManager();
+        PrincipalIterator it = principalMgr.getPrincipals(PrincipalManager.SEARCH_TYPE_NOT_GROUP);
         if (it.hasNext()) {
             testPrincipal = it.nextPrincipal();
         } else {
             throw new NotExecutableException();
         }
+        privilegeMgr = (PrivilegeManagerImpl) ((JackrabbitWorkspace) superuser.getWorkspace()).getPrivilegeManager();
     }
 
-    protected static void assertSamePrivileges(Privilege[] privs1, Privilege[] privs2) throws AccessControlException {
-        assertEquals(PrivilegeRegistry.getBits(privs1), PrivilegeRegistry.getBits(privs2));
+    protected void assertSamePrivileges(Privilege[] privs1, Privilege[] privs2) throws AccessControlException {
+        assertEquals(privilegeMgr.getBits(privs1), privilegeMgr.getBits(privs2));
     }
 
     protected abstract String getTestPath();
@@ -85,7 +88,7 @@ public abstract class AbstractACLTemplateTest extends AbstractAccessControlTest 
 
     public void testAddInvalidEntry() throws RepositoryException, NotExecutableException {
         Principal unknownPrincipal;
-        if (!pMgr.hasPrincipal("an unknown principal")) {
+        if (!principalMgr.hasPrincipal("an unknown principal")) {
             unknownPrincipal = new TestPrincipal("an unknown principal");
         } else {
             throw new NotExecutableException();
@@ -115,9 +118,6 @@ public abstract class AbstractACLTemplateTest extends AbstractAccessControlTest 
             pt.removeAccessControlEntry(new JackrabbitAccessControlEntry() {
                 public boolean isAllow() {
                     return false;
-                }
-                public int getPrivilegeBits() throws RepositoryException, NotExecutableException {
-                    return PrivilegeRegistry.getBits(privilegesFromName(Privilege.JCR_READ));
                 }
                 public String[] getRestrictionNames() {
                     return new String[0];
@@ -197,21 +197,21 @@ public abstract class AbstractACLTemplateTest extends AbstractAccessControlTest 
         assertTrue(pt.addEntry(testPrincipal, modProp, false, null));
 
         // test net-effect
-        int allows = PrivilegeRegistry.NO_PRIVILEGE;
-        int denies = PrivilegeRegistry.NO_PRIVILEGE;
+        PrivilegeBits allows = PrivilegeBits.getInstance();
+        PrivilegeBits denies = PrivilegeBits.getInstance();
         AccessControlEntry[] entries = pt.getAccessControlEntries();
         for (AccessControlEntry ace : entries) {
             if (testPrincipal.equals(ace.getPrincipal()) && ace instanceof JackrabbitAccessControlEntry) {
-                int entryBits = PrivilegeRegistry.getBits(ace.getPrivileges());
+                PrivilegeBits entryBits = privilegeMgr.getBits(ace.getPrivileges());
                 if (((JackrabbitAccessControlEntry) ace).isAllow()) {
-                    allows |= Permission.diff(entryBits, denies);
+                    allows.addDifference(entryBits, denies);
                 } else {
-                    denies |= Permission.diff(entryBits, allows);
+                    denies.addDifference(entryBits, allows);
                 }
             }
         }
-        assertEquals(PrivilegeRegistry.getBits(read), allows);
-        assertEquals(PrivilegeRegistry.getBits(modProp), denies);
+        assertEquals(privilegeMgr.getBits(read), allows);
+        assertEquals(privilegeMgr.getBits(modProp), denies);
     }
 
     public void testEffect2() throws RepositoryException, NotExecutableException {
@@ -222,22 +222,22 @@ public abstract class AbstractACLTemplateTest extends AbstractAccessControlTest 
         assertTrue(pt.addEntry(testPrincipal, privilegesFromName(Privilege.JCR_READ), false, Collections.<String, Value>emptyMap()));
 
         // test net-effect
-        int allows = PrivilegeRegistry.NO_PRIVILEGE;
-        int denies = PrivilegeRegistry.NO_PRIVILEGE;
+        PrivilegeBits allows = PrivilegeBits.getInstance();
+        PrivilegeBits denies = PrivilegeBits.getInstance();
         AccessControlEntry[] entries = pt.getAccessControlEntries();
         for (AccessControlEntry ace : entries) {
             if (testPrincipal.equals(ace.getPrincipal()) && ace instanceof JackrabbitAccessControlEntry) {
-                int entryBits = PrivilegeRegistry.getBits(ace.getPrivileges());
+                PrivilegeBits entryBits = privilegeMgr.getBits(ace.getPrivileges());
                 if (((JackrabbitAccessControlEntry) ace).isAllow()) {
-                    allows |= Permission.diff(entryBits, denies);
+                    allows.addDifference(entryBits, denies);
                 } else {
-                    denies |= Permission.diff(entryBits, allows);
+                    denies.addDifference(entryBits, allows);
                 }
             }
         }
 
-        assertEquals(PrivilegeRegistry.NO_PRIVILEGE, allows);
-        assertEquals(PrivilegeRegistry.getBits(privilegesFromName(Privilege.JCR_READ)), denies);
+        assertTrue(allows.isEmpty());
+        assertEquals(privilegeMgr.getBits(privilegesFromName(Privilege.JCR_READ)), denies);
     }
 
     public void testRemoveEntry() throws RepositoryException,

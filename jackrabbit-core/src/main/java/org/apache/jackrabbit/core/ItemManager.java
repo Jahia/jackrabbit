@@ -159,7 +159,13 @@ public class ItemManager implements ItemStateListener {
         if (parentId == null) {
             // removed state has parentId set to null
             // get from overlayed state
-            parentId = state.getOverlayedState().getParentId();
+            ItemState overlaid = state.getOverlayedState();
+            if (overlaid != null) {
+                parentId = overlaid.getParentId();
+            } else {
+                throw new InvalidItemStateException(
+                        "Could not find parent of node " + state.getNodeId());
+            }
         }
         NodeState parentState = null;
         try {
@@ -197,6 +203,12 @@ public class ItemManager implements ItemStateListener {
 
         // get child node entry
         ChildNodeEntry cne = parentState.getChildNodeEntry(state.getNodeId());
+        if (cne == null) {
+            throw new InvalidItemStateException(
+                    "Could not find child " + state.getNodeId()
+                    + " of node " + parentState.getNodeId());
+        }
+
         NodeTypeRegistry ntReg = sessionContext.getNodeTypeRegistry();
         try {
             EffectiveNodeType ent = ntReg.getEffectiveNodeType(
@@ -304,15 +316,15 @@ public class ItemManager implements ItemStateListener {
      * @param path Path of the item to retrieve or <code>null</code>. In
      * the latter case the test for access permission is executed using the
      * itemId.
+     * @param permissionCheck
      * @return The item identified by the given <code>itemId</code>.
      * @throws ItemNotFoundException
      * @throws AccessDeniedException
      * @throws RepositoryException
      */
-    private ItemImpl getItem(ItemId itemId, Path path) throws ItemNotFoundException, AccessDeniedException, RepositoryException {
+    private ItemImpl getItem(ItemId itemId, Path path, boolean permissionCheck) throws ItemNotFoundException, AccessDeniedException, RepositoryException {
         sanityCheck();
 
-        boolean permissionCheck = true;
         ItemData data = getItemData(itemId, path, permissionCheck);
         return createItemInstance(data);
     }
@@ -540,7 +552,7 @@ public class ItemManager implements ItemStateListener {
             throw new PathNotFoundException(safeGetJCRPath(path));
         }
         try {
-            ItemImpl item = getItem(id, path);
+            ItemImpl item = getItem(id, path, true);
             // Test, if this item is a shareable node.
             if (item.isNode() && ((NodeImpl) item).isShareable()) {
                 return getNode(path);
@@ -570,7 +582,7 @@ public class ItemManager implements ItemStateListener {
         }
         try {
             if (parentId == null) {
-                return (NodeImpl) getItem(id, path);
+                return (NodeImpl) getItem(id, path, true);
             }
             // if the node is shareable, it now returns the node with the right
             // parent
@@ -594,12 +606,12 @@ public class ItemManager implements ItemStateListener {
             throw new PathNotFoundException(safeGetJCRPath(path));
         }
         try {
-            return (PropertyImpl) getItem(id, path);
+            return (PropertyImpl) getItem(id, path, true);
         } catch (ItemNotFoundException infe) {
             throw new PathNotFoundException(safeGetJCRPath(path));
         }
     }
-
+    
     /**
      * @param id
      * @return
@@ -607,7 +619,17 @@ public class ItemManager implements ItemStateListener {
      */
     public synchronized ItemImpl getItem(ItemId id)
             throws ItemNotFoundException, AccessDeniedException, RepositoryException {
-        return getItem(id, null);
+        return getItem(id, null, true);
+    }
+
+    /**
+     * @param id
+     * @return
+     * @throws RepositoryException
+     */
+    synchronized ItemImpl getItem(ItemId id, boolean permissionCheck)
+            throws ItemNotFoundException, AccessDeniedException, RepositoryException {
+        return getItem(id, null, permissionCheck);
     }
 
     /**
@@ -622,12 +644,29 @@ public class ItemManager implements ItemStateListener {
      */
     public synchronized NodeImpl getNode(NodeId id, NodeId parentId)
             throws ItemNotFoundException, AccessDeniedException, RepositoryException {
+        return getNode(id, parentId, true);
+    }
+
+    /**
+     * Returns a node with a given id and parent id. If the indicated node is
+     * shareable, there might be multiple nodes associated with the same id,
+     * but there'is only one node with the given parent id.
+     *
+     * @param id node id
+     * @param parentId parent node id
+     * @param permissionCheck Flag indicating if read permission must be check
+     * upon retrieving the node.
+     * @return node
+     * @throws RepositoryException if an error occurs
+     */
+    synchronized NodeImpl getNode(NodeId id, NodeId parentId, boolean permissionCheck)
+            throws ItemNotFoundException, AccessDeniedException, RepositoryException {
         if (parentId == null) {
             return (NodeImpl) getItem(id);
         }
         AbstractNodeData data = retrieveItem(id, parentId);
         if (data == null) {
-            data = (AbstractNodeData) getItemData(id);
+            data = (AbstractNodeData) getItemData(id, null, permissionCheck);
         }
         if (!data.getParentId().equals(parentId)) {
             // verify that parent actually appears in the shared set
@@ -1066,7 +1105,6 @@ public class ItemManager implements ItemStateListener {
             itemDestroyed(destroyed.getId(), data);
 
             data.setStatus(ItemImpl.STATUS_DESTROYED);
-            data.setState(null);
         }
     }
 
@@ -1141,7 +1179,7 @@ public class ItemManager implements ItemStateListener {
      * Cache of shareable nodes. For performance reasons, methods are not
      * synchronized and thread-safety must be guaranteed by caller.
      */
-    class ShareableNodesCache {
+    static class ShareableNodesCache {
 
         /**
          * This cache is based on a reference map, that maps an item id to a map,

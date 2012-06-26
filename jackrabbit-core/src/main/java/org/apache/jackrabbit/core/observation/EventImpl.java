@@ -18,13 +18,16 @@ package org.apache.jackrabbit.core.observation;
 
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Set;
 
 import org.apache.jackrabbit.api.observation.JackrabbitEvent;
 import javax.jcr.observation.Event;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.value.InternalValue;
+import org.apache.jackrabbit.spi.commons.AdditionalEventInfo;
 import org.apache.jackrabbit.spi.commons.conversion.MalformedPathException;
+import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
 import org.apache.jackrabbit.spi.commons.name.PathFactoryImpl;
 import org.apache.jackrabbit.spi.commons.value.ValueFormat;
@@ -37,7 +40,7 @@ import javax.jcr.RepositoryException;
  * Implementation of the {@link javax.jcr.observation.Event} and
  * the {@link JackrabbitEvent} interface.
  */
-public final class EventImpl implements JackrabbitEvent, Event {
+public final class EventImpl implements JackrabbitEvent, AdditionalEventInfo, Event {
 
     /**
      * Logger instance for this class
@@ -74,10 +77,10 @@ public final class EventImpl implements JackrabbitEvent, Event {
      * Creates a new {@link javax.jcr.observation.Event} instance based on an
      * {@link EventState eventState}.
      *
-     * @param session    the session of the registerd <code>EventListener</code>
+     * @param session    the session of the registered <code>EventListener</code>
      *                   where this <code>Event</code> will be delivered to.
      * @param eventState the underlying <code>EventState</code>.
-     * @param timestamp  the time when the change occured that caused this event.
+     * @param timestamp  the time when the change occurred that caused this event.
      * @param userData   the user data associated with this event.
      */
     EventImpl(SessionImpl session, EventState eventState,
@@ -101,7 +104,8 @@ public final class EventImpl implements JackrabbitEvent, Event {
      * {@inheritDoc}
      */
     public String getPath() throws RepositoryException {
-        return session.getJCRPath(getQPath());
+        Path p = getQPath();
+        return p != null ? session.getJCRPath(getQPath()) : null;
     }
 
     /**
@@ -129,12 +133,20 @@ public final class EventImpl implements JackrabbitEvent, Event {
      * {@inheritDoc}
      */
     public String getIdentifier() throws RepositoryException {
-        NodeId id = eventState.getChildId();
-        if (id == null) {
-            // property event
-            id = eventState.getParentId();
+        if (eventState.getType() == Event.PERSIST) {
+            return null;
         }
-        return id.toString();
+        else {
+            NodeId id = eventState.getChildId();
+
+            if (id != null) {
+                return id.toString();
+            }
+            else {
+                // property event
+                return eventState.getParentId().toString();
+            }
+        }
     }
 
     /**
@@ -158,18 +170,25 @@ public final class EventImpl implements JackrabbitEvent, Event {
     /**
      * Returns the <code>Path</code> of this event.
      *
-     * @return path
+     * @return path or <code>null</code> when no path is associated with the event
      * @throws RepositoryException if the path can't be constructed
      */
     public Path getQPath() throws RepositoryException {
         try {
             Path parent = eventState.getParentPath();
             Path child = eventState.getChildRelPath();
-            int index = child.getIndex();
-            if (index > 0) {
-                return PathFactoryImpl.getInstance().create(parent, child.getName(), index, false);
-            } else {
-                return PathFactoryImpl.getInstance().create(parent, child.getName(), false);
+
+            if (parent == null || child == null) {
+                // an event without associated path information
+                return null;
+            }
+            else {
+                int index = child.getIndex();
+                if (index > 0) {
+                    return PathFactoryImpl.getInstance().create(parent, child.getName(), index, false);
+                } else {
+                    return PathFactoryImpl.getInstance().create(parent, child.getName(), false);
+                }
             }
         } catch (MalformedPathException e) {
             String msg = "internal error: malformed path for event";
@@ -220,6 +239,31 @@ public final class EventImpl implements JackrabbitEvent, Event {
         return eventState.isExternal();
     }
 
+    //---------------------------------------------------------------< AdditionalEventInfo >
+
+    /**
+     * @return the primary node type of the node associated with the event
+     * @see AdditionalEventInfo#getPrimaryNodeTypeName()
+     */
+    public Name getPrimaryNodeTypeName() {
+        return eventState.getNodeType();
+    }
+
+    /**
+     * @return the mixin node types of the node associated with the event
+     * @see AdditionalEventInfo#getMixinTypeNames()
+     */
+    public Set<Name> getMixinTypeNames() {
+        return eventState.getMixinNames();
+    }
+
+    /**
+     * @return the specified session attribute
+     */
+    public Object getSessionAttribute(String name) {
+        return eventState.getSession().getAttribute(name);
+    }
+
     /**
      * Returns a String representation of this <code>Event</code>.
      *
@@ -227,7 +271,7 @@ public final class EventImpl implements JackrabbitEvent, Event {
      */
     public String toString() {
         if (stringValue == null) {
-            StringBuffer sb = new StringBuffer();
+            StringBuilder sb = new StringBuilder();
             sb.append("Event: Path: ");
             try {
                 sb.append(getPath());

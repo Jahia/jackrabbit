@@ -16,15 +16,25 @@
  */
 package org.apache.jackrabbit.core;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.ScheduledExecutorService;
+
+import javax.jcr.RepositoryException;
+
 import org.apache.jackrabbit.core.cluster.ClusterNode;
+import org.apache.jackrabbit.core.config.RepositoryConfig;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.id.NodeIdFactory;
 import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
 import org.apache.jackrabbit.core.security.JackrabbitSecurityManager;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.state.ItemStateCacheFactory;
+import org.apache.jackrabbit.core.stats.RepositoryStatisticsImpl;
+import org.apache.jackrabbit.core.stats.StatManager;
 import org.apache.jackrabbit.core.version.InternalVersionManagerImpl;
-import org.apache.jackrabbit.util.Timer;
 
 /**
  * Internal component context of a Jackrabbit content repository.
@@ -49,6 +59,11 @@ public class RepositoryContext {
      * The node type registry of this repository.
      */
     private NodeTypeRegistry nodeTypeRegistry;
+
+    /**
+     * The privilege registry for this repository.
+     */
+    private PrivilegeRegistry privilegeRegistry;
 
     /**
      * The internal version manager of this repository.
@@ -90,10 +105,23 @@ public class RepositoryContext {
      */
     private ItemStateCacheFactory itemStateCacheFactory;
 
+    private NodeIdFactory nodeIdFactory;
+
     /**
-     * Repository-wide timer instance.
+     * Thread pool of this repository.
      */
-    private final Timer timer = new Timer(false);
+    private final ScheduledExecutorService executor =
+            new JackrabbitThreadPool();
+
+    /**
+     * Repository statistics collector.
+     */
+    private final RepositoryStatisticsImpl statistics;
+
+    /**
+     * The Statistics manager, handles statistics
+     */
+    private StatManager statManager;
 
     /**
      * Creates a component context for the given repository.
@@ -103,6 +131,41 @@ public class RepositoryContext {
     RepositoryContext(RepositoryImpl repository) {
         assert repository != null;
         this.repository = repository;
+        this.statistics = new RepositoryStatisticsImpl(executor);
+        this.statManager = new StatManager();
+    }
+
+    /**
+     * Starts a repository with the given configuration and returns
+     * the internal component context of the started repository.
+     *
+     * @since Apache Jackrabbit 2.3.1
+     * @param config repository configuration
+     * @return component context of the repository
+     * @throws RepositoryException if the repository could not be started
+     */
+    public static RepositoryContext create(RepositoryConfig config)
+            throws RepositoryException {
+        RepositoryImpl repository = RepositoryImpl.create(config);
+        return repository.getRepositoryContext();
+    }
+
+    /**
+     * Starts a repository in the given directory and returns the
+     * internal component context of the started repository. If needed,
+     * the directory is created and a default repository configuration
+     * is installed inside it.
+     *
+     * @since Apache Jackrabbit 2.3.1
+     * @see RepositoryConfig#install(File)
+     * @param dir repository directory
+     * @return component context of the repository
+     * @throws RepositoryException if the repository could not be started
+     * @throws IOException if the directory could not be initialized
+     */
+    public static RepositoryContext install(File dir)
+            throws RepositoryException, IOException {
+        return create(RepositoryConfig.install(dir));
     }
 
     /**
@@ -115,12 +178,12 @@ public class RepositoryContext {
     }
 
     /**
-     * Returns the repository-wide timer instance.
+     * Returns the thread pool of this repository.
      *
-     * @return repository timer
+     * @return repository thread pool
      */
-    public Timer getTimer() {
-        return timer;
+    public ScheduledExecutorService getExecutor() {
+        return executor;
     }
 
     /**
@@ -161,6 +224,25 @@ public class RepositoryContext {
     void setNodeTypeRegistry(NodeTypeRegistry nodeTypeRegistry) {
         assert nodeTypeRegistry != null;
         this.nodeTypeRegistry = nodeTypeRegistry;
+    }
+
+    /**
+     * Returns the privilege registry of this repository.
+     * 
+     * @return the privilege registry of this repository.
+     */
+    public PrivilegeRegistry getPrivilegeRegistry() {
+        return privilegeRegistry;
+    }
+
+    /**
+     * Sets the privilege registry of this repository.
+     *
+     * @param privilegeRegistry
+     */
+    void setPrivilegeRegistry(PrivilegeRegistry privilegeRegistry) {
+        assert privilegeRegistry != null;
+        this.privilegeRegistry = privilegeRegistry;
     }
 
     /**
@@ -321,6 +403,30 @@ public class RepositoryContext {
     void setItemStateCacheFactory(ItemStateCacheFactory itemStateCacheFactory) {
         assert itemStateCacheFactory != null;
         this.itemStateCacheFactory = itemStateCacheFactory;
+    }
+
+    public void setNodeIdFactory(NodeIdFactory nodeIdFactory) {
+        this.nodeIdFactory = nodeIdFactory;
+    }
+
+    public NodeIdFactory getNodeIdFactory() {
+        return nodeIdFactory;
+    }
+
+    /**
+     * Returns the repository statistics collector.
+     *
+     * @return repository statistics collector
+     */
+    public RepositoryStatisticsImpl getRepositoryStatistics() {
+        return statistics;
+    }
+
+    /**
+     * @return the statistics manager object
+     */
+    public StatManager getStatManager() {
+        return statManager;
     }
 
 }

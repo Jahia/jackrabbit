@@ -101,6 +101,7 @@ public class ChangeLog {
      * @param state state that has been deleted
      */
     public void deleted(ItemState state) {
+        assert state != null;
         if (addedStates.remove(state.getId()) == null) {
             state.disconnect();
             modifiedStates.remove(state.getId());
@@ -374,7 +375,7 @@ public class ChangeLog {
      * @return a string representation of this change log
      */
     public String toString() {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         buf.append("{");
         buf.append("#addedStates=").append(addedStates.size());
         buf.append(", #modifiedStates=").append(modifiedStates.size());

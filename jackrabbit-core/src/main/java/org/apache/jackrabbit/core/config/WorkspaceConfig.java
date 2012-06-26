@@ -94,25 +94,9 @@ public class WorkspaceConfig
     private final ImportConfig importConfig;
 
     /**
-     * Creates a workspace configuration object.
-     *
-     * @param home home directory
-     * @param name workspace name
-     * @param clustered
-     * @param fsf file system factory
-     * @param pmc persistence manager configuration
-     * @param qhf query handler factory, or <code>null</code> if not configured
-     * @param ismLockingFactory the item state manager locking factory
-     * @param nodeTypeInstanceHandlerFactory
-     * @param workspaceSecurityConfig the workspace specific security configuration.
+     * Default lock timeout in seconds.
      */
-    public WorkspaceConfig(String home, String name, boolean clustered,
-                           FileSystemFactory fsf, PersistenceManagerConfig pmc,
-                           QueryHandlerFactory qhf,
-                           ISMLockingFactory ismLockingFactory,
-                           NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory, WorkspaceSecurityConfig workspaceSecurityConfig) {
-        this(home, name, clustered, fsf, pmc, qhf, ismLockingFactory, nodeTypeInstanceHandlerFactory, workspaceSecurityConfig, null);
-    }
+    private final long defaultLockTimeout;
 
     /**
      * Creates a workspace configuration object.
@@ -131,8 +115,49 @@ public class WorkspaceConfig
                            FileSystemFactory fsf, PersistenceManagerConfig pmc,
                            QueryHandlerFactory qhf,
                            ISMLockingFactory ismLockingFactory,
-                           NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory, WorkspaceSecurityConfig workspaceSecurityConfig,
+                           NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory,
+                           WorkspaceSecurityConfig workspaceSecurityConfig) {
+        this(home, name, clustered, fsf, pmc, qhf, ismLockingFactory, nodeTypeInstanceHandlerFactory, workspaceSecurityConfig, null, Long.MAX_VALUE);
+    }
+
+    /**
+     * Creates a workspace configuration object.
+     *
+     * @param home home directory
+     * @param name workspace name
+     * @param clustered
+     * @param fsf file system factory
+     * @param pmc persistence manager configuration
+     * @param qhf query handler factory, or <code>null</code> if not configured
+     * @param ismLockingFactory the item state manager locking factory
+     * @param workspaceSecurityConfig the workspace specific security configuration.
+     */
+    public WorkspaceConfig(String home, String name, boolean clustered,
+                           FileSystemFactory fsf, PersistenceManagerConfig pmc,
+                           QueryHandlerFactory qhf,
+                           ISMLockingFactory ismLockingFactory,
+                           NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory,
+                           WorkspaceSecurityConfig workspaceSecurityConfig,
                            ImportConfig importConfig) {
+        this(home, name, clustered, fsf, pmc, qhf, ismLockingFactory, nodeTypeInstanceHandlerFactory, workspaceSecurityConfig, importConfig, Long.MAX_VALUE);
+    }
+
+    /**
+     * Creates a workspace configuration object.
+     *
+     * @param home home directory
+     * @param name workspace name
+     * @param clustered
+     * @param fsf file system factory
+     * @param pmc persistence manager configuration
+     * @param qhf query handler factory, or <code>null</code> if not configured
+     * @param ismLockingFactory the item state manager locking factory
+     * @param workspaceSecurityConfig the workspace specific security configuration.
+     * @param defaultLockTimeout default timeout for locks (in seconds)
+     */
+    public WorkspaceConfig(String home, String name, boolean clustered, FileSystemFactory fsf,
+            PersistenceManagerConfig pmc, QueryHandlerFactory qhf, ISMLockingFactory ismLockingFactory,
+            NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory, WorkspaceSecurityConfig workspaceSecurityConfig, ImportConfig importConfig, long defaultLockTimeout) {
         this.home = home;
         this.name = name;
         this.clustered = clustered;
@@ -143,6 +168,7 @@ public class WorkspaceConfig
         this.nodeTypeInstanceHandlerFactory = nodeTypeInstanceHandlerFactory;
         this.workspaceSecurityConfig = workspaceSecurityConfig;
         this.importConfig = importConfig;
+        this.defaultLockTimeout = defaultLockTimeout;
     }
 
     /**
@@ -171,6 +197,17 @@ public class WorkspaceConfig
      */
     public boolean isClustered() {
         return clustered;
+    }
+
+    /**
+     * Returns the default lock timeout in number of seconds or
+     * <code>Long.MAX_VALUE</code> when not specified.
+     * 
+     * @return default lock timeout in number of seconds or
+     *         <code>Long.MAX_VALUE</code> when not specified
+     */
+    public long getDefaultLockTimeout() {
+        return defaultLockTimeout;
     }
 
     /**

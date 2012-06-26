@@ -39,6 +39,7 @@ import org.apache.jackrabbit.core.observation.EventState;
 import org.apache.jackrabbit.core.state.ChangeLog;
 import org.apache.jackrabbit.core.version.InternalVersionManagerImpl;
 import org.apache.jackrabbit.core.xml.ClonedInputSource;
+import org.apache.jackrabbit.spi.PrivilegeDefinition;
 import org.apache.jackrabbit.spi.QNodeTypeDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,7 +52,7 @@ import EDU.oswego.cs.dl.util.concurrent.Mutex;
  */
 public class ClusterNode implements Runnable,
         NamespaceEventChannel, NodeTypeEventChannel, RecordConsumer,
-        ClusterRecordProcessor, WorkspaceEventChannel  {
+        ClusterRecordProcessor, WorkspaceEventChannel, PrivilegeEventChannel  {
 
     /**
      * System property specifying a node id to use.
@@ -168,6 +169,11 @@ public class ClusterNode implements Runnable,
     private NodeTypeEventListener nodeTypeListener;
 
     /**
+     * Privilege listener.
+     */
+    private PrivilegeEventListener privilegeListener;
+
+    /**
      * Instance revision manager.
      */
     private InstanceRevision instanceRevision;
@@ -181,10 +187,16 @@ public class ClusterNode implements Runnable,
      * Record deserializer.
      */
     private ClusterRecordDeserializer deserializer = new ClusterRecordDeserializer();
+    
+    /**
+     * Flag indicating whether sync is manual.
+     */
+    private boolean disableAutoSync;
 
     /**
      * Initialize this cluster node.
      *
+     * @param clusterContext The cluster context.
      * @throws ClusterException if an error occurs
      */
     public void init(ClusterContext clusterContext) throws ClusterException {
@@ -202,6 +214,7 @@ public class ClusterNode implements Runnable,
         ClusterConfig cc = clusterContext.getClusterConfig();
         clusterNodeId = cc.getId();
         syncDelay = cc.getSyncDelay();
+        stopDelay = syncDelay * 2;
 
         try {
             journal = cc.getJournal(clusterContext.getNamespaceResolver());
@@ -236,6 +249,13 @@ public class ClusterNode implements Runnable,
     public long getStopDelay() {
         return stopDelay;
     }
+    
+    /**
+     * Disable periodic background synchronization. Used for testing purposes, only.
+     */
+    protected void disableAutoSync() {
+        disableAutoSync = true;
+    }
 
     /**
      * Starts this cluster node.
@@ -246,11 +266,12 @@ public class ClusterNode implements Runnable,
         if (status == NONE) {
             sync();
 
-            Thread t = new Thread(this, "ClusterNode-" + clusterNodeId);
-            t.setDaemon(true);
-            t.start();
-            syncThread = t;
-
+            if (!disableAutoSync) {
+                Thread t = new Thread(this, "ClusterNode-" + clusterNodeId);
+                t.setDaemon(true);
+                t.start();
+                syncThread = t;
+            }
             status = STARTED;
         }
     }
@@ -505,6 +526,43 @@ public class ClusterNode implements Runnable,
         nodeTypeListener = listener;
     }
 
+    //----------------------------------------------< PrivilegeEventChannel >---
+    /**
+     * {@inheritDoc}
+     * @see PrivilegeEventChannel#registeredPrivileges(java.util.Collection)
+     */
+    public void registeredPrivileges(Collection<PrivilegeDefinition> definitions) {
+        if (status != STARTED) {
+            log.info("not started: nodetype operation ignored.");
+            return;
+        }
+        ClusterRecord record = null;
+        boolean succeeded = false;
+
+        try {
+            record = new PrivilegeRecord(definitions, producer.append());
+            record.write();
+            record.update();
+            setRevision(record.getRevision());
+            succeeded = true;
+        } catch (JournalException e) {
+            String msg = "Unable to create log entry: " + e.getMessage();
+            log.error(msg);
+        } catch (Throwable e) {
+            String msg = "Unexpected error while creating log entry.";
+            log.error(msg, e);
+        } finally {
+            if (!succeeded && record != null) {
+                record.cancelUpdate();
+            }
+        }
+    }
+
+    public void setListener(PrivilegeEventListener listener) {
+        privilegeListener = listener;
+    }
+
+    //--------------------------------------------------------------------------
     /**
      * Workspace update channel.
      */
@@ -605,7 +663,7 @@ public class ClusterNode implements Runnable,
             try {
                 record.update();
                 setRevision(record.getRevision());
-                log.debug("revision {} {}", new Long(record.getRevision()), path);
+                log.debug("revision {} {}", record.getRevision(), path);
             } catch (JournalException e) {
                 String msg = "Unable to commit log entry.";
                 log.error(msg, e);
@@ -905,6 +963,20 @@ public class ClusterNode implements Runnable,
             log.error(msg);
         } catch (RepositoryException e) {
             String msg = "Unable to deliver node type operation: " + e.getMessage();
+            log.error(msg);
+        }
+    }
+
+    public void process(PrivilegeRecord record) {
+        if (privilegeListener == null) {
+            String msg = "Privilege listener unavailable.";
+            log.error(msg);
+            return;
+        }
+        try {
+            privilegeListener.externalRegisteredPrivileges(record.getDefinitions());
+        } catch (RepositoryException e) {
+            String msg = "Unable to deliver privilege registration operation: " + e.getMessage();
             log.error(msg);
         }
     }

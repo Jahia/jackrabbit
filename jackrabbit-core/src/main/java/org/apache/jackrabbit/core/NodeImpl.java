@@ -324,9 +324,10 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
         if (isTransient()) {
             return true;
         }
-        return !stateMgr.getDescendantTransientItemStates((NodeId) id).isEmpty();
+        return !stateMgr.getDescendantTransientItemStates(id).isEmpty();
     }
 
+    @Override
     protected synchronized ItemState getOrCreateTransientItemState()
             throws RepositoryException {
 
@@ -443,7 +444,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
     /**
      * Creates a new property with the given name and <code>type</code> hint and
      * property definition. If the given property definition is not of type
-     * <code>UNDEFINED</code>, then it takes precendence over the
+     * <code>UNDEFINED</code>, then it takes precedence over the
      * <code>type</code> hint.
      *
      * @param name the name of the property to create.
@@ -498,19 +499,8 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
                                                     NodeId id)
             throws RepositoryException {
         // create a new node state
-        NodeState nodeState;
-        try {
-            if (id == null) {
-                id = new NodeId();
-            }
-            nodeState =
-                    stateMgr.createTransientNodeState(id, nodeType.getQName(),
-                            getNodeId(), ItemState.STATUS_NEW);
-        } catch (ItemStateException ise) {
-            String msg = "failed to add child node " + name + " to " + this;
-            log.debug(msg);
-            throw new RepositoryException(msg, ise);
-        }
+        NodeState nodeState = stateMgr.createTransientNodeState(
+                id, nodeType.getQName(), getNodeId(), ItemState.STATUS_NEW);
 
         // create Node instance wrapping new node state
         NodeImpl node;
@@ -680,7 +670,14 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
                 NodeId childId = entry.getId();
                 //NodeImpl childNode = (NodeImpl) itemMgr.getItem(childId);
                 try {
-                    NodeImpl childNode = itemMgr.getNode(childId, getNodeId());
+                    /* omit the read-permission check upon retrieving the
+                       child item as this is an internal call to remove the
+                       subtree which may contain (protected) child items which
+                       are not visible to the caller of the removal. the actual
+                       validation of the remove permission however is only
+                       executed during Item.save(). 
+                     */
+                    NodeImpl childNode = itemMgr.getNode(childId, getNodeId(), false);
                     childNode.onRemove(thisState.getNodeId());
                     // remove the child node entry
                 } catch (ItemNotFoundException e) {
@@ -713,7 +710,14 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
             thisState.removePropertyName(propName);
             // remove property
             PropertyId propId = new PropertyId(thisState.getNodeId(), propName);
-            itemMgr.getItem(propId).setRemoved();
+            /* omit the read-permission check upon retrieving the
+               child item as this is an internal call to remove the
+               subtree which may contain (protected) child items which
+               are not visible to the caller of the removal. the actual
+               validation of the remove permission however is only
+               executed during Item.save().
+             */
+            itemMgr.getItem(propId, false).setRemoved();
         }
 
         // finally remove this node
@@ -835,29 +839,16 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
         return sessionContext.getNodeTypeManager().getPropertyDefinition(pd);
     }
 
-    protected void makePersistent() throws InvalidItemStateException {
+    @Override
+    protected void makePersistent() throws RepositoryException {
         if (!isTransient()) {
             log.debug(this + " (" + id + "): there's no transient state to persist");
             return;
         }
 
         NodeState transientState = data.getNodeState();
+        NodeState localState = stateMgr.makePersistent(transientState);
 
-        NodeState localState = (NodeState) transientState.getOverlayedState();
-        if (localState == null) {
-            // this node is 'new'
-            localState = stateMgr.createNew(transientState);
-        }
-
-        synchronized (localState) {
-            // copy state from transient state:
-            localState.copy(transientState, true);
-            // make state persistent
-            stateMgr.store(localState);
-        }
-
-        // tell state manager to disconnect item state
-        stateMgr.disconnectTransientItemState(transientState);
         // swap transient state with local state
         data.setState(localState);
         // reset status
@@ -885,16 +876,12 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
             // JCR-2503: Re-create transient state in the state manager,
             // because it was removed
             synchronized (data) {
-                try {
-                    thisState = stateMgr.createTransientNodeState(
-                            (NodeId) transientState.getId(),
-                            transientState.getNodeTypeName(),
-                            transientState.getParentId(),
-                            NodeState.STATUS_NEW);
-                    data.setState(thisState);
-                } catch (ItemStateException e) {
-                    throw new RepositoryException(e);
-                }
+                thisState = stateMgr.createTransientNodeState(
+                        (NodeId) transientState.getId(),
+                        transientState.getNodeTypeName(),
+                        transientState.getParentId(),
+                        NodeState.STATUS_NEW);
+                data.setState(thisState);
             }
         }
 
@@ -903,6 +890,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
         thisState.setChildNodeEntries(transientState.getChildNodeEntries());
         thisState.setPropertyNames(transientState.getPropertyNames());
         thisState.setSharedSet(transientState.getSharedSet());
+        thisState.setModCount(transientState.getModCount());
     }
 
     /**
@@ -1348,6 +1336,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
     /**
      * @see ItemImpl#getQName()
      */
+    @Override
     public Name getQName() throws RepositoryException {
         HierarchyManager hierMgr = sessionContext.getHierarchyManager();
         Name name;
@@ -1448,7 +1437,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
         PathBuilder pb = new PathBuilder(getPrimaryPath());
         pb.addLast(srcName.getName(), srcName.getIndex());
         Path childPath = pb.getPath();
-        if (!acMgr.isGranted(childPath, Permission.ADD_NODE | Permission.REMOVE_NODE)) {
+        if (!acMgr.isGranted(childPath, Permission.MODIFY_CHILD_NODE_COLLECTION)) {
             String msg = "Not allowed to reorder child node " + sessionContext.getJCRPath(childPath) + ".";
             log.debug(msg);
             throw new AccessDeniedException(msg);
@@ -1663,6 +1652,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
     /**
      * {@inheritDoc}
      */
+    @Override
     public boolean isNode() {
         return true;
     }
@@ -1670,6 +1660,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
     /**
      * {@inheritDoc}
      */
+    @Override
     public String getName() throws RepositoryException {
         return perform(new SessionOperation<String>() {
             public String perform(SessionContext context)
@@ -1697,6 +1688,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
     /**
      * {@inheritDoc}
      */
+    @Override
     public void accept(ItemVisitor visitor) throws RepositoryException {
         // check state of this instance
         sanityCheck();
@@ -1707,6 +1699,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
     /**
      * {@inheritDoc}
      */
+    @Override
     public Node getParent() throws RepositoryException {
         return perform(new SessionOperation<Node>() {
             public Node perform(SessionContext context)
@@ -2753,6 +2746,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
      *          concatenating the parent path + this node's name and index:
      *          rather use hierarchy manager to do this
      */
+    @Override
     public Path getPrimaryPath() throws RepositoryException {
         if (!isShareable()) {
             return super.getPrimaryPath();
@@ -2958,7 +2952,8 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
         // check state of this instance
         sanityCheck();
         LockManager lockMgr = getSession().getWorkspace().getLockManager();
-        return lockMgr.lock(getPath(), isDeep, isSessionScoped, Long.MAX_VALUE, null);
+        return lockMgr.lock(getPath(), isDeep, isSessionScoped,
+                sessionContext.getWorkspace().getConfig().getDefaultLockTimeout(), null);
     }
 
     /**
@@ -3026,7 +3021,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
      * {@inheritDoc}
      */
     public String getIdentifier() throws RepositoryException {
-        return ((NodeId) id).toString();
+        return id.toString();
     }
 
     /**
@@ -3587,10 +3582,17 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
                     "Same name siblings not allowed: " + existing);
         }
 
-        // check permissions
+        // check permissions:
+        // 1. on the parent node the session must have permission to manipulate the child-entries
         AccessManager acMgr = sessionContext.getAccessManager();
-        if (!(acMgr.isGranted(getPrimaryPath(), Permission.REMOVE_NODE) &&
-                acMgr.isGranted(parent.getPrimaryPath(), qName, Permission.ADD_NODE | Permission.NODE_TYPE_MNGMT))) {
+        if (!acMgr.isGranted(parent.getPrimaryPath(), qName, Permission.MODIFY_CHILD_NODE_COLLECTION)) {
+            String msg = "Not allowed to rename node " + safeGetJCRPath() + " to " + newName;
+            log.debug(msg);
+            throw new AccessDeniedException(msg);
+        }
+        // 2. in case of nt-changes the session must have permission to change
+        //    the primary node type on this node itself.
+        if (!nt.getName().equals(newTargetDef.getName()) && !(acMgr.isGranted(getPrimaryPath(), Permission.NODE_TYPE_MNGMT))) {
             String msg = "Not allowed to rename node " + safeGetJCRPath() + " to " + newName;
             log.debug(msg);
             throw new AccessDeniedException(msg);

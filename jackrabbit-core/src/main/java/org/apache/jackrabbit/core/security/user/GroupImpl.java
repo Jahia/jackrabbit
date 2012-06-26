@@ -25,6 +25,7 @@ import org.apache.jackrabbit.commons.flat.PropertySequence;
 import org.apache.jackrabbit.commons.flat.Rank;
 import org.apache.jackrabbit.commons.flat.TreeManager;
 import org.apache.jackrabbit.commons.iterator.LazyIteratorChain;
+import org.apache.jackrabbit.commons.iterator.RangeIteratorAdapter;
 import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.PropertyImpl;
 import org.apache.jackrabbit.core.session.SessionContext;
@@ -135,7 +136,7 @@ class GroupImpl extends AuthorizableImpl implements Group {
         } else {
             String thisID = getID();
             AuthorizableImpl impl = (AuthorizableImpl) authorizable;
-            for (Iterator<Group> it = impl.memberOf(); it.hasNext();) {
+            for (Iterator<Group> it = impl.memberOf(); it.hasNext(); ) {
                 if (thisID.equals(it.next().getID())) {
                     return true;
                 }
@@ -189,7 +190,16 @@ class GroupImpl extends AuthorizableImpl implements Group {
     }
 
     //--------------------------------------------------------------------------
-
+    /**
+     * Retrieve the membership provider for this group. This method deals with
+     * members stored in the <code>P_MEMBERS</code> property and with those
+     * repositories the store group members in a separate tree underneath the
+     * <code>N_MEMBERS</code> node.
+     *
+     * @param node The node associated with this group.
+     * @return an instance of <code>MembershipProvider</code>.
+     * @throws RepositoryException If an error occurs.
+     */
     private MembershipProvider getMembershipProvider(NodeImpl node) throws RepositoryException {
         MembershipProvider msp;
         if (userManager.getGroupMembershipSplitSize() > 0) {
@@ -212,9 +222,9 @@ class GroupImpl extends AuthorizableImpl implements Group {
 
     /**
      * @param includeIndirect If <code>true</code> all members of this group
-     *                        will be return; otherwise only the declared members.
-     * @param type            Any of {@link UserManager#SEARCH_TYPE_AUTHORIZABLE},
-     *                        {@link UserManager#SEARCH_TYPE_GROUP}, {@link UserManager#SEARCH_TYPE_USER}.
+     * will be return; otherwise only the declared members.
+     * @param type Any of {@link UserManager#SEARCH_TYPE_AUTHORIZABLE},
+     * {@link UserManager#SEARCH_TYPE_GROUP}, {@link UserManager#SEARCH_TYPE_USER}.
      * @return A collection of members of this group.
      * @throws RepositoryException If an error occurs while collecting the members.
      */
@@ -228,7 +238,7 @@ class GroupImpl extends AuthorizableImpl implements Group {
      *
      * @param newMember The new member to be tested for cyclic membership.
      * @return true if the 'newMember' is a group and 'this' is an declared or
-     *         inherited member of it.
+     * inherited member of it.
      * @throws javax.jcr.RepositoryException If an error occurs.
      */
     private boolean isCyclicMembership(AuthorizableImpl newMember) throws RepositoryException {
@@ -245,6 +255,14 @@ class GroupImpl extends AuthorizableImpl implements Group {
             }
         }
         return false;
+    }
+
+    private String safeGetID() {
+        try {
+            return getID();
+        } catch (RepositoryException e) {
+            return getNode().toString();
+        }
     }
 
     static PropertySequence getPropertySequence(Node nMembers, UserManagerImpl userManager) throws RepositoryException {
@@ -297,7 +315,7 @@ class GroupImpl extends AuthorizableImpl implements Group {
             } catch (RepositoryException e) {
                 // continue using regular membership evaluation
             }
-           
+
             Collection<Principal> members = getMembers();
             return members.contains(member);
         }
@@ -322,9 +340,8 @@ class GroupImpl extends AuthorizableImpl implements Group {
         }
 
         //---------------------------------------------------< Serializable >---
-
         /**
-         * implement the writeObject method to assert initalization of all members
+         * implement the writeObject method to assert initialization of all members
          * before serialization.
          *
          * @param stream The object output stream.
@@ -336,12 +353,16 @@ class GroupImpl extends AuthorizableImpl implements Group {
         }
 
         //----------------------------------------------------------------------
-
+        /**
+         * Collect the member of this group principal.
+         *
+         * @return the members of this group principal.
+         */
         private Collection<Principal> getMembers() {
             if (members == null) {
                 members = new HashSet<Principal>();
                 try {
-                    for (Iterator<Authorizable> it = GroupImpl.this.getMembers(); it.hasNext();) {
+                    for (Iterator<Authorizable> it = GroupImpl.this.getMembers(); it.hasNext(); ) {
                         members.add(it.next().getPrincipal());
                     }
                 } catch (RepositoryException e) {
@@ -353,21 +374,33 @@ class GroupImpl extends AuthorizableImpl implements Group {
         }
     }
 
+    /**
+     * Inner MembershipProvider interface
+     */
     private interface MembershipProvider {
         boolean addMember(AuthorizableImpl authorizable) throws RepositoryException;
+
         boolean removeMember(AuthorizableImpl authorizable) throws RepositoryException;
+
         Iterator<Authorizable> getMembers(boolean includeIndirect, int type) throws RepositoryException;
+
         boolean hasMember(AuthorizableImpl authorizable) throws RepositoryException;
     }
 
+    /**
+     * PropertyBasedMembershipProvider
+     */
     private class PropertyBasedMembershipProvider implements MembershipProvider {
         private final NodeImpl node;
 
-        public PropertyBasedMembershipProvider(NodeImpl node) {
+        private PropertyBasedMembershipProvider(NodeImpl node) {
             super();
             this.node = node;
         }
 
+        /**
+         * @see MembershipProvider#addMember(AuthorizableImpl)
+         */
         public boolean addMember(AuthorizableImpl authorizable) throws RepositoryException {
             Node memberNode = authorizable.getNode();
 
@@ -393,6 +426,9 @@ class GroupImpl extends AuthorizableImpl implements Group {
             return true;
         }
 
+        /**
+         * @see MembershipProvider#removeMember(AuthorizableImpl)
+         */
         public boolean removeMember(AuthorizableImpl authorizable) throws RepositoryException {
             if (!node.hasProperty(P_MEMBERS)) {
                 log.debug("Group has no members -> cannot remove member {}", authorizable.getID());
@@ -425,22 +461,26 @@ class GroupImpl extends AuthorizableImpl implements Group {
             }
         }
 
+        /**
+         * @see MembershipProvider#getMembers(boolean, int)
+         */
         public Iterator<Authorizable> getMembers(boolean includeIndirect, int type) throws RepositoryException {
             if (node.hasProperty(P_MEMBERS)) {
                 Value[] members = node.getProperty(P_MEMBERS).getValues();
 
                 if (includeIndirect) {
                     return includeIndirect(toAuthorizables(members, type), type);
+                } else {
+                    return new RangeIteratorAdapter(toAuthorizables(members, type), members.length);
                 }
-                else {
-                    return toAuthorizables(members, type);
-                }
-            }
-            else {
+            } else {
                 return Iterators.empty();
             }
         }
 
+        /**
+         * @see MembershipProvider#hasMember(AuthorizableImpl)
+         */
         public boolean hasMember(AuthorizableImpl authorizable) throws RepositoryException {
             if (node.hasProperty(P_MEMBERS)) {
                 Value[] members = node.getProperty(P_MEMBERS).getValues();
@@ -450,22 +490,27 @@ class GroupImpl extends AuthorizableImpl implements Group {
                     }
                 }
                 return false;
-            }
-            else {
+            } else {
                 return false;
             }
         }
 
     }
 
+    /**
+     * NodeBasedMembershipProvider
+     */
     private class NodeBasedMembershipProvider implements MembershipProvider {
         private final NodeImpl node;
 
-        public NodeBasedMembershipProvider(NodeImpl node) {
+        private NodeBasedMembershipProvider(NodeImpl node) {
             super();
             this.node = node;
         }
 
+        /**
+         * @see MembershipProvider#addMember(AuthorizableImpl)
+         */
         public boolean addMember(final AuthorizableImpl authorizable) throws RepositoryException {
             return userManager.performProtectedOperation(getSession(), new SessionWriteOperation<Boolean>() {
                 public Boolean perform(SessionContext context) throws RepositoryException {
@@ -488,8 +533,7 @@ class GroupImpl extends AuthorizableImpl implements Group {
                             node.save();
                         }
                         return true;
-                    }
-                    catch (RepositoryException e) {
+                    } catch (RepositoryException e) {
                         log.debug("addMember failed. Reverting changes", e);
                         if (nMembers.isNew()) {
                             node.refresh(false);
@@ -502,6 +546,9 @@ class GroupImpl extends AuthorizableImpl implements Group {
             });
         }
 
+        /**
+         * @see MembershipProvider#removeMember(AuthorizableImpl)
+         */
         public boolean removeMember(final AuthorizableImpl authorizable) throws RepositoryException {
             if (!node.hasNode(N_MEMBERS)) {
                 log.debug("Group has no members -> cannot remove member {}", authorizable.getID());
@@ -528,8 +575,7 @@ class GroupImpl extends AuthorizableImpl implements Group {
                             node.save();
                         }
                         return true;
-                    }
-                    catch (RepositoryException e) {
+                    } catch (RepositoryException e) {
                         log.debug("removeMember failed. Reverting changes", e);
                         nMembers.refresh(false);
                         throw e;
@@ -538,38 +584,44 @@ class GroupImpl extends AuthorizableImpl implements Group {
             });
         }
 
+        /**
+         * @see MembershipProvider#getMembers(boolean, int)
+         */
         public Iterator<Authorizable> getMembers(boolean includeIndirect, int type) throws RepositoryException {
             if (node.hasNode(N_MEMBERS)) {
                 PropertySequence members = getPropertySequence(node.getNode(N_MEMBERS), userManager);
                 if (includeIndirect) {
                     return includeIndirect(toAuthorizables(members.iterator(), type), type);
-                }
-                else {
+                } else {
                     return toAuthorizables(members.iterator(), type);
                 }
-            }
-            else {
+            } else {
                 return Iterators.empty();
             }
         }
 
+        /**
+         * @see MembershipProvider#hasMember(AuthorizableImpl)
+         */
         public boolean hasMember(AuthorizableImpl authorizable) throws RepositoryException {
             if (node.hasNode(N_MEMBERS)) {
                 PropertySequence members = getPropertySequence(node.getNode(N_MEMBERS), userManager);
                 return members.hasItem(authorizable.getID());
-            }
-            else {
+            } else {
                 return false;
             }
         }
 
     }
 
-    // -----------------------------------------------------< utility >---
-
+    // -----------------------------------------------------------< utility >---
     /**
      * Returns an iterator of authorizables which includes all indirect members of the given iterator
      * of authorizables.
+     *
+     * @param authorizables
+     * @param type
+     * @return Iterator of Authorizable objects
      */
     private Iterator<Authorizable> includeIndirect(final Iterator<Authorizable> authorizables, final int type) {
         Iterator<Iterator<Authorizable>> indirectMembers = new Iterator<Iterator<Authorizable>>() {
@@ -587,27 +639,56 @@ class GroupImpl extends AuthorizableImpl implements Group {
             }
 
             /**
-             * Returns the transitive closure over the members of this authorizable
+             * Returns the transitive closure over the members of this authorizable.
+             *
+             * @param authorizable
+             * @return Iterator of Authorizable objects
              */
             private Iterator<Authorizable> indirect(Authorizable authorizable) {
                 if (authorizable.isGroup()) {
                     try {
                         return ((GroupImpl) authorizable).getMembers(true, type);
-                    }
-                    catch (RepositoryException e) {
+                    } catch (RepositoryException e) {
                         log.warn("Could not determine members of " + authorizable, e);
                     }
                 }
-
                 return Iterators.empty();
             }
         };
 
-        return new LazyIteratorChain<Authorizable>(indirectMembers);
+        return unique(new LazyIteratorChain<Authorizable>(indirectMembers));
+    }
+
+    /**
+     * Filter the passed {@code authorizables} in order to ensure uniqueness.
+     * @param authorizables
+     * @return  all members of {@code authorizable} with duplicates removed
+     *
+     * @see <a href="https://issues.apache.org/jira/browse/JCR-3156">JCR-3156</a>
+     */
+    private Iterator<Authorizable> unique(Iterator<Authorizable> authorizables) {
+        final HashSet<String> seenAuthorizables = new HashSet<String>();
+        return Iterators.filterIterator(authorizables,
+                new org.apache.jackrabbit.spi.commons.iterator.Predicate<Authorizable>() {
+
+            public boolean evaluate(Authorizable authorizable) {
+                try {
+                    return seenAuthorizables.add(authorizable.getID());
+                }
+                catch (RepositoryException e) {
+                    log.warn("Could not determine id of " + authorizable, e);
+                    return true;
+                }
+            }
+        });
     }
 
     /**
      * Map an array of values to an iterator of authorizables.
+     *
+     * @param members
+     * @param type
+     * @return Iterator of Authorizable objects
      */
     private Iterator<Authorizable> toAuthorizables(final Value[] members, int type) {
         return new AuthorizableIterator(type) {
@@ -616,22 +697,26 @@ class GroupImpl extends AuthorizableImpl implements Group {
             @Override
             protected String getNextMemberRef() throws RepositoryException {
                 return pos < members.length
-                    ? members[pos++].getString()
-                    : null;
+                        ? members[pos++].getString()
+                        : null;
             }
         };
     }
 
     /**
      * Map an iterator of properties to an iterator of authorizables.
+     *
+     * @param members
+     * @param type
+     * @return Iterator of Authorizable objects
      */
     private Iterator<Authorizable> toAuthorizables(final Iterator<Property> members, int type) {
         return new AuthorizableIterator(type) {
             @Override
             protected String getNextMemberRef() throws RepositoryException {
                 return members.hasNext()
-                    ? members.next().getString()
-                    : null;
+                        ? members.next().getString()
+                        : null;
             }
         };
     }
@@ -671,6 +756,10 @@ class GroupImpl extends AuthorizableImpl implements Group {
         /**
          * Returns the reference value of the next node representing the next authorizable or
          * <code>null</code> if there there are no more.
+         *
+         * @return reference value of the next node representing the next authorizable or
+         *         <code>null</code> if there there are no more.
+         * @throws javax.jcr.RepositoryException If an error occurs.
          */
         protected abstract String getNextMemberRef() throws RepositoryException;
 
@@ -685,34 +774,20 @@ class GroupImpl extends AuthorizableImpl implements Group {
                     NodeImpl member = (NodeImpl) getSession().getNodeByIdentifier(memberRef);
                     if (type != UserManager.SEARCH_TYPE_USER && member.isNodeType(NT_REP_GROUP)) {
                         next = userManager.createGroup(member);
-                    }
-                    else if (type != UserManager.SEARCH_TYPE_GROUP && member.isNodeType(NT_REP_USER)) {
+                    } else if (type != UserManager.SEARCH_TYPE_GROUP && member.isNodeType(NT_REP_USER)) {
                         next = userManager.createUser(member);
-                    }
-                    else {
+                    } else {
                         log.debug("Group member entry with invalid node type {} -> " +
                                 "Not included in member set.", member.getPrimaryNodeType().getName());
                     }
-                }
-                catch (ItemNotFoundException e) {
+                } catch (ItemNotFoundException e) {
                     log.debug("Authorizable node referenced by {} doesn't exist any more -> " +
                             "Ignored from member list.", safeGetID());
-                }
-                catch (RepositoryException e) {
+                } catch (RepositoryException e) {
                     log.debug("Error pre-fetching member for " + safeGetID(), e);
                 }
 
             }
         }
     }
-
-    private String safeGetID() {
-        try {
-            return getID();
-        }
-        catch (RepositoryException e) {
-            return getNode().toString();
-        }
-    }
-
 }

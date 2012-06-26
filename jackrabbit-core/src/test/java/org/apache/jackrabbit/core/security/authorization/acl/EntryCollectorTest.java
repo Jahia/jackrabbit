@@ -40,6 +40,7 @@ import javax.jcr.security.Privilege;
 import java.security.Principal;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
@@ -53,10 +54,6 @@ public class EntryCollectorTest extends AbstractAccessControlTest {
 
     private String path;
     private String childNPath;
-    private String childNPath2;
-    private String childPPath;
-    private String childchildPPath;
-    private String siblingPath;
 
     @Override
     protected void setUp() throws Exception {
@@ -65,20 +62,10 @@ public class EntryCollectorTest extends AbstractAccessControlTest {
         // create some nodes below the test root in order to apply ac-stuff
         Node node = testRootNode.addNode(nodeName1, testNodeType);
         Node cn1 = node.addNode(nodeName2, testNodeType);
-        Property cp1 = node.setProperty(propertyName1, "anyValue");
-        Node cn2 = node.addNode(nodeName3, testNodeType);
-
-        Property ccp1 = cn1.setProperty(propertyName1, "childNodeProperty");
-
-        Node n2 = testRootNode.addNode(nodeName2, testNodeType);
         superuser.save();
 
         path = node.getPath();
         childNPath = cn1.getPath();
-        childNPath2 = cn2.getPath();
-        childPPath = cp1.getPath();
-        childchildPPath = ccp1.getPath();
-        siblingPath = n2.getPath();
 
         // create the testGroup
         UserManager umgr = getUserManager(superuser);
@@ -214,7 +201,7 @@ public class EntryCollectorTest extends AbstractAccessControlTest {
             }
         }
         Privilege[] privs = privilegesFromNames(new String[] {Privilege.JCR_ADD_CHILD_NODES, Privilege.JCR_REMOVE_CHILD_NODES});
-        assertTrue(Arrays.equals(privs, acl.getAccessControlEntries()[0].getPrivileges()));
+        assertEquals(privs, acl.getAccessControlEntries()[0].getPrivileges());
 
         // --- test4: remove policy at childNPath ------------------------------
         acMgr.removePolicy(childNPath, acMgr.getPolicies(childNPath)[0]);
@@ -234,6 +221,21 @@ public class EntryCollectorTest extends AbstractAccessControlTest {
             }
         }
         verifyACEs(plcs, path, 2);
+    }
+
+    /**
+     * Asserts that the given privilege sets are equal, regardless of ordering.
+     */
+    private void assertEquals(Privilege[] expected, Privilege[] actual) {
+        assertEquals(getPrivilegeNames(expected), getPrivilegeNames(actual));
+    }
+
+    private Set<String> getPrivilegeNames(Privilege[] privileges) {
+        Set<String> names = new HashSet<String>();
+        for (Privilege privilege : privileges) {
+            names.add(privilege.getName());
+        }
+        return names;
     }
 
     public void testEntriesAreCached() throws Exception {

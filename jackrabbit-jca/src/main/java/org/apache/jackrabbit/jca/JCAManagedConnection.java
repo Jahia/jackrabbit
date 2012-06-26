@@ -36,7 +36,7 @@ import java.util.LinkedList;
  * This class implements the managed connection for
  * this resource adapter.
  */
-public final class JCAManagedConnection
+public class JCAManagedConnection
         implements ManagedConnection, ManagedConnectionMetaData {
 
     /**
@@ -57,7 +57,7 @@ public final class JCAManagedConnection
     /**
      * XAResource instance.
      */
-    private final XAResource xaResource;
+    private XAResource xaResource;
 
     /**
      * Listeners.
@@ -95,7 +95,6 @@ public final class JCAManagedConnection
     /**
      * Create a new session.
      */
-    @SuppressWarnings("deprecation")
     private Session openSession() throws ResourceException {
         try {
             Session session = mcf.getRepository().login(
@@ -106,7 +105,7 @@ public final class JCAManagedConnection
             log("Failed to create session", e);
             ResourceException exception = new ResourceException(
                     "Failed to create session: " + e.getMessage());
-            exception.setLinkedException(e);
+            exception.initCause(e);
             throw exception;
         }
     }
@@ -156,8 +155,8 @@ public final class JCAManagedConnection
      */
     public void destroy()
             throws ResourceException {
-        cleanup();
-        session.logout();
+        this.session.logout();
+        this.handles.clear();
     }
 
     /**
@@ -170,6 +169,11 @@ public final class JCAManagedConnection
             this.session.logout();
             this.session = openSession();
             this.handles.clear();
+            if (this.mcf.getBindSessionToTransaction().booleanValue() && (this.xaResource instanceof TransactionBoundXAResource)) {
+            	((TransactionBoundXAResource) this.xaResource).rebind((XAResource) session);
+            } else {
+            	this.xaResource = (XAResource) session;
+            }
         }
     }
 
@@ -235,7 +239,6 @@ public final class JCAManagedConnection
         }
     }
 
-    @SuppressWarnings("deprecation")
     private String getDescriptor(String key) throws ResourceException {
         try {
             return mcf.getRepository().getDescriptor(key);
@@ -243,7 +246,7 @@ public final class JCAManagedConnection
             log("Failed to access the repository", e);
             ResourceException exception = new ResourceException(
                     "Failed to access the repository: " + e.getMessage());
-            exception.setLinkedException(e);
+            exception.initCause(e);
             throw exception;
         }
     }

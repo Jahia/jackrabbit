@@ -30,19 +30,29 @@ import javax.jcr.query.qom.Ordering;
 import javax.jcr.query.qom.QueryObjectModel;
 import javax.jcr.query.qom.Source;
 
+import org.apache.jackrabbit.api.stats.RepositoryStatistics.Type;
 import org.apache.jackrabbit.commons.query.QueryObjectModelBuilderRegistry;
 import org.apache.jackrabbit.core.query.lucene.LuceneQueryFactory;
 import org.apache.jackrabbit.core.query.lucene.SearchIndex;
 import org.apache.jackrabbit.core.query.lucene.join.QueryEngine;
 import org.apache.jackrabbit.core.session.SessionContext;
+import org.apache.jackrabbit.core.session.SessionOperation;
+import org.apache.jackrabbit.core.stats.RepositoryStatisticsImpl;
 import org.apache.jackrabbit.spi.commons.query.qom.BindVariableValueImpl;
 import org.apache.jackrabbit.spi.commons.query.qom.DefaultTraversingQOMTreeVisitor;
 import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelTree;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * <code>QueryObjectModelImpl</code> implements the query object model.
  */
 public class QueryObjectModelImpl extends QueryImpl implements QueryObjectModel {
+
+    /**
+     * The logger instance for this class
+     */
+    private static final Logger log = LoggerFactory.getLogger(QueryObjectModelImpl.class);
 
     /**
      * The query object model tree.
@@ -109,13 +119,32 @@ public class QueryObjectModelImpl extends QueryImpl implements QueryObjectModel 
     }
 
     public QueryResult execute() throws RepositoryException {
-        QueryEngine engine = new QueryEngine(
-                sessionContext.getSessionImpl(), lqf, variables);
-        return engine.execute(
-                getColumns(), getSource(), getConstraint(),
-                getOrderings(), offset, limit);
-    }
+        long time = System.nanoTime();
+        final QueryResult result = sessionContext.getSessionState().perform(
+                new SessionOperation<QueryResult>() {
+                    public QueryResult perform(SessionContext context)
+                            throws RepositoryException {
+                        final QueryEngine engine = new QueryEngine(
+                                sessionContext.getSessionImpl(), lqf, variables);
+                        return engine.execute(getColumns(), getSource(),
+                                getConstraint(), getOrderings(), offset, limit);
+                    }
 
+                    public String toString() {
+                        return "query.execute(" + statement + ")";
+                    }
+                });
+        time = System.nanoTime() - time;
+        final long timeMs = time / 1000000;
+        log.debug("executed in {} ms. ({})", timeMs, statement);
+        RepositoryStatisticsImpl statistics = sessionContext
+                .getRepositoryContext().getRepositoryStatistics();
+        statistics.getCounter(Type.QUERY_COUNT).incrementAndGet();
+        statistics.getCounter(Type.QUERY_DURATION).addAndGet(timeMs);
+        sessionContext.getRepositoryContext().getStatManager().getQueryStat()
+                .logQuery(language, statement, timeMs);
+        return result;
+    }
 
     @Override
     public String[] getBindVariableNames() {

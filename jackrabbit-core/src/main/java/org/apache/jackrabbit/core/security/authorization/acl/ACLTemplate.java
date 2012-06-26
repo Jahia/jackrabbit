@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.jcr.NamespaceException;
 import javax.jcr.NodeIterator;
@@ -33,7 +34,9 @@ import javax.jcr.security.AccessControlException;
 import javax.jcr.security.AccessControlManager;
 import javax.jcr.security.Privilege;
 
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
 import org.apache.jackrabbit.api.security.JackrabbitAccessControlList;
+import org.apache.jackrabbit.api.security.authorization.PrivilegeManager;
 import org.apache.jackrabbit.api.security.principal.PrincipalManager;
 import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
@@ -41,11 +44,13 @@ import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.nodetype.NodeTypeImpl;
 import org.apache.jackrabbit.core.security.authorization.AbstractACLTemplate;
 import org.apache.jackrabbit.core.security.authorization.AccessControlEntryImpl;
-import org.apache.jackrabbit.core.security.authorization.Permission;
-import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeBits;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeManagerImpl;
 import org.apache.jackrabbit.core.security.authorization.GlobPattern;
 import org.apache.jackrabbit.core.security.principal.PrincipalImpl;
 import org.apache.jackrabbit.core.security.principal.UnknownPrincipal;
+import org.apache.jackrabbit.core.value.InternalValue;
+import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.commons.conversion.NamePathResolver;
 import org.apache.jackrabbit.spi.commons.conversion.NameResolver;
 import org.slf4j.Logger;
@@ -75,9 +80,9 @@ class ACLTemplate extends AbstractACLTemplate {
     private final PrincipalManager principalMgr;
 
     /**
-     * The privilege registry
+     * The privilege mgr
      */
-    private final PrivilegeRegistry privilegeRegistry;
+    private final PrivilegeManagerImpl privilegeMgr;
 
     /**
      * The name resolver
@@ -101,18 +106,18 @@ class ACLTemplate extends AbstractACLTemplate {
      * Construct a new empty {@link ACLTemplate}.
      *
      * @param path path
-     * @param privilegeRegistry registry
+     * @param privilegeMgr
      * @param valueFactory value factory
      * @param resolver
      * @param principalMgr manager
      * @throws javax.jcr.NamespaceException
      */
     ACLTemplate(String path, PrincipalManager principalMgr, 
-                PrivilegeRegistry privilegeRegistry, ValueFactory valueFactory,
+                PrivilegeManager privilegeMgr, ValueFactory valueFactory,
                 NamePathResolver resolver) throws NamespaceException {
         super(path, valueFactory);
         this.principalMgr = principalMgr;
-        this.privilegeRegistry = privilegeRegistry;
+        this.privilegeMgr = (PrivilegeManagerImpl) privilegeMgr;
         this.resolver = resolver;
         this.id = null;
 
@@ -124,24 +129,34 @@ class ACLTemplate extends AbstractACLTemplate {
      * node.
      *
      * @param aclNode node
-     * @param privilegeRegistry registry
      * @throws RepositoryException if an error occurs
      */
-    ACLTemplate(NodeImpl aclNode, PrivilegeRegistry privilegeRegistry) throws RepositoryException {
-        super((aclNode != null) ? aclNode.getParent().getPath() : null, (aclNode != null) ? aclNode.getSession().getValueFactory() : null);
+    ACLTemplate(NodeImpl aclNode) throws RepositoryException {
+        this(aclNode, ((aclNode != null) ? aclNode.getParent().getPath() : null));
+    }
+
+    /**
+     * Create a {@link ACLTemplate} that is used to edit an existing ACL
+     * node.
+     *
+     * @param aclNode node
+     * @param path The path as exposed by "@link JackrabbitAccessControlList#getPath()}
+     * @throws RepositoryException if an error occurs
+     */
+    ACLTemplate(NodeImpl aclNode, String path) throws RepositoryException {
+        super(path, (aclNode != null) ? aclNode.getSession().getValueFactory() : null);
         if (aclNode == null || !NT_REP_ACL.equals(((NodeTypeImpl)aclNode.getPrimaryNodeType()).getQName())) {
             throw new IllegalArgumentException("Node must be of type 'rep:ACL'");
         }
         SessionImpl sImpl = (SessionImpl) aclNode.getSession();
         principalMgr = sImpl.getPrincipalManager();
+        privilegeMgr = (PrivilegeManagerImpl) ((JackrabbitWorkspace) sImpl.getWorkspace()).getPrivilegeManager();
 
-        this.privilegeRegistry = privilegeRegistry;
         this.resolver = sImpl;
         this.id = aclNode.getParentId();
         jcrRepGlob = sImpl.getJCRName(P_GLOB);
 
         // load the entries:
-        AccessControlManager acMgr = sImpl.getAccessControlManager();
         NodeIterator itr = aclNode.getNodes();
         while (itr.hasNext()) {
             NodeImpl aceNode = (NodeImpl) itr.nextNode();
@@ -153,10 +168,10 @@ class ACLTemplate extends AbstractACLTemplate {
                     princ = new PrincipalImpl(principalName);
                 }
 
-                Value[] privValues = aceNode.getProperty(P_PRIVILEGES).getValues();
-                Privilege[] privs = new Privilege[privValues.length];
+                InternalValue[] privValues = aceNode.getProperty(P_PRIVILEGES).internalGetValues();
+                Name[] privNames = new Name[privValues.length];
                 for (int i = 0; i < privValues.length; i++) {
-                    privs[i] = acMgr.privilegeFromName(privValues[i].getString());
+                    privNames[i] = privValues[i].getName();
                 }
 
                 Map<String,Value> restrictions = null;
@@ -164,13 +179,11 @@ class ACLTemplate extends AbstractACLTemplate {
                     restrictions = Collections.singletonMap(jcrRepGlob, aceNode.getProperty(P_GLOB).getValue());
                 }
                 // create a new ACEImpl (omitting validation check)
-                Entry ace = createEntry(
-                        princ,
-                        privs,
+                Entry ace = new Entry(princ, privilegeMgr.getBits(privNames),
                         NT_REP_GRANT_ACE.equals(((NodeTypeImpl) aceNode.getPrimaryNodeType()).getQName()),
                         restrictions);
-                // add the entry
-                internalAdd(ace);
+                // add the entry omitting any validation.
+                entries.add(ace);
             } catch (RepositoryException e) {
                 log.debug("Failed to build ACE from content.", e.getMessage());
             }
@@ -217,6 +230,7 @@ class ACLTemplate extends AbstractACLTemplate {
                 // the same entry is already contained -> no modification
                 return false;
             }
+
             // check if need to adjust existing entries
             int updateIndex = -1;
             Entry complementEntry = null;
@@ -225,8 +239,7 @@ class ACLTemplate extends AbstractACLTemplate {
                 if (equalRestriction(entry, e)) {
                     if (entry.isAllow() == e.isAllow()) {
                         // need to update an existing entry
-                        int existingPrivs = e.getPrivilegeBits();
-                        if ((existingPrivs | ~entry.getPrivilegeBits()) == -1) {
+                        if (e.getPrivilegeBits().includes(entry.getPrivilegeBits())) {
                             // all privileges to be granted/denied are already present
                             // in the existing entry -> not modified
                             return false;
@@ -235,13 +248,15 @@ class ACLTemplate extends AbstractACLTemplate {
                         // remember the index of the existing entry to be updated later on.
                         updateIndex = entries.indexOf(e);
 
-                        // remove the existing entry and create a new that includes
-                        // both the new privileges and the existing ones.
+                        // remove the existing entry and create a new one that
+                        // includes both the new privileges and the existing ones.
                         entries.remove(e);
-                        int mergedBits = e.getPrivilegeBits() | entry.getPrivilegeBits();
-                        Privilege[] mergedPrivs = privilegeRegistry.getPrivileges(mergedBits);
+
+                        PrivilegeBits mergedBits = PrivilegeBits.getInstance(e.getPrivilegeBits());
+                        mergedBits.add(entry.getPrivilegeBits());
+                        
                         // omit validation check.
-                        entry = createEntry(entry, mergedPrivs, entry.isAllow());
+                        entry = new Entry(entry, mergedBits, entry.isAllow());
                     } else {
                         complementEntry = e;
                     }
@@ -253,22 +268,24 @@ class ACLTemplate extends AbstractACLTemplate {
             // denied/granted.
             if (complementEntry != null) {
 
-                int complPrivs = complementEntry.getPrivilegeBits();
-                int resultPrivs = Permission.diff(complPrivs, entry.getPrivilegeBits());
-
-                if (resultPrivs == PrivilegeRegistry.NO_PRIVILEGE) {
+                PrivilegeBits complPrivs = complementEntry.getPrivilegeBits();
+                PrivilegeBits diff = PrivilegeBits.getInstance(complPrivs);
+                diff.diff(entry.getPrivilegeBits());
+                
+                if (diff.isEmpty()) {
                     // remove the complement entry as the new entry covers
                     // all privileges granted by the existing entry.
                     entries.remove(complementEntry);
                     updateIndex--;
-                    
-                } else if (resultPrivs != complPrivs) {
+
+                } else if (!diff.equals(complPrivs)) {
                     // replace the existing entry having the privileges adjusted
                     int index = entries.indexOf(complementEntry);
                     entries.remove(complementEntry);
-                    Entry tmpl = createEntry(entry,
-                            privilegeRegistry.getPrivileges(resultPrivs),
-                            !entry.isAllow());
+
+                    // combine set of new builtin and custom privileges
+                    // and create a new entry.
+                    Entry tmpl = new Entry(entry, diff, !entry.isAllow());
                     entries.add(index, tmpl);
                 } /* else: does not need to be modified.*/
             }
@@ -305,6 +322,10 @@ class ACLTemplate extends AbstractACLTemplate {
         } else if (!principalMgr.hasPrincipal(principal.getName())) {
             throw new AccessControlException("Principal " + principal.getName() + " does not exist.");
         }
+
+        if (path == null && restrictions != null && !restrictions.isEmpty()) {
+            throw new AccessControlException("Repository level policy does not support restrictions.");
+        }
     }
 
     /**
@@ -336,7 +357,7 @@ class ACLTemplate extends AbstractACLTemplate {
      * @see JackrabbitAccessControlList#getRestrictionNames()
      */
     public String[] getRestrictionNames() {
-        return new String[] {jcrRepGlob};
+        return (path == null) ? new String[0] : new String[] {jcrRepGlob};
     }
 
     /**
@@ -407,24 +428,40 @@ class ACLTemplate extends AbstractACLTemplate {
 
         private final GlobPattern pattern;
 
+        private Entry(Principal principal, PrivilegeBits privilegeBits, boolean allow, Map<String,Value> restrictions)
+                throws RepositoryException {
+            super(principal, privilegeBits, allow, restrictions);
+            pattern = calculatePattern();
+        }
+
         private Entry(Principal principal, Privilege[] privileges, boolean allow, Map<String,Value> restrictions)
                 throws RepositoryException {
             super(principal, privileges, allow, restrictions);
-            Value glob = getRestrictions().get(P_GLOB);
-            if (glob != null) {
-                pattern = GlobPattern.create(path, glob.getString());
-            } else {
-                pattern = GlobPattern.create(path);
-            }
+            pattern = calculatePattern();
+        }
+
+        private Entry(Entry base, PrivilegeBits newPrivilegeBits, boolean isAllow) throws RepositoryException {
+            super(base, newPrivilegeBits, isAllow);
+            pattern = calculatePattern();
         }
 
         private Entry(Entry base, Privilege[] newPrivileges, boolean isAllow) throws RepositoryException {
             super(base, newPrivileges, isAllow);
-            Value glob = getRestrictions().get(P_GLOB);
-            if (glob != null) {
-                pattern = GlobPattern.create(path, glob.getString());
+            pattern = calculatePattern();
+        }
+
+        private GlobPattern calculatePattern() throws RepositoryException {
+            if (path == null) {
+                return null; // no pattern for repo-level aces.
             } else {
-                pattern = GlobPattern.create(path);
+                GlobPattern p;
+                Value glob = getRestrictions().get(P_GLOB);
+                if (glob != null) {
+                    p = GlobPattern.create(path, glob.getString());
+                } else {
+                    p = GlobPattern.create(path);
+                }
+                return p;
             }
         }
         
@@ -443,7 +480,7 @@ class ACLTemplate extends AbstractACLTemplate {
          * @return
          */
         boolean matches(String jcrPath) {
-            return pattern.matches(jcrPath);
+            return pattern != null && pattern.matches(jcrPath);
         }
 
         @Override
@@ -454,6 +491,11 @@ class ACLTemplate extends AbstractACLTemplate {
         @Override
         protected ValueFactory getValueFactory() {
             return valueFactory;
+        }
+
+        @Override
+        protected PrivilegeManagerImpl getPrivilegeManager() {
+            return privilegeMgr;
         }
     }
 }

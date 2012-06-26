@@ -16,10 +16,13 @@
  */
 package org.apache.jackrabbit.core.state;
 
+import javax.jcr.InvalidItemStateException;
 import javax.jcr.ReferentialIntegrityException;
+import javax.jcr.RepositoryException;
 
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.id.NodeIdFactory;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.observation.EventStateCollectionFactory;
 import org.apache.jackrabbit.spi.Name;
@@ -76,8 +79,8 @@ public class LocalItemStateManager
 
     /**
      * Creates a new {@code LocalItemStateManager} instance and registers it as an {@link ItemStateListener}
-     * with the given {@link SharedItemStateManager}. 
-     * 
+     * with the given {@link SharedItemStateManager}.
+     *
      * @param sharedStateMgr the {@link SharedItemStateManager}
      * @param factory the {@link EventStateCollectionFactory}
      * @param cacheFactory the {@link ItemStateCacheFactory}
@@ -251,18 +254,63 @@ public class LocalItemStateManager
     /**
      * {@inheritDoc}
      */
-    public NodeState createNew(NodeId id, Name nodeTypeName,
-                               NodeId parentId)
-            throws IllegalStateException {
+    public NodeState createNew(
+            NodeId id, Name nodeTypeName, NodeId parentId)
+            throws RepositoryException {
         if (!editMode) {
-            throw new IllegalStateException("Not in edit mode");
+            throw new RepositoryException("Not in edit mode");
         }
 
-        NodeState state = new NodeState(id, nodeTypeName, parentId,
-                ItemState.STATUS_NEW, false);
+        boolean nonRandomId = true;
+        if (id == null) {
+            id = getNodeIdFactory().newNodeId();
+            nonRandomId = false;
+        }
+
+        NodeState state = new NodeState(
+                id, nodeTypeName, parentId, ItemState.STATUS_NEW, false);
         changeLog.added(state);
         state.setContainer(this);
+
+        if (nonRandomId && !changeLog.deleted(id)
+                && sharedStateMgr.hasItemState(id)) {
+            throw new InvalidItemStateException(
+                    "Node " + id + " already exists");
+        }
+
         return state;
+    }
+
+    /**
+     * Returns the local node state below the given transient one. If given
+     * a fresh new node state, then a new local state is created and added
+     * to the change log.
+     *
+     * @param transientState transient state
+     * @return local node state
+     * @throws RepositoryException if the local state could not be created
+     */
+    public NodeState getOrCreateLocalState(NodeState transientState)
+            throws RepositoryException {
+        NodeState localState = (NodeState) transientState.getOverlayedState();
+        if (localState == null) {
+            // The transient node state is new, create a new local state
+            localState = new NodeState(
+                    transientState.getNodeId(),
+                    transientState.getNodeTypeName(),
+                    transientState.getParentId(),
+                    ItemState.STATUS_NEW,
+                    false);
+            changeLog.added(localState);
+            localState.setContainer(this);
+            try {
+                transientState.connect(localState);
+            } catch (ItemStateException e) {
+                // should never happen
+                throw new RepositoryException(e);
+            }
+        }
+        return localState;
     }
 
     /**
@@ -294,6 +342,7 @@ public class LocalItemStateManager
      * {@inheritDoc}
      */
     public void destroy(ItemState state) throws IllegalStateException {
+        assert state != null;
         if (!editMode) {
             throw new IllegalStateException("Not in edit mode");
         }
@@ -407,10 +456,20 @@ public class LocalItemStateManager
             try {
                 local = changeLog.get(created.getId());
                 if (local != null) {
-                    // underlying state has been permanently created
-                    local.pull();
-                    local.setStatus(ItemState.STATUS_EXISTING);
-                    cache.cache(local);
+                    if (local.isNode() && local.getOverlayedState() != created) {
+                        // mid-air collision of concurrent node state creation
+                        // with same id (JCR-2272)
+                        if (local.getStatus() == ItemState.STATUS_NEW) {
+                            local.setStatus(ItemState.STATUS_UNDEFINED); // we need a state that is != NEW
+                        }
+                    } else {
+                        if (local.getOverlayedState() == created) {
+                            // underlying state has been permanently created
+                            local.pull();
+                            local.setStatus(ItemState.STATUS_EXISTING);
+                            cache.cache(local);
+                        }
+                    }
                 }
             } catch (NoSuchItemStateException e) {
                 /* ignore */
@@ -548,4 +607,9 @@ public class LocalItemStateManager
     public void nodeRemoved(NodeState state, Name name, int index, NodeId id) {
         dispatcher.notifyNodeRemoved(state, name, index, id);
     }
+
+    public NodeIdFactory getNodeIdFactory() {
+        return sharedStateMgr.getNodeIdFactory();
+    }
+
 }

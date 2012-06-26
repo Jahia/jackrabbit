@@ -29,6 +29,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import javax.jcr.RepositoryException;
 
@@ -44,7 +47,6 @@ import org.apache.jackrabbit.spi.PathFactory;
 import org.apache.jackrabbit.spi.commons.conversion.DefaultNamePathResolver;
 import org.apache.jackrabbit.spi.commons.conversion.PathResolver;
 import org.apache.jackrabbit.spi.commons.name.PathFactoryImpl;
-import org.apache.jackrabbit.util.Timer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Term;
@@ -74,7 +76,7 @@ import org.slf4j.LoggerFactory;
  * This class is thread-safe.
  * <p/>
  * Note on implementation: Multiple modifying threads are synchronized on a
- * <code>MultiIndex</code> instance itself. Sychronization between a modifying
+ * <code>MultiIndex</code> instance itself. Synchronization between a modifying
  * thread and reader threads is done using {@link #updateMonitor} and
  * {@link #updateInProgress}.
  */
@@ -175,7 +177,7 @@ public class MultiIndex {
     /**
      * The time this index was last flushed or a transaction was committed.
      */
-    private long lastFlushTime;
+    private long lastFlushTime = 0;
 
     /**
      * The <code>IndexMerger</code> for this <code>MultiIndex</code>.
@@ -186,7 +188,7 @@ public class MultiIndex {
      * Task that is periodically called by the repository timer for checking
      * if index should be flushed.
      */
-    private final Timer.Task flushTask;
+    private ScheduledFuture<?> flushTask = null;
 
     /**
      * The RedoLog of this <code>MultiIndex</code>.
@@ -264,14 +266,13 @@ public class MultiIndex {
         merger.setMergeFactor(handler.getMergeFactor());
         merger.setMinMergeDocs(handler.getMinMergeDocs());
 
-        IndexingQueueStore store = new IndexingQueueStore(indexDir);
-
         // initialize indexing queue
-        this.indexingQueue = new IndexingQueue(store);
+        this.indexingQueue = new IndexingQueue(new IndexingQueueStore(indexDir));
 
         // open persistent indexes
-        for (Iterator<?> it = indexNames.iterator(); it.hasNext(); ) {
-            IndexInfo info = (IndexInfo) it.next();
+        Iterator<IndexInfo> iterator = indexNames.iterator();
+        while (iterator.hasNext()) {
+            IndexInfo info = iterator.next();
             String name = info.getName();
             // only open if it still exists
             // it is possible that indexNames still contains a name for
@@ -329,15 +330,6 @@ public class MultiIndex {
             flush();
         }
 
-        flushTask = new Timer.Task() {
-            public void run() {
-                // check if there are any indexing jobs finished
-                checkIndexingQueue(false);
-                // check if volatile index should be flushed
-                checkFlush();
-            }
-        };
-
         if (indexNames.size() > 0) {
             scheduleFlushTask();
         }
@@ -393,10 +385,11 @@ public class MultiIndex {
                 executeAndLog(new Start(Action.INTERNAL_TRANSACTION));
                 NodeState rootState = (NodeState) stateMgr.getItemState(rootId);
                 count = createIndex(rootState, rootPath, stateMgr, count);
+                checkIndexingQueue(true);
                 executeAndLog(new Commit(getTransactionId()));
                 log.debug("Created initial index for {} nodes", count);
                 releaseMultiReader();
-                scheduleFlushTask();
+                safeFlush();
             } catch (Exception e) {
                 String msg = "Error indexing workspace";
                 IOException ex = new IOException(msg);
@@ -404,6 +397,7 @@ public class MultiIndex {
                 throw ex;
             } finally {
                 reindexing = false;
+                scheduleFlushTask();
             }
         } else {
             throw new IllegalStateException("Index already present");
@@ -798,7 +792,7 @@ public class MultiIndex {
 
         synchronized (this) {
             // stop timer
-            flushTask.cancel();
+            unscheduleFlushTask();
 
             // commit / close indexes
             try {
@@ -925,7 +919,7 @@ public class MultiIndex {
      *
      * @throws IOException if the flush fails.
      */
-    void flush() throws IOException {
+    private void flush() throws IOException {
         synchronized (this) {
 
             // only start transaction when there is something to commit
@@ -1018,7 +1012,9 @@ public class MultiIndex {
         synchronized (iq) {
             while (iq.getNumPendingDocuments() > 0 || indexingQueueCommitPending) {
                 try {
-                    log.debug("waiting for indexing queue to become empty");
+                    log.debug(
+                            "waiting for indexing queue to become empty. {} pending docs.",
+                            iq.getNumPendingDocuments());
                     iq.wait();
                     log.debug("notified");
                 } catch (InterruptedException e) {
@@ -1074,9 +1070,29 @@ public class MultiIndex {
         indexHistory.pruneOutdated();
     }
 
+    /**
+     * Schedules a background task for flushing the index once per second.
+     */
     private void scheduleFlushTask() {
-        lastFlushTime = System.currentTimeMillis();
-        handler.getContext().getTimer().schedule(flushTask, 0, 1000);
+        ScheduledExecutorService executor = handler.getContext().getExecutor();
+        flushTask = executor.scheduleWithFixedDelay(new Runnable() {
+            public void run() {
+                // check if there are any indexing jobs finished
+                checkIndexingQueue(false);
+                // check if volatile index should be flushed
+                checkFlush();
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Cancels the scheduled background index flush task.
+     */
+    private void unscheduleFlushTask() {
+        if (flushTask != null) {
+            flushTask.cancel(false);
+            flushTask = null;
+        }
     }
 
     /**
@@ -1085,6 +1101,10 @@ public class MultiIndex {
      * @throws IOException if the volatile index cannot be reset.
      */
     private void resetVolatileIndex() throws IOException {
+        // JCR-3227 close VolatileIndex properly
+        if (volatileIndex != null) {
+            volatileIndex.close();
+        }
         volatileIndex = new VolatileIndex(handler.getTextAnalyzer(),
                 handler.getSimilarity(), indexingQueue);
         volatileIndex.setUseCompoundFile(handler.getUseCompoundFile());
@@ -1152,7 +1172,8 @@ public class MultiIndex {
     private void commitVolatileIndex() throws IOException {
 
         // check if volatile index contains documents at all
-        if (volatileIndex.getNumDocuments() > 0) {
+        int volatileIndexDocuments = volatileIndex.getNumDocuments();
+        if (volatileIndexDocuments > 0) {
 
             long time = System.currentTimeMillis();
             // create index
@@ -1170,7 +1191,7 @@ public class MultiIndex {
             resetVolatileIndex();
 
             time = System.currentTimeMillis() - time;
-            log.debug("Committed in-memory index in " + time + "ms.");
+            log.debug("Committed in-memory index containing {} documents in {}ms.", volatileIndexDocuments, time);
         }
     }
 
@@ -1216,6 +1237,10 @@ public class MultiIndex {
             } catch (NoSuchItemStateException e) {
                 handler.getOnWorkspaceInconsistencyHandler().handleMissingChildNode(
                         e, handler, path, node, child);
+            } catch (ItemStateException e) {
+                // JCR-3268 log bundle corruption and continue
+                handler.getOnWorkspaceInconsistencyHandler().logError(e,
+                        handler, childPath, node, child);
             }
             if (childState != null) {
                 count = createIndex(childState, childPath, stateMgr, count);
@@ -1276,21 +1301,25 @@ public class MultiIndex {
                 if (redoLog.hasEntries()) {
                     log.debug("Flushing index after being idle for "
                             + idleTime + " ms.");
-                    synchronized (updateMonitor) {
-                        updateInProgress = true;
-                    }
-                    try {
-                        flush();
-                    } finally {
-                        synchronized (updateMonitor) {
-                            updateInProgress = false;
-                            updateMonitor.notifyAll();
-                            releaseMultiReader();
-                        }
-                    }
+                    safeFlush();
                 }
             } catch (IOException e) {
                 log.error("Unable to commit volatile index", e);
+            }
+        }
+    }
+
+    void safeFlush() throws IOException{
+        synchronized (updateMonitor) {
+            updateInProgress = true;
+        }
+        try {
+            flush();
+        } finally {
+            synchronized (updateMonitor) {
+                updateInProgress = false;
+                updateMonitor.notifyAll();
+                releaseMultiReader();
             }
         }
     }
@@ -1645,7 +1674,7 @@ public class MultiIndex {
          */
         private static final int ENTRY_LENGTH =
             Long.toString(Long.MAX_VALUE).length() + Action.ADD_NODE.length()
-            + new NodeId().toString().length() + 2;
+            + new NodeId(0, 0).toString().length() + 2;
 
         /**
          * The id of the node to add.
@@ -1928,7 +1957,7 @@ public class MultiIndex {
          */
         private static final int ENTRY_LENGTH =
             Long.toString(Long.MAX_VALUE).length() + Action.DELETE_NODE.length()
-            + new NodeId().toString().length() + 2;
+            + new NodeId(0, 0).toString().length() + 2;
 
         /**
          * The id of the node to remove.

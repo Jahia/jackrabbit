@@ -20,12 +20,15 @@ import static org.apache.jackrabbit.core.RepositoryImpl.SYSTEM_ROOT_NODE_ID;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_BASEVERSION;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_ISCHECKEDOUT;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_PREDECESSORS;
+import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_ROOTVERSION;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_VERSIONHISTORY;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.MIX_VERSIONABLE;
 
+import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Set;
 
+import javax.jcr.ItemNotFoundException;
 import javax.jcr.RepositoryException;
 
 import org.apache.jackrabbit.core.id.NodeId;
@@ -35,8 +38,15 @@ import org.apache.jackrabbit.core.state.ChangeLog;
 import org.apache.jackrabbit.core.state.ChildNodeEntry;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.NodeState;
-import org.apache.jackrabbit.core.version.InternalVersionManager;
+import org.apache.jackrabbit.core.version.InconsistentVersioningState;
+import org.apache.jackrabbit.core.version.InternalVersion;
+import org.apache.jackrabbit.core.version.InternalVersionHistory;
+import org.apache.jackrabbit.core.version.InternalVersionManagerImpl;
+import org.apache.jackrabbit.core.version.VersionHistoryInfo;
 import org.apache.jackrabbit.spi.Name;
+import org.apache.jackrabbit.spi.NameFactory;
+import org.apache.jackrabbit.spi.commons.name.NameFactoryImpl;
+import org.apache.jackrabbit.util.ISO8601;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,27 +68,66 @@ class RepositoryChecker {
 
     private final ChangeLog workspaceChanges;
 
-    private final InternalVersionManager versionManager;
+    private final ChangeLog vworkspaceChanges;
 
-    public RepositoryChecker(
-            PersistenceManager workspace,
-            InternalVersionManager versionManager) {
+    private final InternalVersionManagerImpl versionManager;
+
+    // maximum size of changelog when running in "fixImmediately" mode
+    private final static long CHUNKSIZE = 256;
+
+    // number of nodes affected by pending changes
+    private long dirtyNodes = 0;
+
+    // total nodes checked, with problems
+    private long totalNodes = 0;
+    private long brokenNodes = 0;
+
+    // start time
+    private long startTime;
+
+    public RepositoryChecker(PersistenceManager workspace,
+            InternalVersionManagerImpl versionManager) {
         this.workspace = workspace;
         this.workspaceChanges = new ChangeLog();
+        this.vworkspaceChanges = new ChangeLog();
         this.versionManager = versionManager;
     }
 
-    public void check(NodeId id, boolean recurse)
+    public void check(NodeId id, boolean recurse, boolean fixImmediately)
             throws RepositoryException {
+
+        log.info("Starting RepositoryChecker");
+
+        startTime = System.currentTimeMillis();
+
+        internalCheck(id, recurse, fixImmediately);
+
+        if (fixImmediately) {
+            internalFix(true);
+        }
+
+        log.info("RepositoryChecker finished; checked " + totalNodes
+                + " nodes in " + (System.currentTimeMillis() - startTime)
+                + "ms, problems found: " + brokenNodes);
+    }
+
+    private void internalCheck(NodeId id, boolean recurse,
+            boolean fixImmediately) throws RepositoryException {
         try {
             log.debug("Checking consistency of node {}", id);
+            totalNodes += 1;
+
             NodeState state = workspace.load(id);
             checkVersionHistory(state);
+
+            if (fixImmediately && dirtyNodes > CHUNKSIZE) {
+                internalFix(false);
+            }
 
             if (recurse) {
                 for (ChildNodeEntry child : state.getChildNodeEntries()) {
                     if (!SYSTEM_ROOT_NODE_ID.equals(child.getId())) {
-                        check(child.getId(), recurse);
+                        internalCheck(child.getId(), recurse, fixImmediately);
                     }
                 }
             }
@@ -87,34 +136,134 @@ class RepositoryChecker {
         }
     }
 
-    public void fix() throws RepositoryException {
-        if (workspaceChanges.hasUpdates()) {
-            log.warn("Fixing repository inconsistencies");
+    private void fix(PersistenceManager pm, ChangeLog changes, String store,
+            boolean verbose) throws RepositoryException {
+        if (changes.hasUpdates()) {
+            if (log.isWarnEnabled()) {
+                log.warn("Fixing " + store + " inconsistencies: "
+                        + changes.toString());
+            }
             try {
-                workspace.store(workspaceChanges);
+                pm.store(changes);
+                changes.reset();
             } catch (ItemStateException e) {
-                e.printStackTrace();
-                throw new RepositoryException(
-                        "Failed to fix workspace inconsistencies", e);
+                String message = "Failed to fix " + store
+                        + " inconsistencies (aborting)";
+                log.error(message, e);
+                throw new RepositoryException(message, e);
             }
         } else {
-            log.info("No repository inconcistencies found");
+            if (verbose) {
+                log.info("No " + store + " inconsistencies found");
+            }
         }
+    }
+
+    public void fix() throws RepositoryException {
+        internalFix(true);
+    }
+
+    private void internalFix(boolean verbose) throws RepositoryException {
+        fix(workspace, workspaceChanges, "workspace", verbose);
+        fix(versionManager.getPersistenceManager(), vworkspaceChanges,
+                "versioning workspace", verbose);
+        dirtyNodes = 0;
     }
 
     private void checkVersionHistory(NodeState node) {
-        if (node.hasPropertyName(JCR_VERSIONHISTORY)) {
-            log.debug("Checking version history of node {}", node.getNodeId());
-            try {
-                versionManager.getVersionHistoryOfNode(node.getNodeId());
-            } catch (Exception e) {
-                log.info("Removing references to a missing version history", e);
-                removeVersionHistoryReferences(node);
+
+        String message = null;
+        NodeId nid = node.getNodeId();
+        boolean isVersioned = node.hasPropertyName(JCR_VERSIONHISTORY);
+
+        NodeId vhid = null;
+
+        try {
+            String type = isVersioned ? "in-use" : "candidate";
+            
+            log.debug("Checking " + type + " version history of node {}", nid);
+
+            String intro = "Removing references to an inconsistent " + type
+                    + " version history of node " + nid;
+
+            message = intro + " (getting the VersionInfo)";
+            VersionHistoryInfo vhi = versionManager.getVersionHistoryInfoForNode(node);
+            if (vhi != null) {
+                // get the version history's node ID as early as possible
+                // so we can attempt a fixup even when the next call fails
+                vhid = vhi.getVersionHistoryId();
             }
+
+            message = intro + " (getting the InternalVersionHistory)";
+
+            InternalVersionHistory vh = null;
+            
+            try {
+                vh = versionManager.getVersionHistoryOfNode(nid);
+            }
+            catch (ItemNotFoundException ex) {
+                // it's ok if we get here if the node didn't claim to be versioned
+                if (isVersioned) {
+                    throw ex;
+                }
+            }
+
+            if (vh == null) {
+                if (isVersioned) {
+                    message = intro + "getVersionHistoryOfNode returned null";
+                    throw new InconsistentVersioningState(message);    
+                }
+            } else { 
+                vhid = vh.getId();
+                
+                // additional checks, see JCR-3101
+
+                message = intro + " (getting the version names failed)";
+                Name[] versionNames = vh.getVersionNames();
+                boolean seenRoot = false;
+
+                for (Name versionName : versionNames) {
+                    seenRoot |= JCR_ROOTVERSION.equals(versionName);
+
+                    log.debug("Checking version history of node {}, version {}", nid, versionName);
+
+                    message = intro + " (getting version " + versionName + "  failed)";
+                    InternalVersion v = vh.getVersion(versionName);
+
+                    message = intro + "(frozen node of root version " + v.getId() + " missing)";
+                    if (null == v.getFrozenNode()) {
+                        throw new InconsistentVersioningState(message);
+                    }
+                }
+
+                if (!seenRoot) {
+                    message = intro + " (root version is missing)";
+                    throw new InconsistentVersioningState(message);
+                }
+            }
+        } catch (InconsistentVersioningState e) {
+            log.info(message, e);
+            NodeId nvhid = e.getVersionHistoryNodeId();
+            if (nvhid != null) {
+                if (vhid != null && !nvhid.equals(vhid)) {
+                    log.error("vhrid returned with InconsistentVersioningState does not match the id we already had: "
+                            + vhid + " vs " + nvhid);
+                }
+                vhid = nvhid; 
+            }
+            removeVersionHistoryReferences(node, vhid);
+        } catch (Exception e) {
+            log.info(message, e);
+            removeVersionHistoryReferences(node, vhid);
         }
     }
 
-    private void removeVersionHistoryReferences(NodeState node) {
+    // un-versions the node, and potentially moves the version history away
+    private void removeVersionHistoryReferences(NodeState node,  NodeId vhid) {
+
+        dirtyNodes += 1;
+        brokenNodes += 1;
+
         NodeState modified =
             new NodeState(node, NodeState.STATUS_EXISTING_MODIFIED, true);
 
@@ -129,6 +278,44 @@ class RepositoryChecker {
         removeProperty(modified, JCR_ISCHECKEDOUT);
 
         workspaceChanges.modified(modified);
+        
+        if (vhid != null) {
+            // attempt to rename the version history, so it doesn't interfere with
+            // a future attempt to put the node under version control again 
+            // (see JCR-3115)
+            
+            log.info("trying to rename version history of node " + node.getId());
+
+            NameFactory nf = NameFactoryImpl.getInstance();
+            
+            // Name of VHR in parent folder is ID of versionable node
+            Name vhrname = nf.create(Name.NS_DEFAULT_URI, node.getId().toString());
+
+            try {
+                NodeState vhrState = versionManager.getPersistenceManager().load(vhid);
+                NodeState vhrParentState = versionManager.getPersistenceManager().load(vhrState.getParentId());
+                
+                if (vhrParentState.hasChildNodeEntry(vhrname)) {
+                    NodeState modifiedParent = (NodeState) vworkspaceChanges.get(vhrState.getParentId());
+                    if (modifiedParent == null) {
+                        modifiedParent = new NodeState(vhrParentState, NodeState.STATUS_EXISTING_MODIFIED, true);
+                    }
+                    
+                    Calendar now = Calendar.getInstance();
+                    String appendme = " (disconnected by RepositoryChecker on "
+                            + ISO8601.format(now) + ")";
+                    modifiedParent.renameChildNodeEntry(vhid,
+                            nf.create(vhrname.getNamespaceURI(), vhrname.getLocalName() + appendme));
+
+                    vworkspaceChanges.modified(modifiedParent);
+                }
+                else {
+                    log.info("child node entry " + vhrname + " for version history not found inside parent folder.");
+                }
+            } catch (Exception ex) {
+                log.error("while trying to rename the version history", ex);
+            }
+        }
     }
 
     private void removeProperty(NodeState node, Name name) {

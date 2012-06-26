@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
  * On successful authentication it associates the credentials to principals
  * using the {@link PrincipalProvider} configured for this LoginModule<p />
  * Jackrabbit distinguishes between Login and Impersonation dispatching the
- * the correspoding Repository/Session methods to
+ * the corresponding Repository/Session methods to
  * {@link #authenticate(java.security.Principal, javax.jcr.Credentials)} and
  * {@link #impersonate(java.security.Principal, javax.jcr.Credentials)}, respectively.
  * <br>
@@ -72,6 +72,9 @@ public abstract class AbstractLoginModule implements LoginModule {
      * login.
      *
      * @see #isPreAuthenticated(Credentials)
+     * @deprecated For security reasons this configuration option has been
+     * deprecated and will no longer be supported in a subsequent release.
+     * See also <a href="https://issues.apache.org/jira/browse/JCR-3293">JCR-3293</a>
      */
     private static final String PRE_AUTHENTICATED_ATTRIBUTE_OPTION = "trust_credentials_attribute";
 
@@ -87,6 +90,9 @@ public abstract class AbstractLoginModule implements LoginModule {
      * has already been authenticated outside of this LoginModule.
      *
      * @see #getPreAuthAttributeName()
+     * @deprecated For security reasons the support for the preAuth attribute
+     * has been deprecated and will no longer be available in a subsequent release.
+     * See also <a href="https://issues.apache.org/jira/browse/JCR-3293">JCR-3293</a>
      */
     private String preAuthAttributeName;
 
@@ -109,7 +115,7 @@ public abstract class AbstractLoginModule implements LoginModule {
      * </ul>
      * Implementations are called via
      * {@link #doInit(CallbackHandler, Session, Map)} to implement
-     * additional initalization
+     * additional initialization
      *
      * @param subject         the <code>Subject</code> to be authenticated. <p>
      * @param callbackHandler a <code>CallbackHandler</code> for communicating
@@ -132,7 +138,7 @@ public abstract class AbstractLoginModule implements LoginModule {
 
         // initialize the login module
         try {
-            log.debug("Initalize LoginModule: ");
+            log.debug("Initialize LoginModule: ");
             RepositoryCallback repositoryCb = new RepositoryCallback();
             callbackHandler.handle(new Callback[]{repositoryCb});
 
@@ -208,8 +214,8 @@ public abstract class AbstractLoginModule implements LoginModule {
      *
      * @param callbackHandler as passed by {@link javax.security.auth.login.LoginContext}
      * @param session         to security-workspace of Jackrabbit
-     * @param options         options from Logini config
-     * @throws LoginException in case initialization failes
+     * @param options         options from LoginModule config
+     * @throws LoginException in case initialization fails.
      */
     protected abstract void doInit(CallbackHandler callbackHandler,
                                    Session session,
@@ -228,7 +234,7 @@ public abstract class AbstractLoginModule implements LoginModule {
 
     /**
      * Method to authenticate a <code>Subject</code> (phase 1).<p/>
-     * The login is devided into 3 Phases:<p/>
+     * The login is divided into 3 Phases:<p/>
      *
      * <b>1) User-ID resolution</b><br>
      * In a first step it is tried to resolve a User-ID for further validation.
@@ -256,7 +262,7 @@ public abstract class AbstractLoginModule implements LoginModule {
      *
      * <b>3) Verification</b><br>
      * There are four cases, how the User-ID can be verified:
-     * The login is anonymous, preauthenticated or the login is the result of
+     * The login is anonymous, pre-authenticated or the login is the result of
      * an impersonation request (see {@link javax.jcr.Session#impersonate(Credentials)}
      * or of a login to the Repository ({@link javax.jcr.Repository#login(Credentials)}).
      * The concrete implementation of the LoginModule is responsible for all
@@ -415,14 +421,14 @@ public abstract class AbstractLoginModule implements LoginModule {
      * @see javax.security.auth.spi.LoginModule#logout()
      */
     public boolean logout() throws LoginException {
-        Set<Principal> thisPrincipals = subject.getPrincipals();
-        Set<SimpleCredentials> thisCredentials = subject.getPublicCredentials(SimpleCredentials.class);
-        if (thisPrincipals == null || thisCredentials == null
-                || thisPrincipals.isEmpty() || thisCredentials.isEmpty()) {
+        if (subject.getPrincipals().isEmpty() || subject.getPublicCredentials(Credentials.class).isEmpty()) {
             return false;
         } else {
-            thisPrincipals.clear();
-            thisCredentials.clear();
+            // clear subject if not readonly
+            if (!subject.isReadOnly()) {
+                subject.getPrincipals().clear();
+                subject.getPublicCredentials().clear();
+            }
             return true;
         }
     }
@@ -431,7 +437,7 @@ public abstract class AbstractLoginModule implements LoginModule {
      * @param principal Principal used to retrieve the <code>Authentication</code>
      * object.
      * @param credentials Credentials used for the authentication.
-     * @return <code>true</code> if Credentails authenticate,
+     * @return <code>true</code> if Credentials authenticate,
      *         <code>false</code> if no <code>Authentication</code> can handle
      *         the given <code>Credentials</code>
      * @throws javax.security.auth.login.FailedLoginException
@@ -491,7 +497,7 @@ public abstract class AbstractLoginModule implements LoginModule {
             throws RepositoryException;
 
     /**
-     * Method tries to acquire an Impersonator in the follwing order:
+     * Method tries to acquire an Impersonator in the following order:
      * <ul>
      * <li> Try to access it from the {@link Credentials} via {@link SimpleCredentials#getAttribute(String)}</li>
      * <li> Ask CallbackHandler for Impersonator with use of {@link ImpersonationCallback}.</li>
@@ -524,7 +530,7 @@ public abstract class AbstractLoginModule implements LoginModule {
     /**
      * Method tries to resolve the {@link Credentials} used for login. It takes
      * authentication-extension of an already authenticated {@link Subject} into
-     * accout.
+     * account.
      * <p/>
      * Therefore the credentials are retrieved as follows:
      * <ol>
@@ -534,7 +540,7 @@ public abstract class AbstractLoginModule implements LoginModule {
      * to return an instance of {@link Credentials}.</li>
      * <li>Ask the Subject for its public <code>SimpleCredentials</code> see
      * {@link Subject#getPublicCredentials(Class)}, thus enabling to
-     * preauthenticate the Subject.</li>
+     * pre-authenticate the Subject.</li>
      * </ol>
      *
      * @return Credentials or null if not found
@@ -591,7 +597,7 @@ public abstract class AbstractLoginModule implements LoginModule {
     }
 
     /**
-     * Method supports tries to acquire a UserID in the follwing order:
+     * Method supports tries to acquire a UserID in the following order:
      * <ol>
      * <li>If passed credentials are {@link GuestCredentials} the anonymous user id
      * is returned.</li>
@@ -747,6 +753,9 @@ public abstract class AbstractLoginModule implements LoginModule {
      * returns <code>null</code>.
      *
      * @see #isPreAuthenticated(Credentials)
+     * @deprecated For security reasons the support for the preAuth attribute
+     * has been deprecated and will no longer be available in a subsequent release.
+     * See also <a href="https://issues.apache.org/jira/browse/JCR-3293">JCR-3293</a>
      */
     protected final String getPreAuthAttributeName() {
         return preAuthAttributeName;
@@ -768,11 +777,20 @@ public abstract class AbstractLoginModule implements LoginModule {
      * @param creds The Credentials to check
      *
      * @see #getPreAuthAttributeName()
+     * @deprecated For security reasons the support for the preAuth attribute
+     * has been deprecated and will no longer be available in a subsequent release.
+     * See also <a href="https://issues.apache.org/jira/browse/JCR-3293">JCR-3293</a>
      */
     protected boolean isPreAuthenticated(final Credentials creds) {
         final String preAuthAttrName = getPreAuthAttributeName();
-        return preAuthAttrName != null
+        boolean isPreAuth = preAuthAttrName != null
             && (creds instanceof SimpleCredentials)
             && ((SimpleCredentials) creds).getAttribute(preAuthAttrName) != null;
+        if (isPreAuth) {
+            log.warn("Usage of deprecated 'trust_credentials_attribute' option. " +
+                    "Please note that for security reasons this feature will not" +
+                    "be supported in future releases.");
+        }
+        return isPreAuth;
     }
 }

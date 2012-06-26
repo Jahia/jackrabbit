@@ -17,12 +17,14 @@
 package org.apache.jackrabbit.core.cluster;
 
 import java.util.ArrayList;
+import java.util.Collections;
 
 import javax.jcr.RepositoryException;
 
 import org.apache.jackrabbit.core.cluster.SimpleEventListener.LockEvent;
 import org.apache.jackrabbit.core.cluster.SimpleEventListener.NamespaceEvent;
 import org.apache.jackrabbit.core.cluster.SimpleEventListener.NodeTypeEvent;
+import org.apache.jackrabbit.core.cluster.SimpleEventListener.PrivilegeEvent;
 import org.apache.jackrabbit.core.cluster.SimpleEventListener.UnlockEvent;
 import org.apache.jackrabbit.core.cluster.SimpleEventListener.UpdateEvent;
 import org.apache.jackrabbit.core.config.ClusterConfig;
@@ -32,11 +34,13 @@ import org.apache.jackrabbit.core.journal.JournalFactory;
 import org.apache.jackrabbit.core.journal.MemoryJournal;
 import org.apache.jackrabbit.core.journal.MemoryJournal.MemoryRecord;
 import org.apache.jackrabbit.spi.Name;
+import org.apache.jackrabbit.spi.PrivilegeDefinition;
 import org.apache.jackrabbit.spi.QNodeTypeDefinition;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
 import org.apache.jackrabbit.spi.commons.name.NameFactoryImpl;
 import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;
 import org.apache.jackrabbit.spi.commons.nodetype.QNodeTypeDefinitionBuilder;
+import org.apache.jackrabbit.spi.commons.privilege.PrivilegeDefinitionImpl;
 import org.apache.jackrabbit.test.JUnitTest;
 
 /**
@@ -78,6 +82,7 @@ public class ClusterRecordTest extends JUnitTest {
     /**
      * {@inheritDoc}
      */
+    @Override
     protected void setUp() throws Exception {
         master = createClusterNode("master", records);
         master.start();
@@ -90,6 +95,7 @@ public class ClusterRecordTest extends JUnitTest {
     /**
      * {@inheritDoc}
      */
+    @Override
     protected void tearDown() throws Exception {
         if (master != null) {
             master.stop();
@@ -144,7 +150,7 @@ public class ClusterRecordTest extends JUnitTest {
      * @throws Exception
      */
     public void testLockOperation() throws Exception {
-        LockEvent event = new LockEvent(new NodeId(), true, "admin");
+        LockEvent event = new LockEvent(NodeId.randomId(), true, "admin");
 
         master.createLockChannel(DEFAULT_WORKSPACE).create(event.getNodeId(),
                 event.isDeep(), event.getUserId()).ended(true);
@@ -162,7 +168,7 @@ public class ClusterRecordTest extends JUnitTest {
      * @throws Exception
      */
     public void testUnlockOperation() throws Exception {
-        UnlockEvent event = new UnlockEvent(new NodeId());
+        UnlockEvent event = new UnlockEvent(NodeId.randomId());
 
         master.createLockChannel(DEFAULT_WORKSPACE).create(event.getNodeId()).ended(true);
 
@@ -269,6 +275,24 @@ public class ClusterRecordTest extends JUnitTest {
 
         SimpleEventListener listener = new SimpleEventListener();
         slave.setListener((NamespaceEventListener) listener);
+        slave.sync();
+
+        assertEquals(1, listener.getClusterEvents().size());
+        assertEquals(listener.getClusterEvents().get(0), event);
+    }
+
+    /**
+     * Test producing and consuming a privilege registration.
+     * @throws Exception
+     */
+    public void testPrivilegeRegistration() throws Exception {
+        PrivilegeDefinition pdf = new PrivilegeDefinitionImpl(NameFactoryImpl.getInstance().create("", "test"), false, null);
+
+        PrivilegeEvent event = new PrivilegeEvent(Collections.singletonList(pdf));
+        master.registeredPrivileges(event.getDefinitions());
+
+        SimpleEventListener listener = new SimpleEventListener();
+        slave.setListener((PrivilegeEventListener) listener);
         slave.sync();
 
         assertEquals(1, listener.getClusterEvents().size());

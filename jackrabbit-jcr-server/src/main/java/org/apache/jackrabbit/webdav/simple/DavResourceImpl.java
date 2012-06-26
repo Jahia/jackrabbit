@@ -18,6 +18,7 @@ package org.apache.jackrabbit.webdav.simple;
 
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.server.io.AbstractExportContext;
+import org.apache.jackrabbit.server.io.CopyMoveContextImpl;
 import org.apache.jackrabbit.server.io.DefaultIOListener;
 import org.apache.jackrabbit.server.io.ExportContext;
 import org.apache.jackrabbit.server.io.ExportContextImpl;
@@ -68,7 +69,6 @@ import org.slf4j.LoggerFactory;
 import javax.jcr.Item;
 import javax.jcr.Node;
 import javax.jcr.NodeIterator;
-import javax.jcr.PathNotFoundException;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.Workspace;
@@ -569,7 +569,7 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
 
             // make sure, non-jcr locks are removed, once the removal is completed
             try {
-                if (!isJsrLockable()) {
+                if (!isJcrLockable()) {
                     ActiveLock lock = getLock(Type.WRITE, Scope.EXCLUSIVE);
                     if (lock != null) {
                         lockManager.releaseLock(lock.getToken(), member);
@@ -599,11 +599,8 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
         }
         // make sure, that src and destination belong to the same workspace
         checkSameWorkspace(destination.getLocator());
-        try {
-            String destItemPath = destination.getLocator().getRepositoryPath();
-            getJcrSession().getWorkspace().move(locator.getRepositoryPath(), destItemPath);
-        } catch (RepositoryException e) {
-            throw new JcrDavException(e);
+        if (!config.getCopyMoveManager().move(new CopyMoveContextImpl(getJcrSession()), this, destination)) {
+            throw new DavException(DavServletResponse.SC_UNSUPPORTED_MEDIA_TYPE);
         }
     }
 
@@ -620,22 +617,10 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
         if (isFilteredResource(destination)) {
             throw new DavException(DavServletResponse.SC_FORBIDDEN);
         }
-        if (shallow && isCollection()) {
-            // TODO: currently no support for shallow copy; however this is
-            // only relevant if the source resource is a collection, because
-            // otherwise it doesn't make a difference
-            throw new DavException(DavServletResponse.SC_FORBIDDEN, "Unable to perform shallow copy.");
-        }
         // make sure, that src and destination belong to the same workspace
         checkSameWorkspace(destination.getLocator());
-        try {
-            String destItemPath = destination.getLocator().getRepositoryPath();
-            getJcrSession().getWorkspace().copy(locator.getRepositoryPath(), destItemPath);
-        } catch (PathNotFoundException e) {
-            // according to rfc 2518: missing parent
-            throw new DavException(DavServletResponse.SC_CONFLICT, e.getMessage());
-        } catch (RepositoryException e) {
-            throw new JcrDavException(e);
+        if (!config.getCopyMoveManager().copy(new CopyMoveContextImpl(getJcrSession(), shallow), this, destination)) {
+            throw new DavException(DavServletResponse.SC_UNSUPPORTED_MEDIA_TYPE);
         }
     }
 
@@ -698,10 +683,17 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
         ActiveLock lock = null;
         if (isLockable(lockInfo.getType(), lockInfo.getScope())) {
             // TODO: deal with existing locks, that may have been created, before the node was jcr-lockable...
-            if (isJsrLockable()) {
+            if (isJcrLockable()) {
                 try {
+                    javax.jcr.lock.LockManager lockMgr = node.getSession().getWorkspace().getLockManager();
+                    long timeout = lockInfo.getTimeout();
+                    if (timeout == LockInfo.INFINITE_TIMEOUT) {
+                        timeout = Long.MAX_VALUE;
+                    } else {
+                        timeout = timeout / 1000;
+                    }
                     // try to execute the lock operation
-                    Lock jcrLock = node.lock(lockInfo.isDeep(), false);
+                    Lock jcrLock = lockMgr.lock(node.getPath(), lockInfo.isDeep(), false, timeout, lockInfo.getOwner());
                     if (jcrLock != null) {
                         lock = new JcrActiveLock(jcrLock);
                     }
@@ -918,7 +910,7 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
      * @return a new <code>PropertyImportContext</code>.
      */
     protected PropertyImportContext getPropertyImportContext(List<? extends PropEntry> changeList) {
-        return new ProperyImportCtx(changeList);
+        return new PropertyImportCtx(changeList);
     }
 
     /**
@@ -937,7 +929,7 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
      *
      * @return true if this resource is lockable.
      */
-    private boolean isJsrLockable() {
+    private boolean isJcrLockable() {
         boolean lockable = false;
         if (exists()) {
             try {
@@ -1076,13 +1068,13 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
         }
     }
 
-    private class ProperyImportCtx implements PropertyImportContext {
+    private class PropertyImportCtx implements PropertyImportContext {
 
         private final IOListener ioListener = new DefaultIOListener(log);
         private final List<? extends PropEntry> changeList;
         private boolean completed;
 
-        private ProperyImportCtx(List<? extends PropEntry> changeList) {
+        private PropertyImportCtx(List<? extends PropEntry> changeList) {
             this.changeList = changeList;
         }
 

@@ -65,7 +65,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
      * @param excerptEnd    this string is appended to the excerpt
      * @param fragmentStart this string is prepended to every fragment
      * @param fragmentEnd   this string is appended to the end of every
-     *                      fragement.
+     *                      fragment.
      * @param hlStart       the string used to prepend a highlighted token, for
      *                      example <tt>&quot;&lt;b&gt;&quot;</tt>
      * @param hlEnd         the string used to append a highlighted token, for
@@ -77,7 +77,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
      *         highlighted
      */
     public static String highlight(TermPositionVector tvec,
-                                   Set<Term> queryTerms,
+                                   Set<Term[]> queryTerms,
                                    String text,
                                    String excerptStart,
                                    String excerptEnd,
@@ -103,7 +103,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
      *         highlighted
      */
     public static String highlight(TermPositionVector tvec,
-                                   Set<Term> queryTerms,
+                                   Set<Term[]> queryTerms,
                                    String text,
                                    int maxFragments,
                                    int surround) throws IOException {
@@ -112,6 +112,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
                 START_HIGHLIGHT, END_HIGHLIGHT, maxFragments, surround);
     }
 
+    @Override
     protected String mergeFragments(TermVectorOffsetInfo[] offsets,
                                     String text,
                                     String excerptStart,
@@ -128,7 +129,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
                     fragmentStart, fragmentEnd, surround * 2);
         }
 
-        PriorityQueue bestFragments = new FragmentInfoPriorityQueue(maxFragments);
+        PriorityQueue<FragmentInfo> bestFragments = new FragmentInfoPriorityQueue(maxFragments);
         for (int i = 0; i < offsets.length; i++) {
             if (offsets[i].getEndOffset() <= text.length()) {
                 FragmentInfo fi = new FragmentInfo(offsets[i], surround * 2);
@@ -140,7 +141,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
                         break;
                     }
                 }
-                bestFragments.insert(fi);
+                bestFragments.insertWithOverflow(fi);
             }
         }
 
@@ -189,19 +190,22 @@ public class WeightedHighlighter extends DefaultHighlighter {
             int limit = Math.max(0, fi.getStartOffset() / 2 + fi.getEndOffset() / 2 - surround);
             int len = startFragment(sb, text, fi.getStartOffset(), limit);
             TermVectorOffsetInfo lastOffsetInfo = null;
-            Iterator fIt = fi.iterator();
+            Iterator<TermVectorOffsetInfo> fIt = fi.iterator();
             while (fIt.hasNext()) {
-                TermVectorOffsetInfo oi = (TermVectorOffsetInfo) fIt.next();
+                TermVectorOffsetInfo oi = fIt.next();
                 if (lastOffsetInfo != null) {
                     // fill in text between terms
-                    sb.append(text.substring(lastOffsetInfo.getEndOffset(), oi.getStartOffset()));
+                    sb.append(escape(text.substring(
+                            lastOffsetInfo.getEndOffset(), oi.getStartOffset())));
                 }
                 sb.append(hlStart);
-                sb.append(text.substring(oi.getStartOffset(), oi.getEndOffset()));
+                sb.append(escape(text.substring(oi.getStartOffset(),
+                        oi.getEndOffset())));
                 sb.append(hlEnd);
                 lastOffsetInfo = oi;
             }
-            limit = Math.min(text.length(), fi.getStartOffset() - len + (surround * 2));
+            limit = Math.min(text.length(), fi.getStartOffset() - len
+                    + (surround * 2));
             endFragment(sb, text, fi.getEndOffset(), limit);
             sb.append(fragmentEnd);
         }
@@ -222,10 +226,10 @@ public class WeightedHighlighter extends DefaultHighlighter {
      * @return the length of the start fragment that was appended to
      *         <code>sb</code>.
      */
-    private static int startFragment(StringBuffer sb, String text, int offset, int limit) {
+    private int startFragment(StringBuffer sb, String text, int offset, int limit) {
         if (limit == 0) {
             // append all
-            sb.append(text.substring(0, offset));
+            sb.append(escape(text.substring(0, offset)));
             return offset;
         }
         String intro = "... ";
@@ -241,7 +245,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
                 }
             }
         }
-        sb.append(intro).append(text.substring(start, offset));
+        sb.append(intro).append(escape(text.substring(start, offset)));
         return offset - start;
     }
 
@@ -255,10 +259,10 @@ public class WeightedHighlighter extends DefaultHighlighter {
      * @param offset the end offset of the last matching term in the fragment.
      * @param limit  do not go further than <code>limit</code>.
      */
-    private static void endFragment(StringBuffer sb, String text, int offset, int limit) {
+    private void endFragment(StringBuffer sb, String text, int offset, int limit) {
         if (limit == text.length()) {
             // append all
-            sb.append(text.substring(offset));
+            sb.append(escape(text.substring(offset)));
             return;
         }
         int end = offset;
@@ -268,7 +272,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
                 end = i;
             }
         }
-        sb.append(text.substring(offset, end)).append(" ...");
+        sb.append(escape(text.substring(offset, end))).append(" ...");
     }
 
     private static class FragmentInfo {
@@ -332,7 +336,7 @@ public class WeightedHighlighter extends DefaultHighlighter {
 
     }
 
-    private static class FragmentInfoPriorityQueue extends PriorityQueue {
+    private static class FragmentInfoPriorityQueue extends PriorityQueue<FragmentInfo> {
 
         public FragmentInfoPriorityQueue(int size) {
             initialize(size);
@@ -345,9 +349,8 @@ public class WeightedHighlighter extends DefaultHighlighter {
          * is considered the lesser. This will result in a queue that keeps the
          * {@link FragmentInfo} with the best quality.
          */
-        protected boolean lessThan(Object a, Object b) {
-            FragmentInfo infoA = (FragmentInfo) a;
-            FragmentInfo infoB = (FragmentInfo) b;
+        @Override
+        protected boolean lessThan(FragmentInfo infoA, FragmentInfo infoB) {
             if (infoA.getQuality() == infoB.getQuality()) {
                 return infoA.getStartOffset() > infoB.getStartOffset();
             }

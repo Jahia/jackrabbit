@@ -29,6 +29,7 @@ import org.apache.jackrabbit.core.security.simple.SimpleWorkspaceAccessManager;
 import org.apache.jackrabbit.core.security.user.MembershipCache;
 import org.apache.jackrabbit.core.security.user.UserPerWorkspaceUserManager;
 import org.apache.jackrabbit.core.security.user.UserManagerImpl;
+import org.apache.jackrabbit.core.security.user.action.AuthorizableAction;
 
 import javax.jcr.Credentials;
 import javax.jcr.Repository;
@@ -137,7 +138,7 @@ public class UserPerWorkspaceSecurityManager extends DefaultSecurityManager {
     }
 
     /**
-     * As this implementation expectes that users information in present in
+     * As this implementation expects that users information in present in
      * every workspace, the UserManager is always created with the given
      * session.
      * 
@@ -219,7 +220,8 @@ public class UserPerWorkspaceSecurityManager extends DefaultSecurityManager {
     protected UserManagerImpl createUserManager(SessionImpl session) throws RepositoryException {
         UserManagerConfig umc = getConfig().getUserManagerConfig();
         Properties params = (umc == null) ? null : umc.getParameters();
-        
+
+        UserManagerImpl umgr;
         // in contrast to the DefaultSecurityManager users are not retrieved
         // from a dedicated workspace: the system session of each workspace must
         // get a system user manager that asserts the existence of the admin user.
@@ -229,18 +231,24 @@ public class UserPerWorkspaceSecurityManager extends DefaultSecurityManager {
                     String.class,
                     Properties.class,
                     MembershipCache.class};
-            return (UserPerWorkspaceUserManager) umc.getUserManager(UserPerWorkspaceUserManager.class,
-                    paramTypes, (SessionImpl) session, adminId, params, getMembershipCache(session));
+            umgr = (UserPerWorkspaceUserManager) umc.getUserManager(UserPerWorkspaceUserManager.class,
+                    paramTypes, session, adminId, params, getMembershipCache(session));
         } else {
-            return new UserPerWorkspaceUserManager(session, adminId, params, getMembershipCache(session));
+            umgr = new UserPerWorkspaceUserManager(session, adminId, params, getMembershipCache(session));
         }
+
+        if (umc != null && !(session instanceof SystemSession)) {
+            AuthorizableAction[] actions = umc.getAuthorizableActions();
+            umgr.setAuthorizableActions(actions);
+        }
+        return umgr;
     }
 
     /**
      * @param session Session for the principal manager must be created.
      * @return A new instance of PrincipalManagerImpl. Note that this implementation
      * uses a workspace specific principal provider registry, that retrieves
-     * the configured providers from the registry obtained throug
+     * the configured providers from the registry obtained through
      * {@link #getPrincipalProviderRegistry()} but has a workspace specific
      * default provider.
      * @throws RepositoryException
@@ -252,13 +260,13 @@ public class UserPerWorkspaceSecurityManager extends DefaultSecurityManager {
 
     /**
      * Returns a new instance of <code>SimpleWorkspaceAccessManager</code>, since
-     * with the <code>DefaultLoginModule</code> the existance of the user
+     * with the <code>DefaultLoginModule</code> the existence of the user
      * is checked in order to successfully complete the login. Since with this
      * SecurityManager users are stored separately in each workspace, a user
      * may only login to a workspace if the corresponding user node exists.
      * Consequently a lazy workspace access manager is sufficient.<p/>
      *
-     * If this SecurityManager is used with a distict <code>LoginModule</code>
+     * If this SecurityManager is used with a distinct <code>LoginModule</code>
      * implementation, the {@link org.apache.jackrabbit.core.config.SecurityManagerConfig#getWorkspaceAccessConfig() configuration}
      * for <code>WorkspaceAccessManager</code> should be adjusted as well.
      *
@@ -272,7 +280,7 @@ public class UserPerWorkspaceSecurityManager extends DefaultSecurityManager {
     //--------------------------------------------------------------------------
     /**
      * Workaround to get a default (user-based) principal provider depending
-     * on the workspace beeing accessed. This is required for this security
+     * on the workspace being accessed. This is required for this security
      * manager as users aren't stored in a single, dedicated workspace.
      */
     private final class WorkspaceBasedPrincipalProviderRegistry implements PrincipalProviderRegistry {

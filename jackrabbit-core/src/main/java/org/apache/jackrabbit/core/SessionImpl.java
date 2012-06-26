@@ -65,6 +65,8 @@ import org.apache.commons.collections.IteratorUtils;
 import org.apache.commons.collections.map.ReferenceMap;
 import org.apache.jackrabbit.api.JackrabbitSession;
 import org.apache.jackrabbit.api.security.principal.PrincipalManager;
+import org.apache.jackrabbit.api.security.user.Authorizable;
+import org.apache.jackrabbit.api.security.user.User;
 import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.commons.AbstractSession;
 import org.apache.jackrabbit.core.config.WorkspaceConfig;
@@ -77,8 +79,10 @@ import org.apache.jackrabbit.core.retention.RetentionRegistry;
 import org.apache.jackrabbit.core.security.AMContext;
 import org.apache.jackrabbit.core.security.AccessManager;
 import org.apache.jackrabbit.core.security.SecurityConstants;
+import org.apache.jackrabbit.core.security.SystemPrincipal;
 import org.apache.jackrabbit.core.security.authentication.AuthContext;
 import org.apache.jackrabbit.core.security.authorization.Permission;
+import org.apache.jackrabbit.core.security.principal.AdminPrincipal;
 import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.core.session.SessionItemOperation;
 import org.apache.jackrabbit.core.session.SessionOperation;
@@ -90,6 +94,7 @@ import org.apache.jackrabbit.core.xml.ImportHandler;
 import org.apache.jackrabbit.core.xml.SessionImporter;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
+import org.apache.jackrabbit.spi.commons.SessionExtensions;
 import org.apache.jackrabbit.spi.commons.conversion.DefaultNamePathResolver;
 import org.apache.jackrabbit.spi.commons.conversion.IdentifierResolver;
 import org.apache.jackrabbit.spi.commons.conversion.IllegalNameException;
@@ -107,7 +112,7 @@ import org.xml.sax.ContentHandler;
  * A <code>SessionImpl</code> ...
  */
 public class SessionImpl extends AbstractSession
-        implements JackrabbitSession, NamespaceResolver, NamePathResolver, IdentifierResolver {
+        implements JackrabbitSession, SessionExtensions, NamespaceResolver, NamePathResolver, IdentifierResolver {
 
     /**
      * Name of the session attribute that controls whether the
@@ -343,8 +348,9 @@ public class SessionImpl extends AbstractSession
                 new File(context.getRepository().getConfig().getHomeDir()),
                 context.getRepositoryContext().getFileSystem(),
                 this,
-                getSubject(),
+                subject,
                 context.getHierarchyManager(),
+                context.getPrivilegeManager(),
                 this,
                 wspName);
         return repositoryContext.getSecurityManager().getAccessManager(this, ctx);
@@ -367,12 +373,50 @@ public class SessionImpl extends AbstractSession
     }
 
     /**
-     * Returns the <code>Subject</code> associated with this session.
+     * Returns a read only copy of the <code>Subject</code> associated with this
+     * session.
      *
-     * @return the <code>Subject</code> associated with this session
+     * @return a read only copy of <code>Subject</code> associated with this session
      */
     public Subject getSubject() {
-        return subject;
+        Subject readOnly = new Subject(true, subject.getPrincipals(), subject.getPublicCredentials(), subject.getPrivateCredentials());
+        return readOnly;
+    }
+
+    /**
+     * Returns <code>true</code> if the subject contains a
+     * <code>SystemPrincipal</code>; <code>false</code> otherwise.
+     *
+     * @return <code>true</code> if this is an system session.
+     */
+    public boolean isSystem() {
+        // NOTE: for backwards compatibility evaluate subject for containing SystemPrincipal
+        // TODO: Q: shouldn't 'isSystem' rather be covered by instances of SystemSession only?
+        return (subject != null && !subject.getPrincipals(SystemPrincipal.class).isEmpty());
+    }
+    
+    /**
+     * Returns <code>true</code> if this session has been created for the
+     * administrator. <code>False</code> otherwise.
+     *
+     * @return <code>true</code> if this is an admin session.
+     */
+    public boolean isAdmin() {
+        // NOTE: don't replace by getUserManager()
+        if (userManager != null) {
+            try {
+                Authorizable a = userManager.getAuthorizable(userId);
+                if (a != null && !a.isGroup()) {
+                    return ((User) a).isAdmin();
+                }
+            } catch (RepositoryException e) {
+                // no user management -> use fallback
+            }
+
+        }
+        // fallback: user manager not yet initialized or user mgt not supported
+        // -> check for AdminPrincipal being present in the subject.
+        return (subject != null && !subject.getPrincipals(AdminPrincipal.class).isEmpty());
     }
 
     /**
@@ -396,8 +440,7 @@ public class SessionImpl extends AbstractSession
             workspaceName =
                 repositoryContext.getWorkspaceManager().getDefaultWorkspaceName();
         }
-        Subject old = getSubject();
-        Subject newSubject = new Subject(old.isReadOnly(), old.getPrincipals(), old.getPublicCredentials(), old.getPrivateCredentials());
+        Subject newSubject = new Subject(subject.isReadOnly(), subject.getPrincipals(), subject.getPublicCredentials(), subject.getPrivateCredentials());
         return repositoryContext.getWorkspaceManager().createSession(
                 newSubject, workspaceName);
     }
@@ -476,7 +519,7 @@ public class SessionImpl extends AbstractSession
      * @param value attribute value
      * @since Apache Jackrabbit 1.6
      */
-    protected void setAttribute(String name, Object value) {
+    public void setAttribute(String name, Object value) {
         if (value != null) {
             attributes.put(name, value);
         } else {
@@ -756,6 +799,15 @@ public class SessionImpl extends AbstractSession
      */
     @Override
     public boolean itemExists(String absPath) throws RepositoryException {
+        if (absPath != null && absPath.startsWith("[") && absPath.endsWith("]")) {
+            // an identifier segment has been specified (JCR-3014)
+            try {
+                NodeId id = NodeId.valueOf(absPath.substring(1, absPath.length() - 1));
+                return getItemManager().itemExists(id);
+            } catch (IllegalArgumentException e) {
+                throw new MalformedPathException(absPath);
+            }
+        }
         return perform(SessionItemOperation.itemExists(absPath));
     }
 
@@ -763,7 +815,10 @@ public class SessionImpl extends AbstractSession
      * {@inheritDoc}
      */
     public void save() throws RepositoryException {
-        perform(new SessionSaveOperation());
+        // JCR-3131: no need to perform save op when there's nothing to save...
+        if (context.getItemStateManager().hasAnyTransientItemStates()) {
+            perform(new SessionSaveOperation());
+        }
     }
 
     /**
@@ -1077,6 +1132,15 @@ public class SessionImpl extends AbstractSession
      */
     @Override
     public boolean nodeExists(String absPath) throws RepositoryException {
+        if (absPath != null && absPath.startsWith("[") && absPath.endsWith("]")) {
+            // an identifier segment has been specified (JCR-3014)
+            try {
+                NodeId id = NodeId.valueOf(absPath.substring(1, absPath.length() - 1));
+                return getItemManager().itemExists(id);
+            } catch (IllegalArgumentException e) {
+                throw new MalformedPathException(absPath);
+            }
+        }
         return perform(SessionItemOperation.nodeExists(absPath));
     }
 
@@ -1188,24 +1252,25 @@ public class SessionImpl extends AbstractSession
                     return false;
                 }
             }
-        } else if (target instanceof Workspace) {
-            if (methodName.equals("clone")
-                    || methodName.equals("copy")
-                    || methodName.equals("createWorkspace")
-                    || methodName.equals("deleteWorkspace")
-                    || methodName.equals("getImportContentHandler")
-                    || methodName.equals("importXML")
-                    || methodName.equals("move")) {
-                // todo minimal, best effort checks (e.g. permissions for write methods etc)
-            }
-        } else if (target instanceof Session) {
-            if (methodName.equals("clone")
-                    || methodName.equals("removeItem")
-                    || methodName.equals("getImportContentHandler")
-                    || methodName.equals("importXML")
-                    || methodName.equals("save")) {
-                // todo minimal, best effort checks (e.g. permissions for write methods etc)
-            }
+// TODO: Add minimal, best effort checks for Workspace and Session operations
+//        } else if (target instanceof Workspace) {
+//            if (methodName.equals("clone")
+//                    || methodName.equals("copy")
+//                    || methodName.equals("createWorkspace")
+//                    || methodName.equals("deleteWorkspace")
+//                    || methodName.equals("getImportContentHandler")
+//                    || methodName.equals("importXML")
+//                    || methodName.equals("move")) {
+//                // TODO minimal, best effort checks (e.g. permissions for write methods etc)
+//            }
+//        } else if (target instanceof Session) {
+//            if (methodName.equals("clone")
+//                    || methodName.equals("removeItem")
+//                    || methodName.equals("getImportContentHandler")
+//                    || methodName.equals("importXML")
+//                    || methodName.equals("save")) {
+//                // TODO minimal, best effort checks (e.g. permissions for write methods etc)
+//            }
         }
 
         // we're unable to evaluate capability, return true (staying on the safe side)

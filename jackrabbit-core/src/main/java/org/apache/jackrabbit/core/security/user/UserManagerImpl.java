@@ -29,9 +29,9 @@ import org.apache.jackrabbit.core.ProtectedItemModifier;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.SessionListener;
 import org.apache.jackrabbit.core.id.NodeId;
-import org.apache.jackrabbit.core.security.SystemPrincipal;
 import org.apache.jackrabbit.core.security.principal.EveryonePrincipal;
 import org.apache.jackrabbit.core.security.principal.PrincipalImpl;
+import org.apache.jackrabbit.core.security.user.action.AuthorizableAction;
 import org.apache.jackrabbit.core.session.SessionOperation;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
@@ -123,7 +123,7 @@ import java.util.UUID;
  * If missing set to {@link #USERS_PATH}.</li>
  * <li>{@link #PARAM_GROUPS_PATH}. Defines where group nodes are created.
  * If missing set to {@link #GROUPS_PATH}.</li>
- * <li>{@link #PARAM_COMPATIBILE_JR16}: If the param is present and its
+ * <li>{@link #PARAM_COMPATIBLE_JR16}: If the param is present and its
  * value is <code>true</code> looking up authorizables by ID will use the
  * <code>NodeResolver</code> if not found otherwise.<br>
  * If the parameter is missing (or false) users and groups created
@@ -160,6 +160,11 @@ public class UserManagerImpl extends ProtectedItemModifier
     public static final String PARAM_GROUPS_PATH = "groupsPath";
 
     /**
+     * @deprecated Use {@link #PARAM_COMPATIBLE_JR16} instead.
+     */
+    public static final String PARAM_COMPATIBILE_JR16 = "compatibleJR16";
+
+    /**
      * Flag to enable a minimal backwards compatibility with Jackrabbit &lt;
      * v2.0<br>
      * If the param is present and its value is <code>true</code> looking up
@@ -169,7 +174,7 @@ public class UserManagerImpl extends ProtectedItemModifier
      * with a Jackrabbit repository &lt; v2.0 will not be found any more.<br>
      * By default this option is disabled.
      */
-    public static final String PARAM_COMPATIBILE_JR16 = "compatibleJR16";
+    public static final String PARAM_COMPATIBLE_JR16 = "compatibleJR16";
 
     /**
      * Parameter used to change the number of levels that are used by default
@@ -245,11 +250,6 @@ public class UserManagerImpl extends ProtectedItemModifier
     private final boolean compatibleJR16;
 
     /**
-     * boolean flag indicating whether the editing session is a system session.
-     */
-    private final boolean isSystemUserManager;
-
-    /**
      * Maximum number of properties on the group membership node structure under
      * {@link UserConstants#N_MEMBERS} until additional intermediate nodes are inserted.
      * If 0 (default), {@link UserConstants#P_MEMBERS} is used to record group
@@ -257,13 +257,25 @@ public class UserManagerImpl extends ProtectedItemModifier
      */
     private final int groupMembershipSplitSize;
 
+    /**
+     * The membership cache.
+     */
     private final MembershipCache membershipCache;
+
+    /**
+     * Authorizable actions that will all be executed upon creation and removal
+     * of authorizables in the order they are contained in the array.<p/>
+     * Note, that if {@link #isAutoSave() autosave} is turned on, the configured
+     * actions are executed before persisting the creation or removal.
+     */
+    private AuthorizableAction[] authorizableActions = new AuthorizableAction[0];
 
     /**
      * Create a new <code>UserManager</code> with the default configuration.
      *
      * @param session The editing/reading session.
      * @param adminId The user ID of the administrator.
+     * @throws javax.jcr.RepositoryException If an error occurs.
      */
     public UserManagerImpl(SessionImpl session, String adminId) throws RepositoryException {
         this(session, adminId, null, null);
@@ -275,6 +287,7 @@ public class UserManagerImpl extends ProtectedItemModifier
      * @param session The editing/reading session.
      * @param adminId The user ID of the administrator.
      * @param config The configuration parameters.
+     * @throws javax.jcr.RepositoryException If an error occurs.
      */
     public UserManagerImpl(SessionImpl session, String adminId, Properties config) throws RepositoryException {
         this(session, adminId, config, null);
@@ -300,7 +313,7 @@ public class UserManagerImpl extends ProtectedItemModifier
      * @param adminId The user ID of the administrator.
      * @param config The configuration parameters.
      * @param mCache Shared membership cache.
-     * @throws javax.jcr.RepositoryException
+     * @throws javax.jcr.RepositoryException If an error occurs.
      */
     public UserManagerImpl(SessionImpl session, String adminId, Properties config,
                            MembershipCache mCache) throws RepositoryException {
@@ -315,7 +328,7 @@ public class UserManagerImpl extends ProtectedItemModifier
         param = (config != null) ? config.get(PARAM_GROUPS_PATH) : null;
         groupsPath = (param != null) ? param.toString() : GROUPS_PATH;
 
-        param = (config != null) ? config.get(PARAM_COMPATIBILE_JR16) : null;
+        param = (config != null) ? config.get(PARAM_COMPATIBLE_JR16) : null;
         compatibleJR16 = (param != null) && Boolean.parseBoolean(param.toString());
 
         param = (config != null) ? config.get(PARAM_GROUP_MEMBERSHIP_SPLIT_SIZE) : null;
@@ -336,21 +349,10 @@ public class UserManagerImpl extends ProtectedItemModifier
         }
         authResolver = nr;
         authResolver.setSearchRoots(usersPath, groupsPath);
-
-        /**
-         * evaluate if the editing session is a system session. since the
-         * SystemSession class is package protected the session object cannot
-         * be checked for the property instance.
-         *
-         * workaround: compare the class name and check if the subject contains
-         * the system principal.
-         */
-        isSystemUserManager = "org.apache.jackrabbit.core.SystemSession".equals(session.getClass().getName()) &&
-                !session.getSubject().getPrincipals(SystemPrincipal.class).isEmpty();
     }
 
     /**
-     * Implementation specific methods releaving where users are created within
+     * Implementation specific methods revealing where users are created within
      * the content.
      *
      * @return root path for user content.
@@ -361,7 +363,7 @@ public class UserManagerImpl extends ProtectedItemModifier
     }
 
     /**
-     * Implementation specific methods releaving where groups are created within
+     * Implementation specific methods revealing where groups are created within
      * the content.
      *
      * @return root path for group content.
@@ -384,10 +386,22 @@ public class UserManagerImpl extends ProtectedItemModifier
      * If 0 (default), {@link UserConstants#P_MEMBERS} is used to record group
      * memberships.
      *
-     * @return
+     * @return The maximum number of group members before splitting up the structure.
      */
     public int getGroupMembershipSplitSize() {
         return groupMembershipSplitSize;
+    }
+
+    /**
+     * Set the authorizable actions that will be invoked upon authorizable
+     * creation and removal.
+     *
+     * @param authorizableActions An array of authorizable actions.
+     */
+    public void setAuthorizableActions(AuthorizableAction[] authorizableActions) {
+        if (authorizableActions != null) {
+            this.authorizableActions = authorizableActions;
+        }
     }
 
     //--------------------------------------------------------< UserManager >---
@@ -407,7 +421,7 @@ public class UserManagerImpl extends ProtectedItemModifier
          * node an explicit test for the current editing session being
          * a system session is performed.
          */
-        if (a == null && adminId.equals(id) && isSystemUserManager) {
+        if (a == null && adminId.equals(id) && session.isSystem()) {
             log.info("Admin user does not exist.");
             a = createAdmin();
         }
@@ -452,6 +466,17 @@ public class UserManagerImpl extends ProtectedItemModifier
         }
         // build the corresponding authorizable object
         return getAuthorizable(n);
+    }
+
+    /**
+     * Always throws <code>UnsupportedRepositoryOperationException</code> since
+     * this implementation of the user management API does not allow to retrieve
+     * the path of an authorizable.
+     * 
+     * @see UserManager#getAuthorizableByPath(String)
+     */
+    public Authorizable getAuthorizableByPath(String path) throws UnsupportedRepositoryOperationException, RepositoryException {
+        throw new UnsupportedRepositoryOperationException();
     }
 
     /**
@@ -534,6 +559,7 @@ public class UserManagerImpl extends ProtectedItemModifier
             setProperty(userNode, P_PASSWORD, getValue(UserImpl.buildPasswordValue(password)), true);
 
             User user = createUser(userNode);
+            onCreate(user, password);
             if (isAutoSave()) {
                 session.save();
             }
@@ -615,6 +641,7 @@ public class UserManagerImpl extends ProtectedItemModifier
             }
 
             Group group = createGroup(groupNode);
+            onCreate(group);
             if (isAutoSave()) {
                 session.save();
             }
@@ -735,17 +762,43 @@ public class UserManagerImpl extends ProtectedItemModifier
         Authorizable authorz = null;
         if (n != null) {
             String path = n.getPath();
-            if (n.isNodeType(NT_REP_USER) && Text.isDescendant(usersPath, path)) {
-                authorz = createUser(n);
-            } else if (n.isNodeType(NT_REP_GROUP) && Text.isDescendant(groupsPath, path)) {
-                authorz = createGroup(n);
+            if (n.isNodeType(NT_REP_USER)) {
+                if (Text.isDescendant(usersPath, path)) {
+                    authorz = createUser(n);
+                } else {
+                    /* user node outside of configured tree -> return null */
+                    log.error("User node '" + path + "' outside of configured user tree ('" + usersPath + "') -> Not a valid user.");
+                }
+            } else if (n.isNodeType(NT_REP_GROUP)) {
+                if (Text.isDescendant(groupsPath, path)) {
+                    authorz = createGroup(n);
+                } else {
+                    /* group node outside of configured tree -> return null */
+                    log.error("Group node '" + path + "' outside of configured group tree ('" + groupsPath + "') -> Not a valid group.");
+                }
             } else {
-                /* else some other node type or outside of the valid user/group
-                   hierarchy  -> return null. */
-                log.debug("Unexpected user nodetype " + n.getPrimaryNodeType().getName());
+                /* else some other node type -> return null. */
+                log.warn("Unexpected user/group node type " + n.getPrimaryNodeType().getName());
             }
         } /* else no matching node -> return null */
         return authorz;
+    }
+
+    /**
+     * Always throws <code>UnsupportedRepositoryOperationException</code> since
+     * the node may reside in a different workspace than the editing <code>Session</code>.
+     */
+    String getPath(Node authorizableNode) throws UnsupportedRepositoryOperationException, RepositoryException {
+        throw new UnsupportedRepositoryOperationException();
+    }
+
+    /**
+     * Returns the session associated with this user manager.
+     *
+     * @return the session.
+     */
+    SessionImpl getSession() {
+        return session;
     }
 
     /**
@@ -953,8 +1006,8 @@ public class UserManagerImpl extends ProtectedItemModifier
     /**
      * Throws <code>IllegalArgumentException</code> if the specified principal
      * is <code>null</code> or if it's name is <code>null</code> or empty string.
-     * @param principal
-     * @param isGroup
+     * @param principal The principal to be validated.
+     * @param isGroup Flag indicating if the principal represents a group.
      */
     private static void checkValidPrincipal(Principal principal, boolean isGroup) {
         if (principal == null || principal.getName() == null || "".equals(principal.getName())) {
@@ -984,6 +1037,65 @@ public class UserManagerImpl extends ProtectedItemModifier
         }
 
         return n;
+    }
+
+    //--------------------------------------------------------------------------
+    /**
+     * Let the configured <code>AuthorizableAction</code>s perform additional
+     * tasks associated with the creation of the new user before the
+     * corresponding new node is persisted.
+     *
+     * @param user The new user.
+     * @param pw The password.
+     * @throws RepositoryException If an exception occurs.
+     */
+    void onCreate(User user, String pw) throws RepositoryException {
+        for (AuthorizableAction action : authorizableActions) {
+            action.onCreate(user, pw, session);
+        }
+    }
+
+    /**
+     * Let the configured <code>AuthorizableAction</code>s perform additional
+     * tasks associated with the creation of the new group before the
+     * corresponding new node is persisted.
+     *
+     * @param group The new group.
+     * @throws RepositoryException If an exception occurs.
+     */
+    void onCreate(Group group) throws RepositoryException {
+        for (AuthorizableAction action : authorizableActions) {
+            action.onCreate(group, session);
+        }
+    }
+
+    /**
+     * Let the configured <code>AuthorizableAction</code>s perform any clean
+     * up tasks related to the authorizable removal (before the corresponding
+     * node gets removed).
+     *
+     * @param authorizable The authorizable to be removed.
+     * @throws RepositoryException If an exception occurs.
+     */
+    void onRemove(Authorizable authorizable) throws RepositoryException {
+        for (AuthorizableAction action : authorizableActions) {
+            action.onRemove(authorizable, session);
+        }
+    }
+
+    /**
+     * Let the configured <code>AuthorizableAction</code>s perform additional
+     * tasks associated with password changing of a given user before the
+     * corresponding property is being changed.
+     *
+     * @param user The target user.
+     * @param password The new password.
+     * @throws RepositoryException If an exception occurs.
+     */
+    void onPasswordChange(User user, String password) throws RepositoryException {
+        for (AuthorizableAction action : authorizableActions) {
+            action.onPasswordChange(user, password, session);
+        }
     }
 
     //----------------------------------------------------< SessionListener >---

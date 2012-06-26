@@ -208,7 +208,7 @@ public class FileRecordLog {
     }
 
     /**
-     * Seek an entry. This is an operation that allows the unterlying input stream
+     * Seek an entry. This is an operation that allows the underlying input stream
      * to be sequentially scanned and must therefore not be called twice.
      *
      * @param revision revision to seek
@@ -400,7 +400,7 @@ public class FileRecordLog {
      * Convert a byte array to its hexadecimal string representation.
      */
     private static String toHexString(byte[] b) {
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         for (int i = 0; i < b.length; i++) {
             String s = Integer.toHexString(b[i] & 0xff).toUpperCase();
             if (s.length() == 1) {

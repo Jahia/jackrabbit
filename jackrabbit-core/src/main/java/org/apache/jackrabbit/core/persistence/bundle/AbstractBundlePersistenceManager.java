@@ -23,14 +23,17 @@ import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_UUID;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.jcr.PropertyType;
+import javax.jcr.RepositoryException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.jackrabbit.api.stats.RepositoryStatistics;
+import org.apache.jackrabbit.core.cache.Cache;
+import org.apache.jackrabbit.core.cache.CacheAccessListener;
 import org.apache.jackrabbit.core.cache.ConcurrentCache;
-import org.apache.jackrabbit.core.fs.FileSystemResource;
 import org.apache.jackrabbit.core.fs.FileSystem;
+import org.apache.jackrabbit.core.fs.FileSystemResource;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.id.PropertyId;
@@ -38,27 +41,33 @@ import org.apache.jackrabbit.core.persistence.CachingPersistenceManager;
 import org.apache.jackrabbit.core.persistence.IterablePersistenceManager;
 import org.apache.jackrabbit.core.persistence.PMContext;
 import org.apache.jackrabbit.core.persistence.PersistenceManager;
+import org.apache.jackrabbit.core.persistence.check.ConsistencyCheckListener;
+import org.apache.jackrabbit.core.persistence.check.ConsistencyChecker;
+import org.apache.jackrabbit.core.persistence.check.ConsistencyReport;
 import org.apache.jackrabbit.core.persistence.util.BLOBStore;
 import org.apache.jackrabbit.core.persistence.util.FileBasedIndex;
 import org.apache.jackrabbit.core.persistence.util.NodePropBundle;
 import org.apache.jackrabbit.core.persistence.util.NodePropBundle.PropertyEntry;
-import org.apache.jackrabbit.core.state.ItemState;
 import org.apache.jackrabbit.core.state.ChangeLog;
+import org.apache.jackrabbit.core.state.ItemState;
 import org.apache.jackrabbit.core.state.ItemStateException;
-import org.apache.jackrabbit.core.state.NodeReferences;
 import org.apache.jackrabbit.core.state.NoSuchItemStateException;
-import org.apache.jackrabbit.core.state.PropertyState;
+import org.apache.jackrabbit.core.state.NodeReferences;
 import org.apache.jackrabbit.core.state.NodeState;
+import org.apache.jackrabbit.core.state.PropertyState;
+import org.apache.jackrabbit.core.stats.RepositoryStatisticsImpl;
 import org.apache.jackrabbit.core.util.StringIndex;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.spi.Name;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The <code>AbstractBundlePersistenceManager</code> acts as base for all
  * persistence managers that store the state in a {@link NodePropBundle}.
  * <p/>
  * The state and all property states of one node are stored together in one
- * record. Property values of a certain size can be store outside of the bundle.
+ * record. Property values of a certain size can be stored outside of the bundle.
  * This currently only works for binary properties. NodeReferences are not
  * included in the bundle since they are addressed by the target id.
  * <p/>
@@ -70,11 +79,11 @@ import org.apache.jackrabbit.spi.Name;
  * and "jcr:mixinTypes". As they are also stored in the node state they are not
  * included in the bundle but generated when required.
  * <p/>
- * In order to increase performance, there are 2 caches maintained. One is the
+ * In order to increase performance, there are two caches being maintained. One is the
  * bundle cache that caches already loaded bundles. The other is the
  * {@link LRUNodeIdCache} that caches non-existent bundles. This is useful
  * because a lot of {@link #exists(NodeId)} calls are issued that would result
- * in a useless SQL execution if the desired bundle does not exist.
+ * in a useless persistence lookup if the desired bundle does not exist.
  * <p/>
  * Configuration:<br>
  * <ul>
@@ -82,7 +91,7 @@ import org.apache.jackrabbit.spi.Name;
  * </ul>
  */
 public abstract class AbstractBundlePersistenceManager implements
-    PersistenceManager, CachingPersistenceManager, IterablePersistenceManager {
+    PersistenceManager, CachingPersistenceManager, IterablePersistenceManager, CacheAccessListener, ConsistencyChecker {
 
     /** the default logger */
     private static Logger log = LoggerFactory.getLogger(AbstractBundlePersistenceManager.class);
@@ -101,7 +110,7 @@ public abstract class AbstractBundlePersistenceManager implements
 
     /** Sentinel instance used to mark a non-existent bundle in the cache */
     private static final NodePropBundle MISSING =
-        new NodePropBundle(new NodeId());
+        new NodePropBundle(NodeId.randomId());
 
     /** the index for namespaces */
     private StringIndex nsIndex;
@@ -112,11 +121,45 @@ public abstract class AbstractBundlePersistenceManager implements
     /** the cache of loaded bundles */
     private ConcurrentCache<NodeId, NodePropBundle> bundles;
 
+    /** The default minimum stats logging interval (in ms). */
+    private static final int DEFAULT_LOG_STATS_INTERVAL = 60 * 1000;
+
+    /** The minimum interval time between stats are logged */
+    private long minLogStatsInterval = Long.getLong(
+            "org.apache.jackrabbit.cacheLogStatsInterval",
+            DEFAULT_LOG_STATS_INTERVAL);
+
+    /** The last time the cache stats were logged. */
+    private volatile long nextLogStats =
+            System.currentTimeMillis() + DEFAULT_LOG_STATS_INTERVAL;
+
     /** the persistence manager context */
     protected PMContext context;
 
     /** default size of the bundle cache */
     private long bundleCacheSize = 8 * 1024 * 1024;
+
+    /** Counter of read operations. */
+    private AtomicLong readCounter;
+
+    /** Counter of write operations. */
+    private AtomicLong writeCounter;
+
+    /** Duration of write operations. */
+    private AtomicLong writeDuration;
+
+    /** Counter of bundle cache accesses. */
+    private AtomicLong cacheAccessCounter;
+
+    /** Counter of bundle read operations. */
+    private AtomicLong cacheMissCounter;
+
+    /** Duration of bundle read operations. */
+    private AtomicLong cacheMissDuration;
+
+    
+    /** Counter of bundle cache size. */
+    private AtomicLong cacheSizeCounter;
 
     /**
      * Returns the size of the bundle cache in megabytes.
@@ -377,8 +420,26 @@ public abstract class AbstractBundlePersistenceManager implements
     public void init(PMContext context) throws Exception {
         this.context = context;
         // init bundle cache
-        bundles = new ConcurrentCache<NodeId, NodePropBundle>();
+        bundles = new ConcurrentCache<NodeId, NodePropBundle>(context.getHomeDir().getName() + "BundleCache");
         bundles.setMaxMemorySize(bundleCacheSize);
+        bundles.setAccessListener(this);
+
+        // statistics
+        RepositoryStatisticsImpl stats = context.getRepositoryStatistics();
+        readCounter = stats.getCounter(
+                RepositoryStatistics.Type.BUNDLE_READ_COUNTER);
+        writeCounter = stats.getCounter(
+                RepositoryStatistics.Type.BUNDLE_WRITE_COUNTER);
+        writeDuration = stats.getCounter(
+                RepositoryStatistics.Type.BUNDLE_WRITE_DURATION);
+        cacheAccessCounter = stats.getCounter(
+                RepositoryStatistics.Type.BUNDLE_CACHE_ACCESS_COUNTER);
+        cacheSizeCounter = stats.getCounter(
+                RepositoryStatistics.Type.BUNDLE_CACHE_SIZE_COUNTER);
+        cacheMissCounter = stats.getCounter(
+                RepositoryStatistics.Type.BUNDLE_CACHE_MISS_COUNTER);
+        cacheMissDuration = stats.getCounter(
+                RepositoryStatistics.Type.BUNDLE_CACHE_MISS_DURATION);
     }
 
     /**
@@ -648,16 +709,39 @@ public abstract class AbstractBundlePersistenceManager implements
      */
     private NodePropBundle getBundle(NodeId id) throws ItemStateException {
         NodePropBundle bundle = bundles.get(id);
+        readCounter.incrementAndGet();
         if (bundle == MISSING) {
             return null;
-        } else if (bundle == null) {
-            bundle = loadBundle(id);
-            if (bundle != null) {
-                bundle.markOld();
-                bundles.put(id, bundle, bundle.getSize());
-            } else {
-                bundles.put(id, MISSING, 16);
-            }
+        }
+        if (bundle != null) {
+            return bundle;
+        }
+        // cache miss
+        return getBundleCacheMiss(id);
+    }
+
+    /**
+     * Called when the bundle is not present in the cache, so we'll need to load
+     * it from the PM impl.
+     * 
+     * This also updates the cache.
+     * 
+     * @param id
+     * @return
+     * @throws ItemStateException
+     */
+    private NodePropBundle getBundleCacheMiss(NodeId id)
+            throws ItemStateException {
+        long time = System.nanoTime();
+        log.debug("Loading bundle {}", id);
+        NodePropBundle bundle = loadBundle(id);
+        cacheMissDuration.addAndGet(System.nanoTime() - time);
+        cacheMissCounter.incrementAndGet();
+        if (bundle != null) {
+            bundle.markOld();
+            bundles.put(id, bundle, bundle.getSize());
+        } else {
+            bundles.put(id, MISSING, 16);
         }
         return bundle;
     }
@@ -681,9 +765,13 @@ public abstract class AbstractBundlePersistenceManager implements
      * @throws ItemStateException if an error occurs
      */
     private void putBundle(NodePropBundle bundle) throws ItemStateException {
+        long time = System.nanoTime();
+        log.debug("Storing bundle {}", bundle.getId());
         storeBundle(bundle);
+        writeDuration.addAndGet(System.nanoTime() - time);
+        writeCounter.incrementAndGet();
+
         bundle.markOld();
-        log.debug("stored bundle {}", bundle.getId());
 
         // only put to cache if already exists. this is to ensure proper
         // overwrite and not creating big contention during bulk loads
@@ -693,11 +781,25 @@ public abstract class AbstractBundlePersistenceManager implements
     }
 
     /**
-     * This implementation does nothing.
-     *
      * {@inheritDoc}
      */
     public void checkConsistency(String[] uuids, boolean recursive, boolean fix) {
+        try {
+            ConsistencyCheckerImpl cs = new ConsistencyCheckerImpl(this, null);
+            cs.check(uuids, recursive, fix, null);
+        } catch (RepositoryException ex) {
+            log.error("While running consistency check.", ex);
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public ConsistencyReport check(String[] uuids, boolean recursive,
+            boolean fix, String lostNFoundId, ConsistencyCheckListener listener)
+            throws RepositoryException {
+        ConsistencyCheckerImpl cs = new ConsistencyCheckerImpl(this, listener);
+        return cs.check(uuids, recursive, fix, lostNFoundId);
     }
 
     /**
@@ -709,4 +811,24 @@ public abstract class AbstractBundlePersistenceManager implements
         bundles.remove(id);
     }
 
+    public void cacheAccessed(long accessCount) {
+        logCacheStats();
+        cacheAccessCounter.addAndGet(accessCount);
+        cacheSizeCounter.set(bundles.getMemoryUsed());
+    }
+
+    private void logCacheStats() {
+        if (log.isInfoEnabled()) {
+            long now = System.currentTimeMillis();
+            if (now < nextLogStats) {
+                return;
+            }
+            log.info(bundles.getCacheInfoAsString());
+            nextLogStats = now + minLogStatsInterval;
+        }
+    }
+
+    public void disposeCache(Cache cache) {
+        // NOOP
+    }
 }

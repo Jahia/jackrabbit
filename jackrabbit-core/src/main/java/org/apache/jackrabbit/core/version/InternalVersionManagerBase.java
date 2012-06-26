@@ -17,6 +17,7 @@
 package org.apache.jackrabbit.core.version;
 
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_ACTIVITY;
+import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_ROOTVERSION;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_VERSIONHISTORY;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.MIX_VERSIONABLE;
 
@@ -29,7 +30,9 @@ import javax.jcr.Session;
 import javax.jcr.version.VersionException;
 
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.id.NodeIdFactory;
 import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
+import org.apache.jackrabbit.core.state.ChildNodeEntry;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.LocalItemStateManager;
 import org.apache.jackrabbit.core.state.NodeReferences;
@@ -73,12 +76,16 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
      */
     private final VersioningLock rwLock = new VersioningLock();
 
+    private final NodeIdFactory nodeIdFactory;
+
     protected InternalVersionManagerBase(NodeTypeRegistry ntReg,
                                          NodeId historiesId,
-                                         NodeId activitiesId) {
+                                         NodeId activitiesId,
+                                         NodeIdFactory nodeIdFactory) {
         this.ntReg = ntReg;
         this.historiesId = historiesId;
         this.activitiesId = activitiesId;
+        this.nodeIdFactory = nodeIdFactory;
     }
 
 //-------------------------------------------------------< InternalVersionManager >
@@ -144,6 +151,9 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
             NodeStateEx parent = getParentNode(getHistoryRoot(), uuid, null);
             if (parent != null && parent.hasNode(name)) {
                 NodeStateEx history = parent.getNode(name, 1);
+                if (history == null) {
+                    throw new InconsistentVersioningState("Unexpected failure to get child node " + name + " on parent node" + parent.getNodeId());
+                }
                 return getVersionHistory(history.getNodeId());
             } else {
                 throw new ItemNotFoundException("Version history of node " + id + " not found.");
@@ -240,7 +250,7 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
         }
 
         /**
-         * Closes the write operation. The pending operations are cancelled
+         * Closes the write operation. The pending operations are canceled
          * if they could not be properly saved. Finally the write lock is
          * released.
          */
@@ -295,11 +305,14 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns information about the version history of the specified node
+     * or <code>null</code> when unavailable.
+     *
+     * @param vNode node whose version history should be returned
+     * @return identifiers of the version history and root version nodes
+     * @throws RepositoryException if an error occurs
      */
-    public VersionHistoryInfo getVersionHistory(Session session, NodeState node,
-                                                NodeId copiedFrom)
-            throws RepositoryException {
+    public VersionHistoryInfo getVersionHistoryInfoForNode(NodeState node) throws RepositoryException {
         VersionHistoryInfo info = null;
 
         VersioningLock.ReadLock lock = acquireReadLock();
@@ -310,14 +323,31 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
             NodeStateEx parent = getParentNode(getHistoryRoot(), uuid, null);
             if (parent != null && parent.hasNode(name)) {
                 NodeStateEx history = parent.getNode(name, 1);
-                Name root = NameConstants.JCR_ROOTVERSION;
-                info = new VersionHistoryInfo(
-                        history.getNodeId(),
-                        history.getState().getChildNodeEntry(root, 1).getId());
+                if (history == null) {
+                    throw new InconsistentVersioningState("Unexpected failure to get child node " + name + " on parent node " + parent.getNodeId());
+                }
+                ChildNodeEntry rootv = history.getState().getChildNodeEntry(JCR_ROOTVERSION, 1);
+                if (rootv == null) {
+                    throw new InconsistentVersioningState("missing child node entry for " + JCR_ROOTVERSION + " on version history node " + history.getNodeId(),
+                            history.getNodeId(), null);
+                }
+                info = new VersionHistoryInfo(history.getNodeId(),
+                        rootv.getId());
             }
         } finally {
             lock.release();
         }
+
+        return info;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public VersionHistoryInfo getVersionHistory(Session session, NodeState node,
+                                                NodeId copiedFrom)
+            throws RepositoryException {
+        VersionHistoryInfo info = getVersionHistoryInfoForNode(node);
 
         if (info == null) {
             info = createVersionHistory(session, node, copiedFrom);
@@ -335,7 +365,7 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
      * @param node versionable node state
      * @param copiedFrom node id for the jcr:copiedFrom property
      * @return identifier of the new version history node
-     * @throws RepositoryException if an error occurrs
+     * @throws RepositoryException if an error occurs
      * @see #getVersionHistory(Session, NodeState, NodeId)
      */
     protected abstract VersionHistoryInfo createVersionHistory(Session session,
@@ -446,7 +476,7 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
         WriteOperation operation = startWriteOperation();
         try {
             // create deep path
-            NodeId activityId = new NodeId();
+            NodeId activityId = nodeIdFactory.newNodeId();
             NodeStateEx parent = getParentNode(getActivitiesRoot(), activityId.toString(), NameConstants.REP_ACTIVITIES);
             Name name = getName(activityId.toString());
 
@@ -469,7 +499,7 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
     /**
      * Removes the specified activity
      *
-     * @param activity the acitvity to remove
+     * @param activity the activity to remove
      * @throws javax.jcr.RepositoryException if any other error occurs.
      */
     protected void internalRemoveActivity(InternalActivityImpl activity)
@@ -541,12 +571,13 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
         NodeStateEx n = parent;
         for (int i = 0; i < 3; i++) {
             Name name = getName(uuid.substring(i * 2, i * 2 + 2));
-            if (n.hasNode(name)) {
-                n = n.getNode(name, 1);
+            NodeStateEx childn = n.getNode(name, 1);
+            if (childn != null) {
+                n = childn;
             } else if (interNT != null) {
-                n.addNode(name, interNT, null, false);
+                childn = n.addNode(name, interNT, null, false);
                 n.store();
-                n = n.getNode(name, 1);
+                n = childn;
             } else {
                 return null;
             }
@@ -627,7 +658,7 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
      * Calculates the name of the new version that will be created by a
      * checkin call. The name is determined as follows:
      * <ul>
-     * <li> first the predecessor version with the shortes name is searched.
+     * <li> first the predecessor version with the shortest name is searched.
      * <li> if that predecessor version is the root version, the new version gets
      *      the name "{number of successors}+1" + ".0"
      * <li> if that predecessor version has no successor, the last digit of it's
@@ -676,6 +707,18 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
         } else {
             // 1. search a predecessor, suitable for generating the new name
             InternalValue[] values = node.getPropertyValues(NameConstants.JCR_PREDECESSORS);
+
+            if (values == null || values.length == 0) {
+                String message;
+                if (values == null) {
+                    message = "Mandatory jcr:predecessors property missing on node " + node.getNodeId();
+                } else {
+                    message = "Mandatory jcr:predecessors property is empty on node " + node.getNodeId();
+                }
+                log.error(message);
+                throw new VersionException(message);
+            }
+
             for (InternalValue value: values) {
                 InternalVersion pred = history.getVersion(value.getNodeId());
                 if (best == null
@@ -725,7 +768,7 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
 
     /**
      * Set version label on the specified version.
-     * 
+     *
      * @param history version history
      * @param version version name
      * @param label version label
@@ -813,4 +856,9 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
             throw new RepositoryException(e);
         }
     }
+
+    public NodeIdFactory getNodeIdFactory() {
+        return nodeIdFactory;
+    }
+
 }

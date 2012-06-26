@@ -304,7 +304,7 @@ public class RepositoryConfigTest extends TestCase {
         SecurityManagerConfig smc =
             config.getSecurityConfig().getSecurityManagerConfig();
         assertEquals(
-                "org.apache.jackrabbit.core.security.simple.SimpleSecurityManager",
+                "org.apache.jackrabbit.core.DefaultSecurityManager",
                 smc.getClassName());
         assertTrue(smc.getParameters().isEmpty());
         assertNotNull(smc.getWorkspaceName());
@@ -320,7 +320,7 @@ public class RepositoryConfigTest extends TestCase {
         AccessManagerConfig amc =
             config.getSecurityConfig().getAccessManagerConfig();
         assertEquals(
-                "org.apache.jackrabbit.core.security.simple.SimpleAccessManager",
+                "org.apache.jackrabbit.core.security.DefaultAccessManager",
                 amc.getClassName());
         assertTrue(amc.getParameters().isEmpty());
 

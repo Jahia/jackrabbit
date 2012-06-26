@@ -18,9 +18,11 @@ package org.apache.jackrabbit.spi2dav;
 
 import org.apache.jackrabbit.spi.commons.conversion.NamePathResolver;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Arrays;
+import java.util.UUID;
 
 /**
  * <code>SessionInfoImpl</code>...
@@ -29,7 +31,10 @@ public class SessionInfoImpl extends org.apache.jackrabbit.spi.commons.SessionIn
 
     private final CredentialsWrapper credentials;
     private final Set<String> sessionScopedTokens = new HashSet<String>();
-
+    
+    // a globally unique URI identifying this session
+    private final String sessionIdentifier = "urn:uuid:" + UUID.randomUUID();
+    
     private String lastBatchId;
     private NamePathResolver resolver;
 
@@ -52,6 +57,10 @@ public class SessionInfoImpl extends org.apache.jackrabbit.spi.commons.SessionIn
 
     CredentialsWrapper getCredentials() {
         return credentials;
+    }
+
+    String getSessionIdentifier() {
+        return sessionIdentifier;
     }
 
     /**
@@ -90,10 +99,10 @@ public class SessionInfoImpl extends org.apache.jackrabbit.spi.commons.SessionIn
      * communication with the DAV server and are never exposed through the
      * JCR API for they belong to session-scoped locks.
      */
-    String[] getAllLockTokens() {
+    Set<String> getAllLockTokens() {
         Set<String> s = new HashSet<String>(Arrays.asList(getLockTokens()));
         s.addAll(sessionScopedTokens);
-        return s.toArray(new String[s.size()]);
+        return Collections.unmodifiableSet(s);
     }
 
     void addLockToken(String token, boolean sessionScoped) {

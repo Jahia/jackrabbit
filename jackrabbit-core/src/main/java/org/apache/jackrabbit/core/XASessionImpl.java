@@ -219,7 +219,7 @@ public class XASessionImpl extends SessionImpl
             log.error("Resource already associated with a transaction.");
             throw new XAException(XAException.XAER_PROTO);
         }
-        TransactionContext tx = (TransactionContext) txGlobal.get(xid);
+        TransactionContext tx = txGlobal.get(xid);
         if (flags == TMNOFLAGS) {
             if (tx != null) {
                 throw new XAException(XAException.XAER_DUPID);
@@ -251,9 +251,7 @@ public class XASessionImpl extends SessionImpl
      * @return transaction context
      */
     private TransactionContext createTransaction(Xid xid) {
-        TransactionContext tx = new TransactionContext(
-                xid, txResources,
-                getTransactionTimeout(), repositoryContext.getTimer());
+        TransactionContext tx = new TransactionContext(xid, txResources);
         txGlobal.put(xid, tx);
         return tx;
     }
@@ -275,7 +273,7 @@ public class XASessionImpl extends SessionImpl
      * without having been resumed again.
      */
     public void end(Xid xid, int flags) throws XAException {
-        TransactionContext tx = (TransactionContext) txGlobal.get(xid);
+        TransactionContext tx = txGlobal.get(xid);
         if (tx == null) {
             throw new XAException(XAException.XAER_NOTA);
         }
@@ -305,7 +303,7 @@ public class XASessionImpl extends SessionImpl
      * {@inheritDoc}
      */
     public int prepare(Xid xid) throws XAException {
-        TransactionContext tx = (TransactionContext) txGlobal.get(xid);
+        TransactionContext tx = txGlobal.get(xid);
         if (tx == null) {
             throw new XAException(XAException.XAER_NOTA);
         }
@@ -317,29 +315,33 @@ public class XASessionImpl extends SessionImpl
      * {@inheritDoc}
      */
     public void commit(Xid xid, boolean onePhase) throws XAException {
-        TransactionContext tx = (TransactionContext) txGlobal.get(xid);
+        TransactionContext tx = txGlobal.get(xid);
         if (tx == null) {
             throw new XAException(XAException.XAER_NOTA);
         }
-        if (onePhase) {
-            tx.prepare();
+        try {
+        	if (onePhase) {
+        		tx.prepare();
+        	}
+        	tx.commit();
+        } finally {
+        	txGlobal.remove(xid);
         }
-        tx.commit();
-
-        txGlobal.remove(xid);
     }
 
     /**
      * {@inheritDoc}
      */
     public void rollback(Xid xid) throws XAException {
-        TransactionContext tx = (TransactionContext) txGlobal.get(xid);
+        TransactionContext tx = txGlobal.get(xid);
         if (tx == null) {
             throw new XAException(XAException.XAER_NOTA);
         }
-        tx.rollback();
-
-        txGlobal.remove(xid);
+        try {
+        	tx.rollback();
+        } finally {
+        	txGlobal.remove(xid);
+        }
     }
 
     /**
@@ -385,6 +387,7 @@ public class XASessionImpl extends SessionImpl
     /**
      * {@inheritDoc}
      */
+    @Override
     public synchronized void logout() {
         super.logout();
         // dispose the caches

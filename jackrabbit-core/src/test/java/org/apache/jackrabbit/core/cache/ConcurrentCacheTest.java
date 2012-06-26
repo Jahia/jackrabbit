@@ -33,11 +33,11 @@ public class ConcurrentCacheTest extends TestCase {
     public void testConcurrentCache() {
         NodeId[] ids = new NodeId[1000];
         for (int i = 0; i < ids.length; i++) {
-            ids[i] = new NodeId();
+            ids[i] = NodeId.randomId();
         }
 
         ConcurrentCache<NodeId, NodeId> cache =
-            new ConcurrentCache<NodeId, NodeId>();
+            new ConcurrentCache<NodeId, NodeId>("test");
         cache.setMaxMemorySize(ids.length / 2);
 
         for (int i = 0; i < ids.length; i++) {

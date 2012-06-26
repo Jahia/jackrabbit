@@ -16,10 +16,11 @@
  */
 package org.apache.jackrabbit.core.security.authorization;
 
+import org.apache.jackrabbit.api.JackrabbitNode;
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
 import org.apache.jackrabbit.api.security.JackrabbitAccessControlList;
 import org.apache.jackrabbit.api.security.user.Group;
-import org.apache.jackrabbit.api.security.user.UserManager;
-import org.apache.jackrabbit.core.security.TestPrincipal;
+import org.apache.jackrabbit.core.UserTransactionImpl;
 import org.apache.jackrabbit.test.JUnitTest;
 import org.apache.jackrabbit.test.NotExecutableException;
 import org.apache.jackrabbit.test.api.observation.EventResult;
@@ -40,13 +41,12 @@ import javax.jcr.observation.ObservationManager;
 import javax.jcr.security.AccessControlManager;
 import javax.jcr.security.AccessControlPolicy;
 import javax.jcr.security.Privilege;
-import java.security.Principal;
+import javax.transaction.UserTransaction;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * <code>AbstractEvaluationTest</code>...
@@ -61,9 +61,6 @@ public abstract class AbstractWriteTest extends AbstractEvaluationTest {
     protected String childPPath;
     protected String childchildPPath;
     protected String siblingPath;
-
-    // TODO: test AC for moved node
-    // TODO: test AC for moved AC-controlled node
 
     @Override
     protected void setUp() throws Exception {
@@ -824,8 +821,9 @@ public abstract class AbstractWriteTest extends AbstractEvaluationTest {
         /* make sure the same privileges/permissions are granted as at path. */
         String childPath = n.getPath();
         Privilege[] privs = testAcMgr.getPrivileges(childPath);
-        assertEquals(PrivilegeRegistry.getBits(privilegesFromName(Privilege.JCR_READ)),
-                PrivilegeRegistry.getBits(privs));
+        PrivilegeManagerImpl privilegeMgr = (PrivilegeManagerImpl) ((JackrabbitWorkspace) getTestSession().getWorkspace()).getPrivilegeManager();
+        assertEquals(privilegeMgr.getBits(privilegesFromName(Privilege.JCR_READ)),
+                privilegeMgr.getBits(privs));
         getTestSession().checkPermission(childPath, javax.jcr.Session.ACTION_READ);
     }
 
@@ -993,21 +991,38 @@ public abstract class AbstractWriteTest extends AbstractEvaluationTest {
         }
 
         // add 'remove_child_nodes' at 'path
-        // -> not sufficient for a reorder since 'remove_node' privilege is missing
-        //    on the target
+        // -> reorder must now succeed
         givePrivileges(path, privilegesFromName(Privilege.JCR_REMOVE_CHILD_NODES), getRestrictions(superuser, path));
+        n.orderBefore(Text.getName(childNPath), Text.getName(childNPath2));
+        testSession.save();
+    }
+
+    public void testRename() throws RepositoryException, NotExecutableException {
+        Session testSession = getTestSession();
+        Node child = testSession.getNode(childNPath);
         try {
-            n.orderBefore(Text.getName(childNPath), Text.getName(childNPath2));
+            ((JackrabbitNode) child).rename("rename");
             testSession.save();
-            fail("test session must not be allowed to reorder nodes.");
+            fail("test session must not be allowed to rename nodes.");
         } catch (AccessDeniedException e) {
             // success.
         }
 
-        // allow 'remove_node' at childNPath
-        // -> now reorder must succeed
-        givePrivileges(childNPath, privilegesFromName(Privilege.JCR_REMOVE_NODE), getRestrictions(superuser, childNPath));
-        n.orderBefore(Text.getName(childNPath), Text.getName(childNPath2));
+        // give 'add_child_nodes' and 'nt-management' privilege
+        // -> not sufficient privileges for a renaming of the child
+        givePrivileges(path, privilegesFromNames(new String[] {Privilege.JCR_ADD_CHILD_NODES, Privilege.JCR_NODE_TYPE_MANAGEMENT}), getRestrictions(superuser, path));
+        try {
+            ((JackrabbitNode) child).rename("rename");
+            testSession.save();
+            fail("test session must not be allowed to rename nodes.");
+        } catch (AccessDeniedException e) {
+            // success.
+        }
+
+        // add 'remove_child_nodes' at 'path
+        // -> rename of child must now succeed
+        givePrivileges(path, privilegesFromName(Privilege.JCR_REMOVE_CHILD_NODES), getRestrictions(superuser, path));
+        ((JackrabbitNode) child).rename("rename");
         testSession.save();
     }
     
@@ -1237,6 +1252,56 @@ public abstract class AbstractWriteTest extends AbstractEvaluationTest {
 
         assertFalse(testAcMgr.hasPrivileges(childNPath2, write));
         assertFalse(testSession.hasPermission(childNPath2, Session.ACTION_SET_PROPERTY));
+    }
+
+    /**
+     * Tests if it is possible to create/read nodes with a non-admin session
+     * within a transaction.
+     *
+     * @throws Exception
+     * @see <a href="https://issues.apache.org/jira/browse/JCR-2999">JCR-2999</a>
+     */
+    public void testTransaction() throws Exception {
+
+        // make sure testUser has all privileges
+        Privilege[] privileges = privilegesFromName(Privilege.JCR_ALL);
+        givePrivileges(path, privileges, getRestrictions(superuser, path));
+
+        // create new node and lock it
+        Session s = getTestSession();
+        UserTransaction utx = new UserTransactionImpl(s);
+        utx.begin();
+
+        // add node and save it
+        Node n = s.getNode(childNPath);
+        if (n.hasNode(nodeName1)) {
+            Node c = n.getNode(nodeName1);
+            c.remove();
+            s.save();
+        }
+
+        // create node and save
+        Node n2 = n.addNode(nodeName1);
+        s.save(); // -> node is NEW -> no failure
+
+        // create child node
+        Node n3 = n2.addNode(nodeName2);
+        s.save();  // -> used to fail because n2 was saved (EXISTING) but not committed.
+
+        n3.remove();
+        n2.remove();
+
+        // recreate n2 // -> another area where ItemManager#getItem is called in the ItemSaveOperation
+        n2 = n.addNode(nodeName1);
+        s.save();
+
+        // set a property on a child node of an uncommited parent
+        n2.setProperty(propertyName1, "testSetProperty");
+        s.save();  // -> used to fail because PropertyImpl#getParent called from PropertyImpl#checkSetValue
+                   //    was checking read permission on the not yet commited parent
+
+        // commit
+        utx.commit();
     }
 
     private static Node findPolicyNode(Node start) throws RepositoryException {

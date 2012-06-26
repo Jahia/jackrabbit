@@ -42,8 +42,7 @@ public class JcrParser {
             ConfigParser parser = new ConfigParser();
             parser.parse(JcrParser.class.getResource("command.xml"));
         } catch (Exception e) {
-            e.printStackTrace();
-            log.error(e);
+            log.error("Failed to parse command.xml", e);
         }
     }
 
@@ -131,7 +130,7 @@ public class JcrParser {
             char c = input.charAt(i);
 
             // end of argument?
-            if ((!insideSingleQuote & !insideDoubleQuote & Character
+            if ((!insideSingleQuote && !insideDoubleQuote && Character
                 .isWhitespace(c))) {
                 if (arg.toString().trim().length() > 0) {
                     args.add(arg.toString().trim());

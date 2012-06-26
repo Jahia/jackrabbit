@@ -16,11 +16,11 @@
  */
 package org.apache.jackrabbit.core;
 
-import org.apache.jackrabbit.test.ConcurrentTestSuite;
-
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
+
+import org.apache.jackrabbit.test.ConcurrentTestSuite;
 
 /**
  * Test suite that includes all testcases for the Core module.
@@ -48,8 +48,7 @@ public class TestAll extends TestCase {
         suite.addTestSuite(ReplaceTest.class);
 
         // test related to NodeStateMerger
-        // temporarily disabled see JCR-2272 and JCR-2295
-        // suite.addTestSuite(ConcurrentImportTest.class);
+        suite.addTestSuite(ConcurrentImportTest.class);
         suite.addTestSuite(ConcurrentAddRemoveMoveTest.class);
         suite.addTestSuite(ConcurrentAddRemovePropertyTest.class);
         suite.addTestSuite(ConcurrentMixinModificationTest.class);
@@ -58,25 +57,29 @@ public class TestAll extends TestCase {
         suite.addTestSuite(ConcurrentReorderTest.class);
         suite.addTestSuite(ConcurrentAddRemoveNodeTest.class);
 
-// TODO: These tests pass, but they cause some instability in other
-//       parts of the test suite, most likely due to uncleaned test data
-//        if (Boolean.getBoolean("org.apache.jackrabbit.test.integration")) {
-//            suite.addTestSuite(ConcurrencyTest.class);
+        // TODO: These tests pass, but they cause some instability in other
+        // parts of the test suite, most likely due to uncleaned test data
+        if (Boolean.getBoolean("org.apache.jackrabbit.test.integration")) {
+            suite.addTestSuite(ConcurrencyTest.class);
 //            // suite.addTestSuite(ConcurrencyTest3.class);
-//            suite.addTestSuite(ConcurrentVersioningTest.class);
+            suite.addTestSuite(ConcurrentVersioningTest.class);
 //            // suite.addTestSuite(ConcurrentVersioningWithTransactionsTest.class);
 //            suite.addTestSuite(ConcurrentCheckinMixedTransactionTest.class);
 //            suite.addTestSuite(ConcurrentLoginTest.class);
 //            suite.addTestSuite(ConcurrentNodeModificationTest.class);
 //            suite.addTestSuite(ConcurrentReadWriteTest.class);
-//            suite.addTestSuite(ConcurrentRenameTest.class);
-//            suite.addTestSuite(ConcurrentSaveTest.class);
+            suite.addTestSuite(ConcurrentRenameTest.class);
+            suite.addTestSuite(ConcurrentSaveTest.class);
 //            suite.addTestSuite(ConcurrentWorkspaceCopyTest.class);
-//        }
+        }
 
         suite.addTestSuite(UserPerWorkspaceSecurityManagerTest.class);
 
-        suite.addTestSuite(PersistenceManagerTest.class);
+        suite.addTestSuite(OverlappingNodeAddTest.class);
+
+        suite.addTestSuite(NPEandCMETest.class);
+
+        suite.addTestSuite(ConsistencyCheck.class);
 
         return suite;
     }

@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 
 import javax.jcr.ItemNotFoundException;
+import javax.jcr.Node;
 import javax.jcr.PathNotFoundException;
 import javax.jcr.PropertyType;
 import javax.jcr.RepositoryException;
@@ -90,10 +91,8 @@ import javax.jcr.query.qom.UpperCase;
 import org.apache.jackrabbit.commons.predicate.Predicate;
 import org.apache.jackrabbit.commons.predicate.Predicates;
 import org.apache.jackrabbit.commons.predicate.RowPredicate;
-import org.apache.jackrabbit.core.NodeImpl;
+import org.apache.jackrabbit.commons.query.qom.OperandEvaluator;
 import org.apache.jackrabbit.core.SessionImpl;
-import org.apache.jackrabbit.core.id.NodeId;
-import org.apache.jackrabbit.core.query.lucene.join.OperandEvaluator;
 import org.apache.jackrabbit.core.query.lucene.join.SelectorRow;
 import org.apache.jackrabbit.core.query.lucene.join.ValueComparator;
 import org.apache.jackrabbit.spi.Name;
@@ -108,6 +107,7 @@ import org.apache.lucene.queryParser.QueryParser;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.Sort;
 
 /**
  * Factory that creates Lucene queries from QOM elements.
@@ -167,10 +167,31 @@ public class LuceneQueryFactory {
         this.primaryTypeField = nsMappings.translateName(JCR_PRIMARYTYPE);
     }
 
-    public List<Row> execute(
-            Map<String, PropertyValue> columns, Selector selector,
-            Constraint constraint) throws RepositoryException, IOException {
+    /**
+     * @param columns
+     * @param selector
+     * @param constraint
+     * @param externalSort
+     *            if <code>true</code> it means that the lqf should just let the
+     *            QueryEngine take care of sorting and applying applying offset
+     *            and limit constraints
+     * @param offsetIn
+     *            used in pagination
+     * @param limitIn
+     *            used in pagination
+     * @return a list of rows
+     * @throws RepositoryException
+     * @throws IOException
+     */
+    public List<Row> execute(Map<String, PropertyValue> columns,
+            Selector selector, Constraint constraint, Sort sort,
+            boolean externalSort, long offsetIn, long limitIn)
+            throws RepositoryException, IOException {
         final IndexReader reader = index.getIndexReader(true);
+        final int offset = offsetIn < 0 ? 0 : (int) offsetIn;
+        final int limit = limitIn < 0 ? Integer.MAX_VALUE : (int) limitIn;
+
+        QueryHits hits = null;
         try {
             JackrabbitIndexSearcher searcher = new JackrabbitIndexSearcher(
                     session, reader, index.getContext().getItemStateManager());
@@ -192,24 +213,49 @@ public class LuceneQueryFactory {
             }
 
             List<Row> rows = new ArrayList<Row>();
-            QueryHits hits = searcher.evaluate(qp.mainQuery);
+
+            // TODO depending on the filters, we could push the offset info
+            // into the searcher
+            hits = searcher.evaluate(qp.mainQuery, sort, offset + limit);
+            int currentNode = 0;
+            int addedNodes = 0;
+
             ScoreNode node = hits.nextScoreNode();
             while (node != null) {
+                Row row = null;
                 try {
-                    Row row = new SelectorRow(
-                            columns, evaluator, selector.getSelectorName(),
+                    row = new SelectorRow(columns, evaluator,
+                            selector.getSelectorName(),
                             session.getNodeById(node.getNodeId()),
                             node.getScore());
-                    if (filter.evaluate(row)) {
-                        rows.add(row);
-                    }
                 } catch (ItemNotFoundException e) {
                     // skip the node
+                }
+                if (row != null && filter.evaluate(row)) {
+                    if (externalSort) {
+                        // return everything and not worry about sort
+                        rows.add(row);
+                    } else {
+                        // apply limit and offset rules locally
+                        if (currentNode >= offset
+                                && currentNode - offset < limit) {
+                            rows.add(row);
+                            addedNodes++;
+                        }
+                        currentNode++;
+                        // end the loop when going over the limit
+                        if (addedNodes == limit) {
+                            break;
+                        }
+                    }
                 }
                 node = hits.nextScoreNode();
             }
             return rows;
         } finally {
+            if (hits != null) {
+                hits.close();
+            }
             Util.closeOrRelease(reader);
         }
     }
@@ -327,10 +373,8 @@ public class LuceneQueryFactory {
             StaticOperand right = c.getOperand2();
             if (left instanceof Length
                     || left instanceof FullTextSearchScore
-                    || ((!JCR_OPERATOR_EQUAL_TO.equals(operator)
-                            || transform.transform != TRANSFORM_NONE)
-                            && (left instanceof NodeName
-                                    || left instanceof NodeLocalName))) {
+                    || (((!JCR_OPERATOR_EQUAL_TO.equals(operator) && !JCR_OPERATOR_LIKE
+                            .equals(operator)) || transform.transform != TRANSFORM_NONE) && (left instanceof NodeName || left instanceof NodeLocalName))) {
                 try {
                     int type = PropertyType.UNDEFINED;
                     if (left instanceof Length) {
@@ -407,20 +451,31 @@ public class LuceneQueryFactory {
             DescendantNode dn, JackrabbitIndexSearcher searcher)
             throws RepositoryException, IOException {
         BooleanQuery query = new BooleanQuery();
+        int clauses = 0;
 
         try {
-            LinkedList<NodeId> ids = new LinkedList<NodeId>();
-            NodeImpl ancestor = (NodeImpl) session.getNode(dn.getAncestorPath());
-            ids.add(ancestor.getNodeId());
+            LinkedList<String> ids = new LinkedList<String>();
+            Node ancestor = session.getNode(dn.getAncestorPath());
+            ids.add(ancestor.getIdentifier());
             while (!ids.isEmpty()) {
-                String id = ids.removeFirst().toString();
+                String id = ids.removeFirst();
                 Query q = new JackrabbitTermQuery(new Term(FieldNames.PARENT, id));
                 QueryHits hits = searcher.evaluate(q);
                 ScoreNode sn = hits.nextScoreNode();
                 if (sn != null) {
+                    // reset query so it does not overflow because of the max
+                    // clause count condition,
+                    // see JCR-3108
+                    clauses++;
+                    if (clauses == BooleanQuery.getMaxClauseCount()) {
+                        BooleanQuery wrapQ = new BooleanQuery();
+                        wrapQ.add(query, SHOULD);
+                        query = wrapQ;
+                        clauses = 1;
+                    }
                     query.add(q, SHOULD);
                     do {
-                        ids.add(sn.getNodeId());
+                        ids.add(sn.getNodeId().toString());
                         sn = hits.nextScoreNode();
                     } while (sn != null);
                 }
@@ -612,15 +667,18 @@ public class LuceneQueryFactory {
         }
     }
 
-    protected Query getNodeLocalNameQuery(
-            int transform, String operator, StaticOperand right)
-            throws RepositoryException {
+    protected Query getNodeLocalNameQuery(int transform, String operator,
+            StaticOperand right) throws RepositoryException {
         if (transform != TRANSFORM_NONE
-                || !JCR_OPERATOR_EQUAL_TO.equals(operator)) {
+                || (!JCR_OPERATOR_EQUAL_TO.equals(operator) && !JCR_OPERATOR_LIKE
+                        .equals(operator))) {
             throw new UnsupportedRepositoryOperationException();
         }
-
         String name = evaluator.getValue(right).getString();
+
+        if (JCR_OPERATOR_LIKE.equals(operator)) {
+            return new WildcardQuery(LOCAL_NAME, null, name, transform, cache);
+        }
         return new JackrabbitTermQuery(new Term(LOCAL_NAME, name));
     }
 
@@ -628,8 +686,7 @@ public class LuceneQueryFactory {
             throws RepositoryException {
         String value;
         try {
-            NodeImpl node = (NodeImpl) session.getNode(path);
-            value = node.getNodeId().toString();
+            value = session.getNode(path).getIdentifier();
         } catch (PathNotFoundException e) {
             value = "invalid-node-id"; // can never match a node
         }
@@ -666,12 +723,11 @@ public class LuceneQueryFactory {
             BooleanQuery query = new BooleanQuery();
             query.add(Util.createMatchAllQuery(
                     field, index.getIndexFormatVersion(), cache), SHOULD);
-            switch (transform) {
-            case TRANSFORM_UPPER_CASE:
+            if (transform == TRANSFORM_UPPER_CASE) {
                 query.add(new CaseTermQuery.Upper(term), MUST_NOT);
-            case TRANSFORM_LOWER_CASE:
+            } else if (transform == TRANSFORM_LOWER_CASE) {
                 query.add(new CaseTermQuery.Lower(term), MUST_NOT);
-            default:
+            } else {
                 query.add(new JackrabbitTermQuery(term), MUST_NOT);
             }
             // and exclude all nodes where 'field' is multi valued
@@ -713,7 +769,7 @@ public class LuceneQueryFactory {
         }
     }
 
-    protected class QueryPair {
+    protected static class QueryPair {
         Query mainQuery;
         BooleanQuery subQuery;
 

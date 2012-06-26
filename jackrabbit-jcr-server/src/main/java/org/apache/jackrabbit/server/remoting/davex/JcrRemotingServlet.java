@@ -16,43 +16,50 @@
  */
 package org.apache.jackrabbit.server.remoting.davex;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
+
+import javax.jcr.Item;
+import javax.jcr.ItemNotFoundException;
+import javax.jcr.Node;
+import javax.jcr.NodeIterator;
+import javax.jcr.PathNotFoundException;
+import javax.jcr.RepositoryException;
+import javax.jcr.Session;
+import javax.jcr.Workspace;
+import javax.jcr.nodetype.NodeType;
+import javax.servlet.ServletConfig;
+import javax.servlet.ServletContext;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.jackrabbit.JcrConstants;
+import org.apache.jackrabbit.server.util.RequestData;
+import org.apache.jackrabbit.util.Text;
 import org.apache.jackrabbit.webdav.DavException;
 import org.apache.jackrabbit.webdav.DavLocatorFactory;
 import org.apache.jackrabbit.webdav.DavMethods;
 import org.apache.jackrabbit.webdav.DavResource;
+import org.apache.jackrabbit.webdav.DavResourceFactory;
 import org.apache.jackrabbit.webdav.DavResourceLocator;
 import org.apache.jackrabbit.webdav.DavServletResponse;
 import org.apache.jackrabbit.webdav.DavSession;
 import org.apache.jackrabbit.webdav.WebdavRequest;
 import org.apache.jackrabbit.webdav.WebdavResponse;
-import org.apache.jackrabbit.webdav.DavResourceFactory;
-import org.apache.jackrabbit.webdav.observation.SubscriptionManager;
-import org.apache.jackrabbit.webdav.version.DeltaVConstants;
+import org.apache.jackrabbit.webdav.jcr.JCRWebdavServerServlet;
 import org.apache.jackrabbit.webdav.jcr.JcrDavException;
 import org.apache.jackrabbit.webdav.jcr.JcrDavSession;
-import org.apache.jackrabbit.webdav.jcr.JCRWebdavServerServlet;
 import org.apache.jackrabbit.webdav.jcr.transaction.TxLockManagerImpl;
-import org.apache.jackrabbit.util.Text;
-import org.apache.jackrabbit.JcrConstants;
-import org.apache.jackrabbit.server.util.RequestData;
+import org.apache.jackrabbit.webdav.observation.SubscriptionManager;
+import org.apache.jackrabbit.webdav.version.DeltaVConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.jcr.Item;
-import javax.jcr.Node;
-import javax.jcr.RepositoryException;
-import javax.jcr.Session;
-import javax.jcr.Workspace;
-import javax.jcr.ItemNotFoundException;
-import javax.jcr.NodeIterator;
-import javax.jcr.PathNotFoundException;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletResponse;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Iterator;
 
 /**
  * <code>JcrRemotingServlet</code> is an extended version of the
@@ -60,6 +67,7 @@ import java.util.Iterator;
  * that provides improved
  * <ul>
  * <li><a href="#bread">Batch read</a></li>
+ * <!-- <li><a href="#mread">Multi read</a></li> -->
  * <li><a href="#bwrite">Batch write</a></li>
  * </ul>
  * functionality and supports cross workspace copy and cloning.
@@ -72,7 +80,7 @@ import java.util.Iterator;
  * specified or configuration determined depth.
  * <p/>
  * Batch read is triggered by adding a '.json' extension to the resource href.
- * Optionally the client may explicitely specify the desired batch read depth
+ * Optionally the client may explicitly specify the desired batch read depth
  * by appending '.depth.json' extension. If no json extension is present the
  * GET request is processed by the base servlet.
  * <p/>
@@ -109,7 +117,7 @@ import java.util.Iterator;
  *   The JCR value must be retrieved separately.
  *
  * - Name, Path, Reference and Date Property
- *   The JSON member representing the Property (name, value) is preceeded by a
+ *   The JSON member representing the Property (name, value) is preceded by a
  *   special member consisting of
  *   JSON key = ":" + Property.getName()
  *   JSON value = PropertyType.nameFromValue(Property.getType())
@@ -120,6 +128,23 @@ import java.util.Iterator;
  *
  * - Double Property
  *   JSON value must not have any trailing ".0" removed.
+ * </pre>
+ *
+ * <h3><a name="mread">Multi Read</a></h3>
+ * <p>
+ * Since Jackrabbit 2.3.6 it is also possible to request multiple subtrees
+ * in a single request. This is done by adding one or more ":include"
+ * parameters to a batch read request describe above. These extra parameters
+ * specify the (relative) paths of all the nodes to be included in the
+ * response. The response is a JSON object whose "nodes" property contains
+ * all the selected nodes keyed by path. Missing nodes are not included in
+ * the response. Each included node is serialized as defined above for
+ * <a href="#bread">batch read</a>.
+ * <p>
+ * Example:
+ * <pre>
+ * $ curl 'http://.../parent.json?:path=child1&:path=child2'
+ * {"nodes":{"/parent/child1":{...},"/parent/child2":{...}}}
  * </pre>
  *
  * <h3><a name="bwrite">Batch Write</a></h3>
@@ -213,6 +238,7 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
     private static final String PARAM_DIFF = ":diff";
     private static final String PARAM_COPY = ":copy";
     private static final String PARAM_CLONE = ":clone";
+    private static final String PARAM_INCLUDE = ":include";
 
     private BatchReadConfig brConfig;
 
@@ -238,32 +264,44 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
             }
         }
 
-        // setup home directory
-        String paramHome = getServletConfig().getInitParameter(INIT_PARAM_HOME);
-        if (paramHome == null) {
-            log.debug("missing init-param " + INIT_PARAM_HOME + ". using default: 'jackrabbit'");
-            paramHome = "jackrabbit";
-        }
-        File home;
-        try {
-            home = new File(paramHome).getCanonicalFile();
-        } catch (IOException e) {
-            throw new ServletException(INIT_PARAM_HOME + " invalid." + e.toString());
-        }
-        home.mkdirs();
+        // Determine the configured location for temporary files used when
+        // processing file uploads. Since JCR-3029 the default is the
+        // standard java.io.tmpdir location, but the presence of explicit
+        // configuration parameters restores the original behavior.
+        File tmp = null;
+        ServletConfig config = getServletConfig();
+        String paramHome = config.getInitParameter(INIT_PARAM_HOME);
+        String paramTemp = config.getInitParameter(INIT_PARAM_TMP_DIRECTORY);
+        if (paramHome != null || paramTemp != null) {
+            if (paramHome == null) {
+                log.debug("Missing init-param " + INIT_PARAM_HOME
+                        + ". Using default: 'jackrabbit'");
+                paramHome = "jackrabbit";
+            } else if (paramTemp == null) {
+                log.debug("Missing init-param " + INIT_PARAM_TMP_DIRECTORY
+                        + ". Using default: 'tmp'");
+                paramTemp = "tmp";
+            }
 
-        String tmp = getServletConfig().getInitParameter(INIT_PARAM_TMP_DIRECTORY);
-        if (tmp == null) {
-            log.debug("No " + INIT_PARAM_TMP_DIRECTORY + " specified. using 'tmp'");
-            tmp = "tmp";
+            tmp = new File(paramHome, paramTemp);
+            try {
+                tmp = tmp.getCanonicalFile();
+                tmp.mkdirs();
+                log.debug("  temp-directory = " + tmp.getPath());
+            } catch (IOException e) {
+                log.warn("Invalid temporary directory " + tmp.getPath()
+                        + ", using system default instead", e);
+                tmp = null;
+            }
         }
-        File tmpDirectory = new File(home, tmp);
-        tmpDirectory.mkdirs();
-        log.debug("  temp-directory = " + tmpDirectory.getPath());
-        getServletContext().setAttribute(ATTR_TMP_DIRECTORY, tmpDirectory);
+        getServletContext().setAttribute(ATTR_TMP_DIRECTORY, tmp);
 
         // force usage of custom locator factory.
-        super.setLocatorFactory(new DavLocatorFactoryImpl(getInitParameter(INIT_PARAM_RESOURCE_PATH_PREFIX)));
+        super.setLocatorFactory(new DavLocatorFactoryImpl(getResourcePathPrefix()));
+    }
+
+    protected String getResourcePathPrefix() {
+        return getInitParameter(INIT_PARAM_RESOURCE_PATH_PREFIX);
     }
 
     @Override
@@ -277,22 +315,33 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
                          DavResource davResource) throws IOException, DavException {
         if (canHandle(DavMethods.DAV_GET, webdavRequest, davResource)) {
             // return json representation of the requested resource
-            try {
-                Item item = ((JcrDavSession) webdavRequest.getDavSession()).getRepositorySession().getItem(davResource.getLocator().getRepositoryPath());
-                if (item.isNode()) {
-                    webdavResponse.setContentType("text/plain;charset=utf-8");
-                    webdavResponse.setStatus(DavServletResponse.SC_OK);
+            DavResourceLocator locator = davResource.getLocator();
+            String path = locator.getRepositoryPath();
 
-                    JsonWriter writer = new JsonWriter(webdavResponse.getWriter());
-                    int depth = ((WrappingLocator) davResource.getLocator()).getDepth();
+            Session session = getRepositorySession(webdavRequest);
+            try {
+                Node node = session.getNode(path);
+                int depth = ((WrappingLocator) locator).getDepth();
+
+                webdavResponse.setContentType("text/plain;charset=utf-8");
+                webdavResponse.setStatus(DavServletResponse.SC_OK);
+                JsonWriter writer = new JsonWriter(webdavResponse.getWriter());
+
+                String[] includes = webdavRequest.getParameterValues(PARAM_INCLUDE);
+                if (includes == null) {
                     if (depth < BatchReadConfig.DEPTH_INFINITE) {
-                        depth = getDepth((Node) item);
+                        NodeType type = node.getPrimaryNodeType();
+                        depth = brConfig.getDepth(type.getName());
                     }
-                    writer.write((Node) item, depth);
+                    writer.write(node, depth);
                 } else {
-                    // properties cannot be requested as json object.
-                    throw new JcrDavException(new ItemNotFoundException("No node at " + item.getPath()), DavServletResponse.SC_NOT_FOUND);
+                    writeMultiple(writer, node, includes, depth);
                 }
+            } catch (PathNotFoundException e) {
+                // properties cannot be requested as json object.
+                throw new JcrDavException(
+                        new ItemNotFoundException("No node at " + path),
+                        DavServletResponse.SC_NOT_FOUND);
             } catch (RepositoryException e) {
                 // should only get here if the item does not exist.
                 log.debug(e.getMessage());
@@ -301,6 +350,31 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
         } else {
             super.doGet(webdavRequest, webdavResponse, davResource);
         }
+    }
+
+    private void writeMultiple(
+            JsonWriter writer, Node node, String[] includes, int depth)
+            throws RepositoryException, IOException {
+        Collection<Node> nodes = new ArrayList<Node>();
+        Set<String> alreadyAdded = new HashSet<String>();
+        for (String include : includes) {
+            try {
+                Node n;
+                if (include.startsWith("/")) {
+                    n = node.getSession().getNode(include);
+                } else {
+                    n = node.getNode(include);
+                }
+                String np = n.getPath();
+                if (!alreadyAdded.contains(np)) {
+                    nodes.add(n);
+                    alreadyAdded.add(np);
+                }
+            } catch (PathNotFoundException e) {
+                // skip missing node
+            }
+        }
+        writer.write(nodes, depth);
     }
 
     @Override
@@ -314,6 +388,7 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
             String loc = null;
             try {
                 String[] pValues;
+                String[] includes = null; // multi-read over POST
                 if ((pValues = data.getParameterValues(PARAM_CLONE)) != null) {
                     loc = clone(session, pValues, davResource.getLocator());
                 } else if ((pValues = data.getParameterValues(PARAM_COPY)) != null) {
@@ -321,6 +396,9 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
                 } else if (data.getParameterValues(PARAM_DIFF) != null) {
                     String targetPath = davResource.getLocator().getRepositoryPath();
                     processDiff(session, targetPath, data);
+                } else if ((pValues = data.getParameterValues(PARAM_INCLUDE)) != null
+                        && canHandle(DavMethods.DAV_GET, webdavRequest, davResource)) {
+                    includes = pValues;
                 } else {
                     String targetPath = davResource.getLocator().getRepositoryPath();
                     loc = modifyContent(session, targetPath, data);
@@ -329,6 +407,18 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
                 // TODO: append entity
                 if (loc == null) {
                     webdavResponse.setStatus(HttpServletResponse.SC_OK);
+                    if (includes != null) {
+                        webdavResponse.setContentType("text/plain;charset=utf-8");
+                        JsonWriter writer = new JsonWriter(webdavResponse.getWriter());
+
+                        DavResourceLocator locator = davResource.getLocator();
+                        String path = locator.getRepositoryPath();
+
+                        Node node = session.getNode(path);
+                        int depth = ((WrappingLocator) locator).getDepth();
+
+                        writeMultiple(writer, node, includes, depth);
+                    }
                 } else {
                     webdavResponse.setHeader(DeltaVConstants.HEADER_LOCATION, loc);
                     webdavResponse.setStatus(HttpServletResponse.SC_CREATED);
@@ -365,10 +455,6 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
             default:
                 return false;
         }
-    }
-
-    private int getDepth(Node node) throws RepositoryException {
-        return brConfig.getDepth(node.getPrimaryNodeType().getName());
     }
 
     private static String clone(Session session, String[] cloneArgs, DavResourceLocator reqLocator) throws RepositoryException {
@@ -447,7 +533,7 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
     }
 
     /**
-     * TODO: doesn't work properly with intermedite SNS-nodes
+     * TODO: doesn't work properly with intermediate SNS-nodes
      * TODO: doesn't respect jcr:uuid properties.
      *
      * @param session
@@ -594,7 +680,7 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
         private void extract() {
             String rp = loc.getRepositoryPath();
             rp = rp.substring(0, rp.lastIndexOf('.'));
-            int pos = rp.lastIndexOf(".");
+            int pos = rp.lastIndexOf('.');
             if (pos > -1) {
                 String depthStr = rp.substring(pos + 1);
                 try {

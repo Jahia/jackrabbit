@@ -26,7 +26,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-parent</artifactId>
-    <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     <relativePath>../jackrabbit-parent/pom.xml</relativePath>
   </parent>
   <artifactId>jackrabbit-spi-commons</artifactId>
@@ -39,78 +39,10 @@
 
   <build>
     <plugins>
-        <plugin>
-          <groupId>org.apache.felix</groupId>
-          <artifactId>maven-bundle-plugin</artifactId>
-          <extensions>true</extensions>
-          <configuration>
-            <instructions>
-              <Export-Package>
-                org.apache.jackrabbit.spi.commons;version=${project.version},
-                org.apache.jackrabbit.spi.commons.*;version=${project.version}
-              </Export-Package>
-            </instructions>
-          </configuration>
-        </plugin>
       <plugin>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>delete-sources</id>
-            <phase>process-sources</phase>
-            <configuration>
-              <tasks>
-                <echo>Remove files that have been customized in Jackrabbit</echo>
-                <delete>
-                  <fileset dir="${project.build.directory}/generated-sources/javacc/org/apache/jackrabbit/spi/commons/query">
-                    <include name="sql/ASTLiteral.java" />
-                    <include name="sql/ASTContainsExpression.java" />
-                    <include name="sql/ASTPredicate.java" />
-                    <include name="sql/ASTIdentifier.java" />
-                    <include name="xpath/SimpleNode.java" />
-                  </fileset>
-                </delete>
-              </tasks>
-            </configuration>
-            <goals>
-              <goal>run</goal>
-            </goals>
-          </execution>
-        </executions>
-        <dependencies>
-          <dependency>
-            <groupId>ant</groupId>
-            <artifactId>ant-optional</artifactId>
-            <version>1.5.3-1</version>
-          </dependency>
-        </dependencies>
-      </plugin>
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>javacc-maven-plugin</artifactId>
-        <version>2.4.1</version>
-        <executions>
-          <execution>
-            <id>sql</id>
-            <configuration>
-              <sourceDirectory>${basedir}/src/main/javacc/sql</sourceDirectory>
-              <packageName>org.apache.jackrabbit.spi.commons.query.sql</packageName>
-            </configuration>
-            <goals>
-              <goal>jjtree-javacc</goal>
-            </goals>
-          </execution>
-          <execution>
-            <id>xpath</id>
-            <configuration>
-              <sourceDirectory>${basedir}/src/main/javacc/xpath</sourceDirectory>
-              <packageName>org.apache.jackrabbit.spi.commons.query.xpath</packageName>
-            </configuration>
-            <goals>
-              <goal>jjtree-javacc</goal>
-            </goals>
-          </execution>
-        </executions>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <extensions>true</extensions>
       </plugin>
       <plugin>
         <groupId>org.apache.rat</groupId>
@@ -137,18 +69,23 @@
 
   <dependencies>
     <dependency>
+      <groupId>biz.aQute</groupId>
+      <artifactId>bndlib</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>javax.jcr</groupId>
       <artifactId>jcr</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-commons</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
     <dependency>
       <groupId>commons-collections</groupId>
@@ -173,5 +110,77 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <profiles>
+    <profile>
+      <id>javacc</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>javacc-maven-plugin</artifactId>
+            <version>2.4.1</version>
+            <executions>
+              <execution>
+                <id>sql</id>
+                <configuration>
+                  <sourceDirectory>${basedir}/src/main/javacc/sql</sourceDirectory>
+                  <packageName>org.apache.jackrabbit.spi.commons.query.sql</packageName>
+                </configuration>
+                <goals>
+                  <goal>jjtree-javacc</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>xpath</id>
+                <configuration>
+                  <sourceDirectory>${basedir}/src/main/javacc/xpath</sourceDirectory>
+                  <packageName>org.apache.jackrabbit.spi.commons.query.xpath</packageName>
+                </configuration>
+                <goals>
+                  <goal>jjtree-javacc</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <executions>
+              <execution>
+                <phase>process-sources</phase>
+                <configuration>
+                  <target>
+                    <echo>Remove files that have been customized in Jackrabbit</echo>
+                    <delete>
+                      <fileset dir="${project.build.directory}/generated-sources/javacc">
+                        <include name="org/apache/jackrabbit/spi/commons/query/sql/ASTLiteral.java" />
+                        <include name="org/apache/jackrabbit/spi/commons/query/sql/ASTContainsExpression.java" />
+                        <include name="org/apache/jackrabbit/spi/commons/query/sql/ASTPredicate.java" />
+                        <include name="org/apache/jackrabbit/spi/commons/query/sql/ASTIdentifier.java" />
+                        <include name="org/apache/jackrabbit/spi/commons/query/xpath/SimpleNode.java" />
+                      </fileset>
+                    </delete>
+                    <move todir="src/main/java">
+                      <fileset dir="${project.build.directory}/generated-sources/javacc" />
+                    </move>
+                  </target>
+                </configuration>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+              </execution>
+            </executions>
+            <dependencies>
+              <dependency>
+                <groupId>ant</groupId>
+                <artifactId>ant-optional</artifactId>
+                <version>1.5.3-1</version>
+              </dependency>
+            </dependencies>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 
 </project>

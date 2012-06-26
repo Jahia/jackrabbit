@@ -19,9 +19,11 @@ package org.apache.jackrabbit.test.api;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.List;
 
 import javax.jcr.ImportUUIDBehavior;
 import javax.jcr.Item;
@@ -675,7 +677,7 @@ public class ShareableNodeTest extends AbstractJCRTest {
             workspace.importXML(testRootNode.getPath(), in,
                     ImportUUIDBehavior.IMPORT_UUID_COLLISION_THROW);
         } finally {
-            in.close();
+            try { in.close(); } catch (IOException ignore) {}
         }
 
         // verify shared set consists of two nodes
@@ -728,7 +730,7 @@ public class ShareableNodeTest extends AbstractJCRTest {
         try {
             workspace.importXML(a3.getPath(), in, ImportUUIDBehavior.IMPORT_UUID_COLLISION_THROW);
         } finally {
-            in.close();
+            try { in.close(); } catch (IOException ignore) {}
         }
 
         // verify there's another element in the shared set
@@ -785,7 +787,7 @@ public class ShareableNodeTest extends AbstractJCRTest {
         try {
             workspace.importXML(a3.getPath(), in, ImportUUIDBehavior.IMPORT_UUID_COLLISION_THROW);
         } finally {
-            in.close();
+            try { in.close(); } catch (IOException ignore) {}
         }
 
         // verify there's another element in the shared set
@@ -843,7 +845,7 @@ public class ShareableNodeTest extends AbstractJCRTest {
             session.importXML(a3.getPath(), in, ImportUUIDBehavior.IMPORT_UUID_COLLISION_THROW);
             session.save();
         } finally {
-            in.close();
+            try { in.close(); } catch (IOException ignore) {}
         }
 
         // verify there's another element in the shared set
@@ -901,7 +903,7 @@ public class ShareableNodeTest extends AbstractJCRTest {
             session.importXML(a3.getPath(), in, ImportUUIDBehavior.IMPORT_UUID_COLLISION_THROW);
             session.save();
         } finally {
-            in.close();
+            try { in.close(); } catch (IOException ignore) {}
         }
 
         // verify there's another element in the shared set
@@ -1127,14 +1129,14 @@ public class ShareableNodeTest extends AbstractJCRTest {
         String sql = "SELECT * FROM nt:unstructured WHERE jcr:uuid = '"+c.getUUID()+"'";
         QueryResult res = workspace.getQueryManager().createQuery(sql, Query.SQL).execute();
 
-        ArrayList list = new ArrayList();
+        List<Node> list = new ArrayList<Node>();
 
         NodeIterator iter = res.getNodes();
         while (iter.hasNext()) {
             list.add(iter.nextNode());
         }
         assertEquals(1, list.size());
-        assertTrue(((Node) list.get(0)).isSame(c));
+        assertTrue(list.get(0).isSame(c));
     }
 
     //--------------------------------------------------------- limitation tests
@@ -1444,7 +1446,7 @@ public class ShareableNodeTest extends AbstractJCRTest {
      * @return node array
      */
     private static Node[] toArray(NodeIterator iter) {
-        ArrayList list = new ArrayList();
+        List<Node> list = new ArrayList<Node>();
 
         while (iter.hasNext()) {
             list.add(iter.nextNode());

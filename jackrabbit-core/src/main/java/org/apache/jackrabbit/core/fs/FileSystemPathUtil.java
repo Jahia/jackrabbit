@@ -65,7 +65,7 @@ public final class FileSystemPathUtil {
         SAFE_NAMECHARS.set('_');
         SAFE_NAMECHARS.set('.');
 
-        // build list of valid path characters (inlcudes name characters)
+        // build list of valid path characters (includes name characters)
         SAFE_PATHCHARS = (BitSet) SAFE_NAMECHARS.clone();
         SAFE_PATHCHARS.set(FileSystem.SEPARATOR_CHAR);
     }
@@ -86,7 +86,7 @@ public final class FileSystemPathUtil {
      */
     private static String escape(String s, BitSet safeChars) {
         byte[] bytes = s.getBytes();
-        StringBuffer out = new StringBuffer(bytes.length);
+        StringBuilder out = new StringBuilder(bytes.length);
         for (int i = 0; i < bytes.length; i++) {
             int c = bytes[i] & 0xff;
             if (safeChars.get(c) && c != ESCAPE_CHAR) {

@@ -247,7 +247,7 @@ class XAEnvironment {
             throws RepositoryException {
         ArrayList<LockInfo> result = new ArrayList<LockInfo>();
 
-        // get lock informations from global lock manager first
+        // get lock information from global lock manager first
         for (LockInfo info : lockMgr.getLockInfos(session)) {
             // check negative set
             if (!unlockedNodesMap.containsKey(info.getId())) {
@@ -255,10 +255,10 @@ class XAEnvironment {
             }
         }
 
-        // add 'uncommitted' lock informations
+        // add 'uncommitted' lock information
         result.addAll(lockedNodesMap.values());
 
-        return (LockInfo[]) result.toArray(new LockInfo[result.size()]);
+        return result.toArray(new LockInfo[result.size()]);
     }
 
     /**
@@ -272,10 +272,8 @@ class XAEnvironment {
             NodeId id = LockInfo.parseLockToken(lt);
             NodeImpl node = (NodeImpl) session.getItemManager().getItem(id);
             LockInfo info = getLockInfo(node);
-            if (info != null) {
-                if (info.isLockHolder(session)) {
-                    // nothing to do
-                } else if (info.getLockHolder() == null) {
+            if (info != null && !info.isLockHolder(session)) {
+                if (info.getLockHolder() == null) {
                     info.setLockHolder(session);
                 } else {
                     String msg = "Cannot add lock token: lock already held by other session.";
@@ -307,9 +305,7 @@ class XAEnvironment {
             if (info != null) {
                 if (info.isLockHolder(session)) {
                     info.setLockHolder(null);
-                } else if (info.getLockHolder() == null) {
-                    // nothing to do
-                } else {
+                } else if (info.getLockHolder() != null) {
                     String msg = "Cannot remove lock token: lock held by other session.";
                     log.warn(msg);
                     throw new LockException(msg);
@@ -520,6 +516,7 @@ class XAEnvironment {
          * As long as the XA environment is neither committed nor rolled back,
          * associated lock information is subject to change.
          */
+        @Override
         public boolean mayChange() {
             if (status != STATUS_COMMITTED
                     && status != STATUS_ROLLED_BACK) {

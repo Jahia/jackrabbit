@@ -31,12 +31,20 @@ import org.xml.sax.SAXException;
 import org.xml.sax.helpers.DefaultHandler;
 
 import javax.xml.XMLConstants;
+import javax.xml.namespace.QName;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.Writer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -63,9 +71,30 @@ public class DomUtil {
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         } catch (ParserConfigurationException e) {
             log.warn("Secure XML processing is not supported", e);
+        } catch (AbstractMethodError e) {
+            log.warn("Secure XML processing is not supported", e);
         }
         return factory;
     }
+
+    /**
+     * Support the replacement of {@link #BUILDER_FACTORY}. This is useful
+     * for injecting a customized BuilderFactory, for example with one that
+     * uses a local catalog resolver. This is one technique for addressing
+     * this issue:
+     * http://www.w3.org/blog/systeam/2008/02/08/w3c_s_excessive_dtd_traffic
+     *
+     * @param documentBuilderFactory
+     */
+    public static void setBuilderFactory(
+            DocumentBuilderFactory documentBuilderFactory) {
+        BUILDER_FACTORY = documentBuilderFactory;
+    }
+
+    /**
+     * Transformer factory
+     */
+    private static TransformerFactory TRANSFORMER_FACTORY = TransformerFactory.newInstance();
 
     /**
      * Creates and returns a new empty DOM document.
@@ -91,8 +120,8 @@ public class DomUtil {
             throws ParserConfigurationException, SAXException, IOException {
         DocumentBuilder docBuilder = BUILDER_FACTORY.newDocumentBuilder();
 
-        // Set an error handler to prevent parsers like Xerces
-        // from printing error messages to standard output!
+        // Set an error handler to prevent parsers from printing error messages
+        // to standard output!
         docBuilder.setErrorHandler(new DefaultHandler());
 
         return docBuilder.parse(stream);
@@ -224,6 +253,22 @@ public class DomUtil {
     }
 
     /**
+     * Calls {@link #getTextTrim(Element)} on the first child element that matches
+     * the given name.
+     *
+     * @param parent
+     * @param childName
+     * @return text contained in the first child that matches the given name
+     * or <code>null</code>. Note, that leading and trailing whitespace
+     * is removed from the text.
+     * @see #getTextTrim(Element)
+     */
+    public static String getChildTextTrim(Element parent, QName childName) {
+        Element child = getChildElement(parent, childName);
+        return (child == null) ? null : getTextTrim(child);
+    }
+
+    /**
      * Returns true if the given parent node has a child element that matches
      * the specified local name and namespace.
      *
@@ -261,6 +306,28 @@ public class DomUtil {
     }
 
     /**
+     * Returns the first child element that matches the given {@link QName}.
+     * If no child element is present or no child element matches,
+     * <code>null</code> is returned.
+     *
+     * @param parent
+     * @param childName
+     * @return first child element matching the specified name or <code>null</code>.
+     */
+    public static Element getChildElement(Node parent, QName childName) {
+        if (parent != null) {
+            NodeList children = parent.getChildNodes();
+            for (int i = 0; i < children.getLength(); i++) {
+                Node child = children.item(i);
+                if (isElement(child) && matches(child, childName)) {
+                    return (Element)child;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Returns a <code>ElementIterator</code> containing all child elements of
      * the given parent node that match the given local name and namespace.
      * If the namespace is <code>null</code> only the localName is compared.
@@ -273,6 +340,20 @@ public class DomUtil {
      */
     public static ElementIterator getChildren(Element parent, String childLocalName, Namespace childNamespace) {
         return new ElementIterator(parent, childLocalName, childNamespace);
+    }
+
+    /**
+     * Returns a <code>ElementIterator</code> containing all child elements of
+     * the given parent node that match the given {@link QName}.
+     * 
+     * @param parent
+     *            the node the children elements should be retrieved from
+     * @param childName
+     * @return an <code>ElementIterator</code> giving access to all child
+     *         elements that match the specified name.
+     */
+    public static ElementIterator getChildren(Element parent, QName childName) {
+        return new ElementIterator(parent, childName);
     }
 
     /**
@@ -378,6 +459,24 @@ public class DomUtil {
         }
         boolean matchingNamespace = matchingNamespace(node, requiredNamespace);
         return matchingNamespace && matchingLocalName(node, requiredLocalName);
+    }
+
+    /**
+     * Returns true if the specified node matches the required {@link QName}.
+     *
+     * @param node
+     * @param requiredName
+     * @return true if local name and namespace match the corresponding properties
+     * of the given DOM node.
+     */
+    public static boolean matches(Node node, QName requiredName) {
+        if (node == null) {
+            return false;
+        } else {
+            String nodens = node.getNamespaceURI() != null ? node.getNamespaceURI() : "";
+            return nodens.equals(requiredName.getNamespaceURI())
+                    && node.getLocalName().equals(requiredName.getLocalPart());
+        }
     }
 
     /**
@@ -586,19 +685,15 @@ public class DomUtil {
     /**
      * Converts the given timeout (long value defining the number of milli-
      * second until timeout is reached) to its Xml representation as defined
-     * by RTF 2518.<br>
-     * Note, that {@link DavConstants#INFINITE_TIMEOUT} is not represented by the String
-     * {@link DavConstants#TIMEOUT_INFINITE 'Infinite'} defined by RFC 2518, due to a known
-     * issue with Microsoft Office that opens the document "read only" and
-     * never unlocks the resource if the timeout is missing or 'Infinite'.
+     * by RFC 4918.<br>
      *
      * @param timeout number of milli-seconds until timeout is reached.
      * @return 'timeout' Xml element
      */
     public static Element timeoutToXml(long timeout, Document factory) {
-        String expString = "Second-"+ timeout/1000;
-        Element exp = createElement(factory, DavConstants.XML_TIMEOUT, DavConstants.NAMESPACE, expString);
-        return exp;
+        boolean infinite = timeout / 1000 > Integer.MAX_VALUE || timeout == DavConstants.INFINITE_TIMEOUT;
+        String expString = infinite ? DavConstants.TIMEOUT_INFINITE : "Second-" + timeout / 1000;
+        return createElement(factory, DavConstants.XML_TIMEOUT, DavConstants.NAMESPACE, expString);
     }
 
     /**
@@ -620,8 +715,7 @@ public class DomUtil {
      * @return 'deep' XML element
      */
     public static Element depthToXml(String depth, Document factory) {
-        Element dElem = createElement(factory, DavConstants.XML_DEPTH, DavConstants.NAMESPACE, depth);
-        return dElem;
+        return createElement(factory, DavConstants.XML_DEPTH, DavConstants.NAMESPACE, depth);
     }
 
     /**
@@ -703,5 +797,35 @@ public class DomUtil {
         buf.append(":");
         buf.append(localName);
         return buf.toString();
+    }
+
+    /**
+     * Uses a new Transformer instance to transform the specified xml document
+     * to the specified writer output target.
+     *
+     * @param xmlDoc XML document to create the transformation
+     * <code>Source</code> for.
+     * @param writer The writer used to create a new transformation
+     * <code>Result </code>for.
+     * @throws TransformerException
+     */
+    public static void transformDocument(Document xmlDoc, Writer writer) throws TransformerException, SAXException {
+        Transformer transformer = TRANSFORMER_FACTORY.newTransformer();
+        transformer.transform(new DOMSource(xmlDoc), ResultHelper.getResult(new StreamResult(writer)));
+    }
+
+    /**
+     * Uses a new Transformer instance to transform the specified xml document
+     * to the specified writer output target.
+     *
+     * @param xmlDoc XML document to create the transformation
+     * <code>Source</code> for.
+     * @param out The stream used to create a new transformation
+     * <code>Result </code>for.
+     * @throws TransformerException
+     */
+    public static void transformDocument(Document xmlDoc, OutputStream out) throws TransformerException, SAXException {
+        Transformer transformer = TRANSFORMER_FACTORY.newTransformer();
+        transformer.transform(new DOMSource(xmlDoc), ResultHelper.getResult(new StreamResult(out)));
     }
 }

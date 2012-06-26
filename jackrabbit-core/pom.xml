@@ -26,7 +26,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-parent</artifactId>
-    <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     <relativePath>../jackrabbit-parent/pom.xml</relativePath>
   </parent>
   <artifactId>jackrabbit-core</artifactId>
@@ -46,14 +46,14 @@
             <id>process-test-resources</id>
             <phase>process-test-resources</phase>
             <configuration>
-              <tasks>
+              <target>
                 <copy todir="${project.build.directory}/repository">
                   <fileset dir="${basedir}/src/test/repository" />
                 </copy>
                 <copy todir="${project.build.directory}/repository-2">
                   <fileset dir="${basedir}/src/test/repository" />
                 </copy>
-              </tasks>
+              </target>
             </configuration>
             <goals>
               <goal>run</goal>
@@ -100,14 +100,16 @@
               <name>known.issues</name>
               <value>
 org.apache.jackrabbit.core.xml.DocumentViewTest#testMultiValue
-org.apache.jackrabbit.core.ConcurrentImportTest
-org.apache.jackrabbit.core.data.GarbageCollectorTest#testGC
-org.apache.jackrabbit.core.data.GarbageCollectorTest#testCloseSessionWhileRunningGc
+org.apache.jackrabbit.core.NodeImplTest#testReferentialIntegrityCorruptionGetPath
 org.apache.jackrabbit.core.integration.ConcurrentQueryTest#testConcurrentQueryWithDeletes
 org.apache.jackrabbit.test.api.ShareableNodeTest#testGetName
 org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNode
 org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodes
 org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
+org.apache.jackrabbit.test.api.lock.OpenScopedLockTest#testLockExpiration
+org.apache.jackrabbit.test.api.lock.SessionScopedLockTest#testLockExpiration
+org.apache.jackrabbit.core.data.ConcurrentGcTest#testDatabases
+org.apache.jackrabbit.core.data.GarbageCollectorTest#testCloseSessionWhileRunningGc
               </value>
             </property>
             <property>
@@ -175,6 +177,35 @@ org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
         <filtering>true</filtering>
       </resource>
     </resources>
+    <pluginManagement>
+      <plugins>
+        <!-- JCR-3136: Add m2e lifecycle mappings for Eclipse Indigo -->
+        <plugin>
+          <groupId>org.eclipse.m2e</groupId>
+          <artifactId>lifecycle-mapping</artifactId>
+          <version>1.0.0</version>
+          <configuration>
+            <lifecycleMappingMetadata>
+              <pluginExecutions>
+                <pluginExecution>
+                  <pluginExecutionFilter>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-antrun-plugin</artifactId>
+                    <versionRange>[1.6,)</versionRange>
+                    <goals>
+                      <goal>run</goal>
+                    </goals>
+                  </pluginExecutionFilter>
+                  <action>
+                    <ignore />
+                  </action>
+                </pluginExecution>
+              </pluginExecutions>
+            </lifecycleMappingMetadata>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
   </build>
 
   <dependencies>
@@ -193,7 +224,7 @@ org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
     <dependency>
       <groupId>commons-dbcp</groupId>
       <artifactId>commons-dbcp</artifactId>
-      <version>1.2.2</version>
+      <version>1.3</version>
     </dependency>
     <dependency>
       <groupId>javax.jcr</groupId>
@@ -202,48 +233,33 @@ org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-api</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-commons</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi-commons</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
-      <classifier />
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
       <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.tika</groupId>
-      <artifactId>tika-parsers</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>edu.ucar</groupId>
-          <artifactId>netcdf</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>commons-logging</groupId>
-          <artifactId>commons-logging</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>xml-apis</groupId>
-          <artifactId>xml-apis</artifactId>
-        </exclusion>
-      </exclusions>
+      <artifactId>tika-core</artifactId>
     </dependency>
     <dependency>
       <groupId>edu.ucar</groupId>
@@ -253,10 +269,6 @@ org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>jcl-over-slf4j</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.lucene</groupId>
@@ -269,7 +281,7 @@ org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-tests</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <optional>true</optional>
     </dependency>
     <dependency>
@@ -281,6 +293,21 @@ org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-benchmark</artifactId>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.tika</groupId>
+      <artifactId>tika-parsers</artifactId>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>jcl-over-slf4j</artifactId>
     </dependency>
     <dependency>
       <groupId>ch.qos.logback</groupId>
@@ -455,7 +482,7 @@ org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
               <id>overlay-repository-descriptors</id>
               <phase>process-test-resources</phase>
               <configuration>
-                <tasks>
+                <target>
                   <copy todir="${project.build.directory}/repository" overwrite="true">
                     <fileset dir="${basedir}/src/test/repository-descriptor-overlay" />
                     <filterset>
@@ -488,7 +515,7 @@ org.apache.jackrabbit.test.api.ShareableNodeTest#testGetNodesByPattern
                       <filter token="config.db.journalclass" value="${config.db.journalclass}" />
                     </filterset>
                   </copy>
-                </tasks>
+                </target>
               </configuration>
               <goals>
                 <goal>run</goal>

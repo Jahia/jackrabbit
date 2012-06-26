@@ -43,6 +43,8 @@ public class PathParser {
     private static final int STATE_URI = 9;
     private static final int STATE_URI_END = 10;
 
+    private static final char EOF = (char) -1;
+
     /**
      * Parses <code>jcrPath</code> into a <code>Path</code> object using
      * <code>resolver</code> to convert prefixes into namespace URI's. If
@@ -146,7 +148,7 @@ public class PathParser {
     /**
      * Parses the given <code>jcrPath</code> and returns a <code>Path</code>. If
      * <code>parent</code> is not <code>null</code>, it is prepended to the
-     * built path before it is returned. If the specifed <code>jcrPath</code>
+     * built path before it is returned. If the specified <code>jcrPath</code>
      * is an identifier based absolute path beginning with an identifier segment
      * the given <code>identifierResolver</code> will be used to resolve it to an
      * absolute path.<p/>
@@ -174,7 +176,7 @@ public class PathParser {
     /**
      * Parses the given <code>jcrPath</code> and returns a <code>Path</code>. If
      * <code>parent</code> is not <code>null</code>, it is prepended to the
-     * built path before it is returned. If the specifed <code>jcrPath</code>
+     * built path before it is returned. If the specified <code>jcrPath</code>
      * is an identifier based absolute path beginning with an identifier segment
      * the given <code>identifierResolver</code> will be used to resolve it to an
      * absolute path.<p/>
@@ -198,9 +200,6 @@ public class PathParser {
                              IdentifierResolver identifierResolver, PathFactory factory,
                              boolean normalizeIdentifier)
             throws MalformedPathException, IllegalNameException, NamespaceException {
-        
-        final char EOF = (char) -1;
-
         // check for length
         int len = jcrPath == null ? 0 : jcrPath.length();
 
@@ -318,9 +317,8 @@ public class PathParser {
                         builder.addLast(factory.getParentElement());
                         lastPos = pos;
                         state = STATE_PREFIX_START;
-                    } else if (state == STATE_PREFIX_START && c == EOF) {
-                        // ignore trailing slash
-                    } else if (state != STATE_URI) {
+                    } else if (state != STATE_URI
+                            && !(state == STATE_PREFIX_START && c == EOF)) { // ignore trailing slash
                         throw new MalformedPathException("'" + jcrPath + "' is not a valid path. '" + c + "' not a valid name character.");
                     }
                     break;
@@ -346,9 +344,7 @@ public class PathParser {
                         }
                         state = STATE_NAME_START;
                         // don't reset the lastPos/pos since prefix+name are passed together to the NameResolver
-                    } else if (state == STATE_IDENTIFIER || state == STATE_URI) {
-                        // nothing do
-                    } else {
+                    } else if (state != STATE_IDENTIFIER && state != STATE_URI) {
                         throw new MalformedPathException("'" + jcrPath + "' is not a valid path. '" + c + "' not valid name character");
                     }
                     break;
@@ -361,9 +357,7 @@ public class PathParser {
                         state = STATE_INDEX;
                         name = jcrPath.substring(lastPos, pos - 1);
                         lastPos = pos;
-                    } else if (state == STATE_IDENTIFIER) {
-                        // nothing do
-                    } else {
+                    } else if (state != STATE_IDENTIFIER) {
                         throw new MalformedPathException("'" + jcrPath + "' is not a valid path. '" + c + "' not a valid name character.");
                     }
                     break;
@@ -379,9 +373,7 @@ public class PathParser {
                             throw new MalformedPathException("'" + jcrPath + "' is not a valid path. Index number invalid: " + index);
                         }
                         state = STATE_INDEX_END;
-                    } else if (state == STATE_IDENTIFIER) {
-                        // nothing do
-                    } else {
+                    } else if (state != STATE_IDENTIFIER) {
                         throw new MalformedPathException("'" + jcrPath + "' is not a valid path. '" + c + "' not a valid name character.");
                     }
                     break;
@@ -406,8 +398,14 @@ public class PathParser {
                         throw new MalformedPathException("'" + jcrPath + "' is not a valid path. '" + c + "' not a valid name character.");
                     }
                 case '{':
-                    if (state == STATE_PREFIX_START) {
+                    if (state == STATE_PREFIX_START && lastPos == pos-1) {
+                        // '{' marks the start of a uri enclosed in an expanded name
+                        // instead of the usual namespace prefix, if it is
+                        // located at the beginning of a new segment.
                         state = STATE_URI;
+                    } else if (state == STATE_NAME_START || state == STATE_DOT || state == STATE_DOTDOT) {
+                        // otherwise it's part of the local name
+                        state = STATE_NAME;
                     }
                     break;
 

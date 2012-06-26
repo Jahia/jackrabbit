@@ -97,10 +97,7 @@ public class BatchedItemOperations extends ItemValidator {
      * Creates a new <code>BatchedItemOperations</code> instance.
      *
      * @param stateMgr   item state manager
-     * @param ntReg      node type registry
-     * @param lockMgr    lock manager
-     * @param session    current session
-     * @param hierMgr    hierarchy manager
+     * @param sessionContext the session context
      * @throws RepositoryException
      */
     public BatchedItemOperations(
@@ -361,7 +358,7 @@ public class BatchedItemOperations extends ItemValidator {
      * @throws ItemExistsException
      * @throws LockException
      * @throws RepositoryException
-     * @throws IllegalStateException        if the state mananger is not in edit mode
+     * @throws IllegalStateException if the state manager is not in edit mode.
      */
     public NodeId copy(Path srcPath,
                        ItemStateManager srcStateMgr,
@@ -550,7 +547,9 @@ public class BatchedItemOperations extends ItemValidator {
             srcNameIndex = 1;
         }
 
+        stateMgr.store(target);
         if (renameOnly) {
+            stateMgr.store(srcParent);
             // change child node entry
             destParent.renameChildNodeEntry(srcPath.getName(), srcNameIndex,
                     destPath.getName());
@@ -564,6 +563,9 @@ public class BatchedItemOperations extends ItemValidator {
                 throw new UnsupportedRepositoryOperationException(msg);
             }
 
+            stateMgr.store(srcParent);
+            stateMgr.store(destParent);
+
             // do move:
             // 1. remove child node entry from old parent
             if (srcParent.removeChildNodeEntry(target.getNodeId())) {
@@ -574,14 +576,6 @@ public class BatchedItemOperations extends ItemValidator {
             }
         }
 
-        // store states
-        stateMgr.store(target);
-        if (renameOnly) {
-            stateMgr.store(srcParent);
-        } else {
-            stateMgr.store(destParent);
-            stateMgr.store(srcParent);
-        }
         return target.getNodeId();
     }
 
@@ -1047,7 +1041,7 @@ public class BatchedItemOperations extends ItemValidator {
      * @throws ItemExistsException
      * @throws ConstraintViolationException
      * @throws RepositoryException
-     * @throws IllegalStateException        if the state mananger is not in edit mode
+     * @throws IllegalStateException if the state manager is not in edit mode.
      */
     public NodeState createNodeState(NodeState parent,
                                      Name nodeName,
@@ -1101,10 +1095,6 @@ public class BatchedItemOperations extends ItemValidator {
             NodeId errorId = parent.getChildNodeEntry(nodeName, 1).getId();
             throw new ItemExistsException(safeGetJCRPath(errorId));
         }
-        if (id == null) {
-            // create new id
-            id = new NodeId();
-        }
         if (nodeTypeName == null) {
             // no primary node type specified,
             // try default primary type from definition
@@ -1123,7 +1113,7 @@ public class BatchedItemOperations extends ItemValidator {
         }
 
         // now add new child node entry to parent
-        parent.addChildNodeEntry(nodeName, id);
+        parent.addChildNodeEntry(nodeName, node.getNodeId());
 
         EffectiveNodeType ent = getEffectiveNodeType(node);
 
@@ -1173,7 +1163,7 @@ public class BatchedItemOperations extends ItemValidator {
      * @throws ItemExistsException
      * @throws ConstraintViolationException
      * @throws RepositoryException
-     * @throws IllegalStateException        if the state mananger is not in edit mode
+     * @throws IllegalStateException if the state manager is not in edit mode
      */
     public PropertyState createPropertyState(NodeState parent,
                                              Name propName,
@@ -1602,7 +1592,7 @@ public class BatchedItemOperations extends ItemValidator {
 
         NodeState newState;
         try {
-            NodeId id;
+            NodeId id = null;
             EffectiveNodeType ent = getEffectiveNodeType(srcState);
             boolean referenceable = ent.includesNodeType(NameConstants.MIX_REFERENCEABLE);
             boolean versionable = ent.includesNodeType(NameConstants.MIX_SIMPLE_VERSIONABLE);
@@ -1620,17 +1610,10 @@ public class BatchedItemOperations extends ItemValidator {
                         sharedState.addShare(destParentId);
                         return sharedState;
                     }
-                    // always create new uuid
-                    id = new NodeId();
-                    if (referenceable) {
-                        // remember uuid mapping
-                        refTracker.mappedId(srcState.getNodeId(), id);
-                    }
                     break;
                 case CLONE:
                     if (!referenceable) {
-                        // non-referenceable node: always create new uuid
-                        id = new NodeId();
+                        // non-referenceable node: always create new node id
                         break;
                     }
                     // use same uuid as source node
@@ -1648,8 +1631,7 @@ public class BatchedItemOperations extends ItemValidator {
                     break;
                 case CLONE_REMOVE_EXISTING:
                     if (!referenceable) {
-                        // non-referenceable node: always create new uuid
-                        id = new NodeId();
+                        // non-referenceable node: always create new node id
                         break;
                     }
                     // use same uuid as source node
@@ -1686,6 +1668,11 @@ public class BatchedItemOperations extends ItemValidator {
                             "unknown flag for copying node state: " + flag);
             }
             newState = stateMgr.createNew(id, srcState.getNodeTypeName(), destParentId);
+            id = newState.getNodeId();
+            if (flag == COPY && referenceable) {
+                // remember uuid mapping
+                refTracker.mappedId(srcState.getNodeId(), id);
+            }
             // copy node state
             newState.setMixinTypeNames(srcState.getMixinTypeNames());
             if (shareable) {
@@ -1759,7 +1746,7 @@ public class BatchedItemOperations extends ItemValidator {
             }
             // copy properties
             for (Name propName : srcState.getPropertyNames()) {
-                Path propPath = PathFactoryImpl.getInstance().create(srcPath, propName, true);                
+                Path propPath = PathFactoryImpl.getInstance().create(srcPath, propName, true);
                 PropertyId propId = new PropertyId(srcState.getNodeId(), propName);
                 if (!srcAccessMgr.canRead(propPath, propId)) {
                     continue;

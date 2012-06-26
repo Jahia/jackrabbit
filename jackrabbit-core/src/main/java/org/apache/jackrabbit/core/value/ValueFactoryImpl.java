@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.core.value;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.spi.commons.conversion.NamePathResolver;
@@ -57,6 +58,7 @@ public class ValueFactoryImpl extends ValueFactoryQImpl {
         this.store = store;
     }
 
+    @Override
     public Value createValue(QValue qvalue) {
         if (qvalue instanceof InternalValue && PropertyType.BINARY == qvalue.getType()) {
             try {
@@ -69,6 +71,7 @@ public class ValueFactoryImpl extends ValueFactoryQImpl {
         return super.createValue(qvalue);
     }
 
+    @Override
     public Binary createBinary(InputStream stream) throws RepositoryException {
         try {
             QValue value = getQValueFactory().create(stream);
@@ -79,9 +82,13 @@ public class ValueFactoryImpl extends ValueFactoryQImpl {
             }
         } catch (IOException e) {
             throw new RepositoryException(e);
+        } finally {
+            // JCR-2903
+            IOUtils.closeQuietly(stream);
         }
     }
 
+    @Override
     public Value createValue(Binary binary) {
         try {
             if (binary instanceof BLOBInDataStore) {
@@ -108,6 +115,7 @@ public class ValueFactoryImpl extends ValueFactoryQImpl {
         return super.createValue(binary);
     }
 
+    @Override
     public Value createValue(InputStream value) {
         try {
             InternalValue qvalue = (InternalValue) getQValueFactory().create(value);
@@ -116,9 +124,13 @@ public class ValueFactoryImpl extends ValueFactoryQImpl {
             throw new RuntimeException(ex);
         } catch (RepositoryException ex) {
             throw new RuntimeException(ex);
+        } finally {
+            // JCR-2903
+            IOUtils.closeQuietly(value);
         }
     }
 
+    @Override
     public Value createValue(String value, int type) throws ValueFormatException {
         if (PropertyType.BINARY == type) {
             try {

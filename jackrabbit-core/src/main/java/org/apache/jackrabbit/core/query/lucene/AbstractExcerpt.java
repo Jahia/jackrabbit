@@ -16,29 +16,33 @@
  */
 package org.apache.jackrabbit.core.query.lucene;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.apache.lucene.search.Query;
+import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
+
+import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
+import org.apache.lucene.analysis.tokenattributes.TermAttribute;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermDocs;
 import org.apache.lucene.index.TermFreqVector;
 import org.apache.lucene.index.TermPositionVector;
 import org.apache.lucene.index.TermVectorOffsetInfo;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Fieldable;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.Token;
-import org.apache.jackrabbit.core.id.NodeId;
-
-import java.io.IOException;
-import java.io.StringReader;
-import java.io.Reader;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.TreeMap;
-import java.util.SortedMap;
-import java.util.Arrays;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.Query;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * <code>AbstractExcerpt</code> implements base functionality for an excerpt
@@ -176,10 +180,32 @@ public abstract class AbstractExcerpt implements HighlightingExcerptProvider {
     /**
      * @return the extracted terms from the query.
      */
-    protected final Set<Term> getQueryTerms() {
-        Set<Term> extractedTerms = new HashSet<Term>();
-        Set<Term> relevantTerms = new HashSet<Term>();
-        query.extractTerms(extractedTerms);
+    protected final Set<Term[]> getQueryTerms() {
+        Set<Term[]> relevantTerms = new HashSet<Term[]>();
+        getQueryTerms(query, relevantTerms);
+        return relevantTerms;
+    }
+
+    private static void getQueryTerms(Query q, Set<Term[]> relevantTerms) {
+        if (q instanceof BooleanQuery) {
+            final BooleanQuery bq = (BooleanQuery) q;
+            for (BooleanClause clause : bq.getClauses()) {
+                getQueryTerms(clause.getQuery(), relevantTerms);
+            }
+            return;
+        }
+        //need to preserve insertion order
+        Set<Term> extractedTerms = new LinkedHashSet<Term>();
+        q.extractTerms(extractedTerms);
+        Set<Term> filteredTerms = filterRelevantTerms(extractedTerms);
+        if (!filteredTerms.isEmpty()) {
+            relevantTerms.add(filteredTerms.toArray(new Term[] {}));
+        }
+    }
+
+    private static Set<Term> filterRelevantTerms(Set<Term> extractedTerms) {
+      //need to preserve insertion order
+        Set<Term> relevantTerms = new LinkedHashSet<Term>();
         // only keep terms for fulltext fields
         for (Term t : extractedTerms) {
             if (t.field().equals(FieldNames.FULLTEXT)) {
@@ -231,10 +257,11 @@ public abstract class AbstractExcerpt implements HighlightingExcerptProvider {
             new TreeMap<String, TermVectorOffsetInfo[]>();
         Reader r = new StringReader(text);
         TokenStream ts = index.getTextAnalyzer().tokenStream("", r);
-        Token t = new Token();
         try {
-            while ((t = ts.next(t)) != null) {
-                String termText = t.term();
+            while (ts.incrementToken()) {
+                OffsetAttribute offset = ts.getAttribute(OffsetAttribute.class);
+                TermAttribute term = ts.getAttribute(TermAttribute.class);
+                String termText = term.term();
                 TermVectorOffsetInfo[] info = termMap.get(termText);
                 if (info == null) {
                     info = new TermVectorOffsetInfo[1];
@@ -244,9 +271,11 @@ public abstract class AbstractExcerpt implements HighlightingExcerptProvider {
                     System.arraycopy(tmp, 0, info, 0, tmp.length);
                 }
                 info[info.length - 1] = new TermVectorOffsetInfo(
-                        t.startOffset(), t.endOffset());
+                    offset.startOffset(), offset.endOffset());
                 termMap.put(termText, info);
             }
+            ts.end();
+            ts.close();
         } catch (IOException e) {
             // should never happen, we are reading from a string
         }

@@ -26,7 +26,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-parent</artifactId>
-    <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     <relativePath>../jackrabbit-parent/pom.xml</relativePath>
   </parent>
   <artifactId>jackrabbit-spi2dav</artifactId>
@@ -48,6 +48,18 @@
             <property>
               <name>known.issues</name>
               <value>
+                  <!--
+
+                  This is the list of failing TCK and jcr2spi tests in a jcr2spi - spi2davex setup.
+
+                  A comprehensive list of missing JCR 2.0 features can be found at
+                  https://issues.apache.org/jira/browse/JCR-2003
+
+                  Known issues of jcr2spi and spi2dav(ex) are listed at
+                  https://issues.apache.org/jira/secure/IssueNavigator.jspa?reset=true&jqlQuery=project+%3D+JCR+AND+component+%3D+jackrabbit-jcr2spi+AND+status+%3D+Open+ORDER+BY+priority+DESC&mode=hide
+                  https://issues.apache.org/jira/secure/IssueNavigator.jspa?reset=true&jqlQuery=project+%3D+JCR+AND+component+%3D+jackrabbit-spi2dav+AND+status+%3D+Open+ORDER+BY+priority+DESC&mode=hide
+
+                  -->
                   <!-- ***** PLEASE update jcr2dav/pom.xml as well ********* -->
                   <!-- wrong exception: ConstraintViolationEx. instead SAXException/InvalidSerializedDataEx.-->
                   org.apache.jackrabbit.test.api.SerializationTest#testNodeTypeConstraintViolationWorkspace
@@ -61,36 +73,10 @@
                   org.apache.jackrabbit.test.api.lock.LockManagerTest#testAddInvalidLockToken
                   org.apache.jackrabbit.test.api.lock.LockManagerTest#testAddLockTokenToAnotherSession
                   org.apache.jackrabbit.test.api.lock.LockManagerTest#testLockTransfer2
-                  <!-- JCR-2454 : node type registration -->
-                  org.apache.jackrabbit.test.api.nodetype.NodeTypeCreationTest#testRegisterNodeType
-                  org.apache.jackrabbit.test.api.nodetype.NodeTypeCreationTest#testRegisterNodeTypes
-                  <!-- JCR-2539 : user data (observation) -->
-                  org.apache.jackrabbit.test.api.observation.GetUserDataTest
-                  <!-- JCR-2540 : move/reorder (observation) -->
-                  org.apache.jackrabbit.test.api.observation.NodeMovedTest
-                  org.apache.jackrabbit.test.api.observation.NodeReorderTest
-                  org.apache.jackrabbit.test.api.observation.GetIdentifierTest#testNodeMoved
-                  org.apache.jackrabbit.test.api.observation.GetIdentifierTest#testNodeRemoved
-                  org.apache.jackrabbit.test.api.observation.WorkspaceOperationTest#testRename
-                  org.apache.jackrabbit.test.api.observation.WorkspaceOperationTest#testMove
-                  <!-- JCR-2541 : event journal -->
-                  org.apache.jackrabbit.test.api.observation.EventJournalTest
-                  <!-- JCR-2542 : event filter -->
-                  org.apache.jackrabbit.test.api.observation.AddEventListenerTest#testNodeType
-                  org.apache.jackrabbit.test.api.observation.AddEventListenerTest#testNoLocalTrue
                   <!-- JCR-2533 : missing impl of checkQueryStatement -->
                   org.apache.jackrabbit.test.api.query.CreateQueryTest#testUnknownQueryLanguage
-                  <!-- JCR-2543 : query offset -->
-                  org.apache.jackrabbit.test.api.query.SetOffsetTest#testSetOffset
                   <!-- JCR-2533 : missing impl of checkQueryStatement -->
                   org.apache.jackrabbit.test.api.query.qom.BindVariableValueTest
-                  <!-- JCR-2535 : Row.getPath() called with multiple selectors (server-side) -->
-                  org.apache.jackrabbit.test.api.query.qom.ChildNodeJoinConditionTest
-                  org.apache.jackrabbit.test.api.query.qom.ColumnTest#testMultiColumn
-                  org.apache.jackrabbit.test.api.query.qom.DescendantNodeJoinConditionTest
-                  org.apache.jackrabbit.test.api.query.qom.EquiJoinConditionTest
-                  org.apache.jackrabbit.test.api.query.qom.OrderingTest#testMultipleSelectors
-                  org.apache.jackrabbit.test.api.query.qom.SameNodeJoinConditionTest
                   <!-- JCR-2112 : simple versioning not implemented -->
                   org.apache.jackrabbit.test.api.version.simple
                   <!-- JCR-2104 : activities and configuration -->
@@ -132,23 +118,23 @@
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <classifier />
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi-commons</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-commons</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-webdav</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
     </dependency>
     <dependency>
       <groupId>javax.jcr</groupId>
@@ -170,20 +156,20 @@
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-tests</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr2spi</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <classifier />
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr2spi</artifactId>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
@@ -191,7 +177,7 @@
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-spi</artifactId>
       <classifier>tests</classifier>
-      <version>2.2.4-rev1068882-patch8</version>
+      <version>2.4.2-rev1346887-patch8</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

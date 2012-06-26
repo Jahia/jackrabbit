@@ -30,6 +30,7 @@ import java.util.Set;
 /**
  * <code>NameQuery</code> implements a query for the name of a node.
  */
+@SuppressWarnings("serial")
 public class NameQuery extends Query {
 
     /**
@@ -96,7 +97,7 @@ public class NameQuery extends Query {
     /**
      * {@inheritDoc}
      */
-    public void extractTerms(Set terms) {
+    public void extractTerms(Set<Term> terms) {
     }
 
     /**

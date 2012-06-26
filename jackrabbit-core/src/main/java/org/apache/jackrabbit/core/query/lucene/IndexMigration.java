@@ -113,7 +113,7 @@ public class IndexMigration {
                     IndexWriter.MaxFieldLength.UNLIMITED);
             try {
                 IndexReader r = new MigrationIndexReader(
-                        IndexReader.open(index.getDirectory()),
+                        IndexReader.open(index.getDirectory(), true),
                         oldSeparatorChar);
                 try {
                     writer.addIndexes(new IndexReader[]{r});
@@ -159,7 +159,9 @@ public class IndexMigration {
                 for (Fieldable field : fields) {
                     String value = field.stringValue();
                     value = value.replace(oldSepChar, '[');
-                    doc.add(new Field(FieldNames.PROPERTIES, value, Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS));
+                    doc.add(new Field(FieldNames.PROPERTIES, false, value,
+                            Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS,
+                            Field.TermVector.NO));
                 }
             }
             return doc;

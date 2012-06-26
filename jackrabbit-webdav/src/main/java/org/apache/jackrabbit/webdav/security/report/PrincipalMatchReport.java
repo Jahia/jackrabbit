@@ -42,7 +42,7 @@ import org.w3c.dom.Element;
  * &lt;!ELEMENT principal-match ((principal-property | self), prop?)&gt;
  * &lt;!ELEMENT principal-property ANY&gt;
  * ANY value: an element whose value identifies a property. The value of this
- * property typically contains an href element refering to a principal.
+ * property typically contains an href element referring to a principal.
  * &lt;!ELEMENT self EMPTY&gt;
  * prop: see RFC 2518, Section 12.11
  * </pre>
@@ -51,8 +51,8 @@ import org.w3c.dom.Element;
  */
 public class PrincipalMatchReport extends AbstractSecurityReport {
 
-    public static String XML_PRINCIPAL_PROPERTY = "principal-property";
-    public static String XML_SELF = "self";
+    public static final String XML_PRINCIPAL_PROPERTY = "principal-property";
+    public static final String XML_SELF = "self";
 
     /**
      * The report name

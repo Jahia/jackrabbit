@@ -20,6 +20,9 @@ import javax.jcr.UnsupportedRepositoryOperationException;
 import javax.jcr.security.AccessControlException;
 import javax.jcr.security.AccessControlPolicy;
 import javax.jcr.security.Privilege;
+
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
+import org.apache.jackrabbit.api.security.authorization.PrivilegeManager;
 import org.apache.jackrabbit.core.HierarchyManager;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.security.AMContext;
@@ -30,7 +33,6 @@ import org.apache.jackrabbit.core.security.SystemPrincipal;
 import org.apache.jackrabbit.core.security.authorization.AccessControlProvider;
 import org.apache.jackrabbit.core.security.authorization.NamedAccessControlPolicyImpl;
 import org.apache.jackrabbit.core.security.authorization.Permission;
-import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.security.authorization.WorkspaceAccessManager;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
@@ -65,7 +67,7 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
 
     private NamePathResolver resolver;
     private WorkspaceAccessManager wspAccessMgr;
-    private PrivilegeRegistry privilegeRegistry;
+    private PrivilegeManager privilegeManager;
 
     private boolean initialized;
 
@@ -101,7 +103,7 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
         subject = context.getSubject();
         hierMgr = context.getHierarchyManager();
         resolver = context.getNamePathResolver();
-        privilegeRegistry = new PrivilegeRegistry(resolver);
+        privilegeManager = ((JackrabbitWorkspace) context.getSession().getWorkspace()).getPrivilegeManager();
         wspAccessMgr = wspAccessManager;
         anonymous = !subject.getPrincipals(AnonymousPrincipal.class).isEmpty();
         system = !subject.getPrincipals(SystemPrincipal.class).isEmpty();
@@ -137,6 +139,15 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
      */
     public void checkPermission(Path absPath, int permissions) throws AccessDeniedException, RepositoryException {
         if (!isGranted(absPath, permissions)) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public void checkRepositoryPermission(int permissions) throws AccessDeniedException, RepositoryException {
+        if (!isGranted((ItemId) null, permissions)) {
             throw new AccessDeniedException("Access denied");
         }
     }
@@ -217,7 +228,7 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
                 // system has always all permissions
                 return true;
             } else if (anonymous) {
-                if (privileges.length != 1 || !privileges[0].equals(privilegeRegistry.getPrivilege(Privilege.JCR_READ))) {
+                if (privileges.length != 1 || !privileges[0].equals(privilegeManager.getPrivilege(Privilege.JCR_READ))) {
                     // anonymous is only granted READ permissions
                     return false;
                 }
@@ -237,12 +248,12 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
 
         Privilege priv;
         if (anonymous) {
-            priv = privilegeRegistry.getPrivilege(Privilege.JCR_READ);
+            priv = privilegeManager.getPrivilege(Privilege.JCR_READ);
         } else if (system) {
-            priv = privilegeRegistry.getPrivilege(Privilege.JCR_ALL);
+            priv = privilegeManager.getPrivilege(Privilege.JCR_ALL);
         } else {
             // @todo check permission based on principals
-            priv = privilegeRegistry.getPrivilege(Privilege.JCR_ALL);
+            priv = privilegeManager.getPrivilege(Privilege.JCR_ALL);
         }
         return new Privilege[] {priv};
     }
@@ -280,13 +291,11 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
     }
 
     /**
-     * @see AbstractAccessControlManager#getPrivilegeRegistry()
+     * @see AbstractAccessControlManager#getPrivilegeManager()
      */
     @Override
-    protected PrivilegeRegistry getPrivilegeRegistry()
-            throws RepositoryException {
-        checkInitialized();
-        return privilegeRegistry;
+    protected PrivilegeManager getPrivilegeManager() throws RepositoryException {
+        return privilegeManager;
     }
 
     /**
@@ -294,13 +303,15 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
      */
     @Override
     protected void checkValidNodePath(String absPath) throws PathNotFoundException, RepositoryException {
-        Path path = resolver.getQPath(absPath);
-        if (!path.isAbsolute()) {
-            throw new RepositoryException("Absolute path expected. Found: " + absPath);
-        }
+        if (absPath != null) {
+            Path path = resolver.getQPath(absPath);
+            if (!path.isAbsolute()) {
+                throw new RepositoryException("Absolute path expected. Found: " + absPath);
+            }
 
-        if (hierMgr.resolveNodePath(path) == null) {
-            throw new PathNotFoundException(absPath);
+            if (hierMgr.resolveNodePath(path) == null) {
+                throw new PathNotFoundException(absPath);
+            }
         }
     }
 
@@ -331,7 +342,7 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
         if (principals.size() == 1) {
             Principal princ = principals.iterator().next();
             if (princ instanceof AnonymousPrincipal) {
-                return privileges.length == 1 && privileges[0].equals(privilegeRegistry.getPrivilege(Privilege.JCR_READ));
+                return privileges.length == 1 && privileges[0].equals(privilegeManager.getPrivilege(Privilege.JCR_READ));
             }
         }
 
@@ -351,11 +362,11 @@ public class SimpleAccessManager extends AbstractAccessControlManager implements
         if (principals.size() == 1) {
             Principal princ = principals.iterator().next();
             if (princ instanceof AnonymousPrincipal) {
-                return new Privilege[] {privilegeRegistry.getPrivilege(Privilege.JCR_READ)};
+                return new Privilege[] {privilegeManager.getPrivilege(Privilege.JCR_READ)};
             }
         }
 
         // @todo check permission based on principals
-        return new Privilege[] {privilegeRegistry.getPrivilege(Privilege.JCR_ALL)};
+        return new Privilege[] {privilegeManager.getPrivilege(Privilege.JCR_ALL)};
     }
 }

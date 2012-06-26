@@ -25,11 +25,12 @@ import org.apache.lucene.document.FieldSelectorResult;
 public class FieldSelectors {
 
     /**
-     * Do not instanciate.
+     * Do not instantiate.
      */
     private FieldSelectors() {
     }
 
+    @SuppressWarnings("serial")
     public static final FieldSelector UUID = new FieldSelector() {
         /**
          * Only accepts {@link FieldNames#UUID}.
@@ -46,6 +47,7 @@ public class FieldSelectors {
         }
     };
 
+    @SuppressWarnings("serial")
     public static final FieldSelector UUID_AND_PARENT = new FieldSelector() {
         /**
          * Accepts {@link FieldNames#UUID} and {@link FieldNames#PARENT}.

@@ -72,7 +72,7 @@ class IndexHistory {
         this.indexDir = dir;
         this.maxAge = maxAge;
         // read all index infos
-        String[] names = dir.list();
+        String[] names = dir.listAll();
         if (names != null) {
             for (String name : names) {
                 if (name.startsWith(INDEXES)) {
@@ -104,7 +104,7 @@ class IndexHistory {
      * <li>{@link Long#MIN_VALUE}: indicates that there is no index segment with the given name.</li>
      * </ul>
      *
-     * @param indexName name of an index segement.
+     * @param indexName name of an index segment.
      * @return the time when the index segment with the given name was in use
      *          the last time.
      */
@@ -131,10 +131,10 @@ class IndexHistory {
     void pruneOutdated() {
         long threshold = System.currentTimeMillis() - maxAge;
         log.debug("Pruning index infos older than: " + threshold + "(" + indexDir + ")");
-        Iterator it = indexInfosMap.values().iterator();
+        Iterator<IndexInfos> it = indexInfosMap.values().iterator();
         // never prune the current generation
         if (it.hasNext()) {
-            IndexInfos infos = (IndexInfos) it.next();
+            IndexInfos infos = it.next();
             log.debug("Skipping first index infos. generation=" + infos.getGeneration());
         }
         while (it.hasNext()) {

@@ -48,6 +48,7 @@ import org.apache.jackrabbit.commons.cnd.CompactNodeTypeDefReader;
 import org.apache.jackrabbit.commons.cnd.ParseException;
 import org.apache.jackrabbit.commons.iterator.NodeTypeIteratorAdapter;
 import org.apache.jackrabbit.core.nodetype.xml.NodeTypeReader;
+import org.apache.jackrabbit.core.security.authorization.Permission;
 import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.QNodeDefinition;
@@ -103,9 +104,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
     /**
      * Creates a new <code>NodeTypeManagerImpl</code> instance.
      *
-     * @param ntReg      node type registry
-     * @param session    current session
-     * @param store      the data store
+     * @param context the session context
      */
     @SuppressWarnings("unchecked")
     public NodeTypeManagerImpl(SessionContext context) {
@@ -137,6 +136,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
      * @param def the QNodeDefinition
      * @return the node definition
      */
+    @Override
     public NodeDefinitionImpl getNodeDefinition(QNodeDefinition def) {
         synchronized (ndCache) {
             NodeDefinitionImpl ndi = ndCache.get(def);
@@ -152,6 +152,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
      * @param def prop def
      * @return the property definition
      */
+    @Override
     public PropertyDefinitionImpl getPropertyDefinition(QPropertyDefinition def) {
         synchronized (pdCache) {
             PropertyDefinitionImpl pdi = pdCache.get(def);
@@ -169,6 +170,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
      * @return node type
      * @throws NoSuchNodeTypeException if the nodetype does not exit
      */
+    @Override
     public NodeTypeImpl getNodeType(Name name) throws NoSuchNodeTypeException {
         synchronized (ntCache) {
             NodeTypeImpl nt = ntCache.get(name);
@@ -188,6 +190,7 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
     /**
      * @see org.apache.jackrabbit.spi.commons.nodetype.AbstractNodeTypeManager#getNamePathResolver()
      */
+    @Override
     public NamePathResolver getNamePathResolver() {
         return context;
     }
@@ -217,6 +220,9 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
     public NodeType[] registerNodeTypes(InputStream in, String contentType,
             boolean reregisterExisting)
             throws IOException, RepositoryException {
+        
+        // make sure the editing session is allowed to register node types.
+        context.getAccessManager().checkRepositoryPermission(Permission.NODE_TYPE_DEF_MNGMT);
 
         try {
             Map<String, String> namespaceMap = new HashMap<String, String>();
@@ -547,6 +553,10 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
             NodeTypeDefinition[] definitions, boolean allowUpdate)
             throws InvalidNodeTypeDefinitionException, NodeTypeExistsException,
             UnsupportedRepositoryOperationException, RepositoryException {
+
+        // make sure the editing session is allowed to register node types.
+        context.getAccessManager().checkRepositoryPermission(Permission.NODE_TYPE_DEF_MNGMT);
+
         NodeTypeRegistry registry = context.getNodeTypeRegistry();
 
         // split the node types into new and already registered node types.
@@ -603,6 +613,10 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
     public void unregisterNodeTypes(String[] names)
             throws UnsupportedRepositoryOperationException,
             NoSuchNodeTypeException, RepositoryException {
+
+        // make sure the editing session is allowed to un-register node types.
+        context.getAccessManager().checkRepositoryPermission(Permission.NODE_TYPE_DEF_MNGMT);
+
         Set<Name> ntNames = new HashSet<Name>();
         for (String name : names) {
             try {
@@ -640,5 +654,4 @@ public class NodeTypeManagerImpl extends AbstractNodeTypeManager
         return "NodeTypeManager(" + super.toString() + ")\n"
             + context.getNodeTypeRegistry();
     }
-
 }

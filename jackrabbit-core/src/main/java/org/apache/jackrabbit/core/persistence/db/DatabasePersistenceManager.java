@@ -56,6 +56,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 
 /**
  * Abstract base class for database persistence managers. This class
@@ -106,7 +107,7 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
     protected static final int SLEEP_BEFORE_RECONNECT = 10000;
 
     // the map of prepared statements (key: sql stmt, value: prepared stmt)
-    private HashMap preparedStatements = new HashMap();
+    private Map<String, PreparedStatement> preparedStatements = new HashMap<String, PreparedStatement>();
 
     // SQL statements for NodeState management
     protected String nodeStateInsertSQL;
@@ -269,8 +270,8 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
 
         try {
             // close shared prepared statements
-            for (Iterator it = preparedStatements.values().iterator(); it.hasNext();) {
-                closeStatement((PreparedStatement) it.next());
+            for (PreparedStatement ps : preparedStatements.values()) {
+                closeStatement(ps);
             }
             preparedStatements.clear();
 
@@ -450,9 +451,10 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
      * This method uses shared <code>PreparedStatement</code>s which must
      * be executed strictly sequentially. Because this method synchronizes on
      * the persistence manager instance there is no need to synchronize on the
-     * shared statement. If the method would not be sychronized the shared
+     * shared statement. If the method would not be synchronized the shared
      * statements would have to be synchronized.
      */
+    @Override
     public synchronized void store(NodeState state) throws ItemStateException {
         if (!initialized) {
             throw new IllegalStateException("not initialized");
@@ -488,9 +490,10 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
      * This method uses shared <code>PreparedStatement</code>s which must
      * be executed strictly sequentially. Because this method synchronizes on
      * the persistence manager instance there is no need to synchronize on the
-     * shared statement. If the method would not be sychronized the shared
+     * shared statement. If the method would not be synchronized the shared
      * statements would have to be synchronized.
      */
+    @Override
     public synchronized void store(PropertyState state)
             throws ItemStateException {
         if (!initialized) {
@@ -626,9 +629,10 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
      * This method uses shared <code>PreparedStatement</code>s which must
      * be executed strictly sequentially. Because this method synchronizes on
      * the persistence manager instance there is no need to synchronize on the
-     * shared statement. If the method would not be sychronized the shared
+     * shared statement. If the method would not be synchronized the shared
      * statements would have to be synchronized.
      */
+    @Override
     public synchronized void store(NodeReferences refs)
             throws ItemStateException {
         if (!initialized) {
@@ -825,8 +829,8 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
         // gracefully in order to avoid potential memory leaks
 
         // close shared prepared statements
-        for (Iterator it = preparedStatements.values().iterator(); it.hasNext();) {
-            PreparedStatement stmt = ((PreparedStatement) it.next());
+        for (Iterator<PreparedStatement> it = preparedStatements.values().iterator(); it.hasNext();) {
+            PreparedStatement stmt = it.next();
             if (stmt != null) {
                 try {
                     stmt.close();
@@ -987,7 +991,7 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
         legalChars += "ABCDEFGHIJKLMNOPQRSTUVWXZY0123456789_";
 
         String prefix = schemaObjectPrefix.toUpperCase();
-        StringBuffer escaped = new StringBuffer();
+        StringBuilder escaped = new StringBuilder();
         for (int i = 0; i < prefix.length(); i++) {
             char c = prefix.charAt(i);
             if (legalChars.indexOf(c) == -1) {
@@ -1183,7 +1187,7 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
 
     //--------------------------------------------------------< inner classes >
 
-    class SizedInputStream extends FilterInputStream {
+    static class SizedInputStream extends FilterInputStream {
         private final long size;
         private boolean consumed = false;
 
@@ -1227,7 +1231,7 @@ public abstract class DatabasePersistenceManager extends AbstractPersistenceMana
          */
         public String createId(PropertyId id, int index) {
             // the blobId is a simple string concatenation of id plus index
-            StringBuffer sb = new StringBuffer();
+            StringBuilder sb = new StringBuilder();
             sb.append(id.toString());
             sb.append('[');
             sb.append(index);

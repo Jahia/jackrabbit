@@ -22,6 +22,7 @@ import java.util.Set;
 import javax.jcr.ReferentialIntegrityException;
 
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.id.NodeIdFactory;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
 import org.apache.jackrabbit.core.persistence.PersistenceManager;
@@ -36,7 +37,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Spezialized SharedItemStateManager that filters out NodeReferences to
+ * Specialized SharedItemStateManager that filters out NodeReferences to
  * non-versioning states.
  */
 public class VersionItemStateManager extends SharedItemStateManager {
@@ -55,9 +56,10 @@ public class VersionItemStateManager extends SharedItemStateManager {
                                    NodeId rootNodeId,
                                    NodeTypeRegistry ntReg,
                                    ItemStateCacheFactory cacheFactory,
-                                   ISMLocking locking)
+                                   ISMLocking locking,
+                                   NodeIdFactory nodeIdFactory)
             throws ItemStateException {
-        super(persistMgr, rootNodeId, ntReg, false, cacheFactory, locking);
+        super(persistMgr, rootNodeId, ntReg, false, cacheFactory, locking, nodeIdFactory);
         this.pMgr = persistMgr;
     }
 

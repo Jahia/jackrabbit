@@ -102,7 +102,7 @@ public class IndexFormatVersion {
      * index reader.
      */
     public static IndexFormatVersion getVersion(IndexReader indexReader) {
-        Collection fields = indexReader.getFieldNames(
+        Collection<String> fields = indexReader.getFieldNames(
                 IndexReader.FieldOption.ALL);
         if (fields.contains(FieldNames.LOCAL_NAME) || indexReader.numDocs() == 0) {
             return IndexFormatVersion.V3;

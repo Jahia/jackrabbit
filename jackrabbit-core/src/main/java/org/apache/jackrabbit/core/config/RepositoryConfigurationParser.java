@@ -156,7 +156,7 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
     /** Name of the application name configuration attribute. */
     public static final String APP_NAME_ATTRIBUTE = "appName";
 
-    /** Name of the workspace conaining security data. */
+    /** Name of the workspace containing security data. */
     public static final String WSP_NAME_ATTRIBUTE = "workspaceName";
 
     /** Name of the root path configuration attribute. */
@@ -196,6 +196,12 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
      * implementation of AccessControlProvider should be used.
      */
     private static final String AC_PROVIDER_ELEMENT = "AccessControlProvider";
+
+    /**
+     * Optional configuration elements with the user manager configuration.
+     * @see org.apache.jackrabbit.core.security.user.action.AuthorizableAction
+     */
+    private static final String AUTHORIZABLE_ACTION = "AuthorizableAction";
 
     /**
      * The repositories {@link ConnectionFactory}. 
@@ -424,7 +430,12 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
             UserManagerConfig umc = null;
             element = getElement(smElement, USER_MANAGER_ELEMENT, false);
             if (element != null) {
-                umc = new UserManagerConfig(parseBeanConfig(smElement, USER_MANAGER_ELEMENT));
+                Element[] acElements = getElements(element, AUTHORIZABLE_ACTION, false);
+                BeanConfig[] aaConfig = new BeanConfig[acElements.length];
+                for (int i = 0; i < acElements.length; i++) {
+                    aaConfig[i] = parseBeanConfig(acElements[i]);
+                }
+                umc = new UserManagerConfig(parseBeanConfig(element), aaConfig);
             }
 
             BeanConfig uidcc = null;
@@ -536,7 +547,8 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
      * Parse workspace config.
      *
      * @param root root element of the workspace configuration
-     *
+     * @return The workspace configuration
+     * @throws ConfigurationException
      * @see #parseWorkspaceConfig(InputSource)
      */
     protected WorkspaceConfig parseWorkspaceConfig(Element root)
@@ -546,8 +558,7 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
         String home = getVariables().getProperty(WORKSPACE_HOME_VARIABLE);
 
         // Workspace name
-        String name =
-            getAttribute(root, NAME_ATTRIBUTE, new File(home).getName());
+        String name = getAttribute(root, "name", new File(home).getName());
 
         // Clustered attribute
         boolean clustered = Boolean.valueOf(
@@ -578,12 +589,22 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
         // workspace specific security configuration
         WorkspaceSecurityConfig workspaceSecurityConfig = tmpParser.parseWorkspaceSecurityConfig(root);
 
-        // optinal config for import handling
+        // optional config for import handling
         ImportConfig importConfig = tmpParser.parseImportConfig(root);
+
+        // default lock timeout
+        String to = getAttribute(root, "defaultLockTimeout", new Long(Long.MAX_VALUE).toString());
+        long defaultLockTimeout;
+        try {
+            defaultLockTimeout = Long.parseLong(to);
+        }
+        catch (NumberFormatException ex) {
+            throw new ConfigurationException("defaultLockTimeout must be an integer value", ex);
+        }
 
         return new WorkspaceConfig(
                 home, name, clustered, fsf, pmc, qhf,
-                ismLockingFactory, nodeTypeInstanceHandlerFactory, workspaceSecurityConfig, importConfig);
+                ismLockingFactory, nodeTypeInstanceHandlerFactory, workspaceSecurityConfig, importConfig, defaultLockTimeout);
     }
 
     /**
@@ -860,7 +881,7 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
                     File file = new File(home, CLUSTER_NODE_ID_FILE);
                     try {
                         if (file.exists() && file.canRead()) {
-                            id = FileUtils.readFileToString(file);
+                            id = FileUtils.readFileToString(file).trim();
                         } else {
                             id = UUID.randomUUID().toString();
                             FileUtils.writeStringToFile(file, id);

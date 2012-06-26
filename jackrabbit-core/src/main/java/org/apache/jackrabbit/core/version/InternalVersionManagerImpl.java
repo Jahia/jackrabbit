@@ -22,6 +22,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+import javax.jcr.InvalidItemStateException;
 import javax.jcr.PropertyType;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
@@ -35,6 +36,7 @@ import org.apache.jackrabbit.core.cluster.UpdateEventListener;
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.id.NodeIdFactory;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
 import org.apache.jackrabbit.core.observation.DelegatingObservationDispatcher;
@@ -72,7 +74,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     /**
      * the default logger
      */
-    private static Logger log = LoggerFactory.getLogger(InternalVersionManager.class);
+    private static Logger log = LoggerFactory.getLogger(InternalVersionManagerImpl.class);
 
     /**
      * The path of the jcr:system node: /jcr:system
@@ -119,7 +121,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
      * Persistent root node of the activities.
      */
     private final NodeStateEx activitiesRoot;
-    
+
     /**
      * Map of returned items. this is kept for invalidating
      */
@@ -148,8 +150,9 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
                               NodeId historiesId,
                               NodeId activitiesId,
                               ItemStateCacheFactory cacheFactory,
-                              ISMLocking ismLocking) throws RepositoryException {
-        super(ntReg, historiesId, activitiesId);
+                              ISMLocking ismLocking,
+                              NodeIdFactory nodeIdFactory) throws RepositoryException {
+        super(ntReg, historiesId, activitiesId, nodeIdFactory);
         try {
             this.pMgr = pMgr;
             this.fs = fs;
@@ -187,7 +190,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
                 pMgr.store(cl);
             }
 
-            sharedStateMgr = createItemStateManager(pMgr, systemId, ntReg, cacheFactory, ismLocking);
+            sharedStateMgr = createItemStateManager(pMgr, systemId, ntReg, cacheFactory, ismLocking, nodeIdFactory);
 
             stateMgr = LocalItemStateManager.createInstance(sharedStateMgr, escFactory, cacheFactory);
             stateMgr.addListener(this);
@@ -244,6 +247,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
      * This method must not be synchronized since it could cause deadlocks with
      * item-reading listeners in the observation thread.
      */
+    @Override
     protected VersionHistoryInfo createVersionHistory(Session session,
                   final NodeState node, final NodeId copiedFrom)
             throws RepositoryException {
@@ -255,7 +259,8 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
         });
 
         if (state == null) {
-            throw new VersionException("History already exists for node " + node.getNodeId());
+            throw new InvalidItemStateException(
+                    "History already exists for node " + node.getNodeId());
         }
         Name root = NameConstants.JCR_ROOTVERSION;
         return new VersionHistoryInfo(
@@ -299,6 +304,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     /**
      * {@inheritDoc}
      */
+    @Override
     public boolean hasItem(NodeId id) {
         VersioningLock.ReadLock lock = acquireReadLock();
         try {
@@ -311,6 +317,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     /**
      * {@inheritDoc}
      */
+    @Override
     protected InternalVersionItem getItem(NodeId id)
             throws RepositoryException {
 
@@ -499,6 +506,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     /**
      * {@inheritDoc}
      */
+    @Override
     protected void itemDiscarded(InternalVersionItem item) {
         // evict removed item from cache
         VersioningLock.ReadLock lock = acquireReadLock();
@@ -512,6 +520,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     /**
      * {@inheritDoc}
      */
+    @Override
     protected boolean hasItemReferences(NodeId id)
             throws RepositoryException {
         return stateMgr.hasNodeReferences(id);
@@ -520,6 +529,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     /**
      * {@inheritDoc}
      */
+    @Override
     protected NodeStateEx getNodeStateEx(NodeId parentNodeId)
             throws RepositoryException {
         try {
@@ -535,6 +545,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
      *
      * @return the version history root node
      */
+    @Override
     protected NodeStateEx getHistoryRoot() {
         return historyRoot;
     }
@@ -544,6 +555,7 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
      *
      * @return the activities root node
      */
+    @Override
     protected NodeStateEx getActivitiesRoot() {
         return activitiesRoot;
     }
@@ -571,9 +583,10 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
                                                              NodeId rootId,
                                                              NodeTypeRegistry ntReg,
                                                              ItemStateCacheFactory cacheFactory,
-                                                             ISMLocking ismLocking)
+                                                             ISMLocking ismLocking,
+                                                             NodeIdFactory nodeIdFactory)
             throws ItemStateException {
-        return new VersionItemStateManager(pMgr, rootId, ntReg, cacheFactory, ismLocking);
+        return new VersionItemStateManager(pMgr, rootId, ntReg, cacheFactory, ismLocking, nodeIdFactory);
     }
 
     /**
@@ -632,9 +645,12 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
 
         Collection<InternalVersionItem> items =
             new ArrayList<InternalVersionItem>();
-        for (Map.Entry<ItemId, InternalVersionItem> entry : versionItems.entrySet()) {
-            if (changes.has(entry.getKey())) {
-                items.add(entry.getValue());
+        synchronized (versionItems) {
+            for (Map.Entry<ItemId, InternalVersionItem> entry : versionItems
+                    .entrySet()) {
+                if (changes.has(entry.getKey())) {
+                    items.add(entry.getValue());
+                }
             }
         }
         itemsUpdated(items);

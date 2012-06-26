@@ -48,7 +48,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The JCR Version Manager impementation is split in several classes in order to
+ * The JCR Version Manager implementation is split in several classes in order to
  * group related methods together.
  * </p>
  * this class provides methods for the merge operations.
@@ -79,7 +79,7 @@ abstract public class VersionManagerImplMerge extends VersionManagerImplRestore 
      * @param state state to merge or update
      * @param srcRoot src workspace root node
      * @param failedIds list of failed ids
-     * @param bestEffort best effor flag
+     * @param bestEffort best effort flag
      * @param shallow is shallow flag
      * @throws RepositoryException if an error occurs
      * @throws ItemStateException if an error occurs
@@ -119,7 +119,7 @@ abstract public class VersionManagerImplMerge extends VersionManagerImplRestore 
      * @param state state to merge or update
      * @param srcRoot src workspace root node
      * @param failedIds list of failed ids
-     * @param bestEffort best effor flag
+     * @param bestEffort best effort flag
      * @param shallow is shallow flag
      * @throws RepositoryException if an error occurs
      * @throws ItemStateException if an error occurs
@@ -331,13 +331,12 @@ abstract public class VersionManagerImplMerge extends VersionManagerImplRestore 
                 // - If V' is an eventual predecessor of V or if V and V' are identical (i.e., are
                 // actually the same version), then the merge result for N is leave.
                 return null;
-            } else {
-                // - If V is neither an eventual successor of, eventual predecessor of, nor
-                // identical with V', then the merge result for N is failed. This is the case
-                // where N and N' represent divergent branches of the version graph.
-
-                // failed is covered below
             }
+            // - If V is neither an eventual successor of, eventual predecessor of, nor
+            // identical with V', then the merge result for N is failed. This is the case
+            // where N and N' represent divergent branches of the version graph.
+
+            // failed is covered below
         } else {
             // If N is currently checked-out then:
             if (v.equals(vp) || v.isMoreRecent(vp)) {
@@ -345,12 +344,11 @@ abstract public class VersionManagerImplMerge extends VersionManagerImplRestore 
                 //   actually the same version), then the merge result for
                 //   N is leave.
                 return null;
-            } else {
-                // - If any other relationship holds between V and V', then the merge result
-                //   for N is fail.
-
-                // failed is covered below
             }
+            // - If any other relationship holds between V and V', then the merge result
+            //   for N is fail.
+
+            // failed is covered below
         }
 
 

@@ -18,7 +18,6 @@ package org.apache.jackrabbit.core.state;
 
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
@@ -26,12 +25,12 @@ import javax.jcr.PropertyType;
 import javax.jcr.ReferentialIntegrityException;
 import javax.jcr.RepositoryException;
 import javax.jcr.nodetype.NoSuchNodeTypeException;
-import javax.jcr.nodetype.NodeType;
 
 import org.apache.jackrabbit.core.RepositoryImpl;
 import org.apache.jackrabbit.core.cluster.UpdateEventChannel;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.id.NodeIdFactory;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.nodetype.EffectiveNodeType;
 import org.apache.jackrabbit.core.nodetype.NodeTypeConflictException;
@@ -179,9 +178,15 @@ public class SharedItemStateManager
     private ISMLocking ismLocking;
 
     /**
-     * Update event channel.
+     * Update event channel. By default this is a dummy channel that simply
+     * ignores all events (so we don't need to check for null all the time),
+     * but in clustered environments the
+     * {@link #setEventChannel(UpdateEventChannel)} method should be called
+     * during initialization to connect this SISM instance with the cluster.
      */
-    private UpdateEventChannel eventChannel;
+    private UpdateEventChannel eventChannel = new DummyUpdateEventChannel();
+
+    private final NodeIdFactory nodeIdFactory;
 
     /**
      * Creates a new <code>SharedItemStateManager</code> instance.
@@ -195,7 +200,8 @@ public class SharedItemStateManager
                                   NodeTypeRegistry ntReg,
                                   boolean usesReferences,
                                   ItemStateCacheFactory cacheFactory,
-                                  ISMLocking locking)
+                                  ISMLocking locking,
+                                  NodeIdFactory nodeIdFactory)
             throws ItemStateException {
         cache = new ItemStateReferenceCache(cacheFactory);
         this.persistMgr = persistMgr;
@@ -203,6 +209,7 @@ public class SharedItemStateManager
         this.usesReferences = usesReferences;
         this.rootNodeId = rootNodeId;
         this.ismLocking = locking;
+        this.nodeIdFactory = nodeIdFactory;
         // create root node state if it doesn't yet exist
         if (!hasNonVirtualItemState(rootNodeId)) {
             createRootNodeState(rootNodeId, ntReg);
@@ -554,15 +561,13 @@ public class SharedItemStateManager
 
             virtualNodeReferences = new ChangeLog[virtualProviders.length];
 
-            /* let listener know about change */
-            if (eventChannel != null) {
-                eventChannel.updateCreated(this);
-            }
+            // let listener know about change
+            eventChannel.updateCreated(this);
 
             try {
                 writeLock = acquireWriteLock(local);
             } finally {
-                if (writeLock == null && eventChannel != null) {
+                if (writeLock == null) {
                     eventChannel.updateCancelled(this);
                 }
             }
@@ -645,7 +650,7 @@ public class SharedItemStateManager
                                             return ntReg.getEffectiveNodeType(ntName);
                                         }
 
-                                        protected NodeState getNodeState(NodeId id)
+                                        public NodeState getNodeState(NodeId id)
                                                 throws ItemStateException {
                                             if (local.has(id)) {
                                                 return (NodeState) local.get(id);
@@ -680,6 +685,16 @@ public class SharedItemStateManager
                     shared.deleted(state.getOverlayedState());
                 }
                 for (ItemState state : local.addedStates()) {
+                    if (state.isNode() && state.getStatus() != ItemState.STATUS_NEW) {
+                        // another node with same id had been created
+                        // in the meantime, probably caused by mid-air collision
+                        // of concurrent versioning operations (JCR-2272)
+                        String msg = state.getId()
+                                + " has been created externally  (status "
+                                + state.getStatus() + ")";
+                        log.debug(msg);
+                        throw new StaleItemStateException(msg);
+                    }
                     state.connect(createInstance(state));
                     shared.added(state.getOverlayedState());
                 }
@@ -713,10 +728,8 @@ public class SharedItemStateManager
                 /* create event states */
                 events.createEventStates(rootNodeId, local, SharedItemStateManager.this);
 
-                /* let listener know about change */
-                if (eventChannel != null) {
-                    eventChannel.updatePrepared(this);
-                }
+                // let listener know about change
+                eventChannel.updatePrepared(this);
 
                 if (VALIDATE_HIERARCHY) {
                     log.info("Validating change-set hierarchy");
@@ -786,13 +799,15 @@ public class SharedItemStateManager
 
                 /* dispatch the events */
                 events.dispatch();
-
-                /* let listener know about finished operation */
-                if (eventChannel != null) {
-                    String path = events.getSession().getUserID() + "@" + events.getCommonPath();
-                    eventChannel.updateCommitted(this, path);
-                }
             } finally {
+                // Let listener know about finished operation. This needs
+                // to happen in the finally block so that the cluster lock
+                // always gets released, even if a post-store() exception
+                // is thrown from the code above. See also JCR-2272.
+                String path = events.getSession().getUserID()
+                        + "@" + events.getCommonPath();
+                eventChannel.updateCommitted(this, path);
+
                 if (writeLock != null) {
                     // exception occurred before downgrading lock
                     writeLock.release();
@@ -809,10 +824,8 @@ public class SharedItemStateManager
          */
         public void cancel() {
             try {
-                /* let listener know about canceled operation */
-                if (eventChannel != null) {
-                    eventChannel.updateCancelled(this);
-                }
+                // let listener know about canceled operation
+                eventChannel.updateCancelled(this);
 
                 local.disconnect();
 
@@ -1053,9 +1066,10 @@ public class SharedItemStateManager
                         // may actually be deleted and then again added with the
                         // same UUID, i.e. the node is still referenceable.
                         if (refs.hasReferences() && !local.has(targetId)) {
-                            String msg = node.getNodeId()
-                                    + ": the node cannot be removed because it is still being referenced.";
-                            log.debug(msg);
+                            String msg =
+                                node.getNodeId() + " cannot be removed"
+                                + " because it is still being referenced";
+                            log.debug("{} from {}", msg, refs.getReferences());
                             throw new ReferentialIntegrityException(msg);
                         }
                     }
@@ -1116,17 +1130,17 @@ public class SharedItemStateManager
         }
 
     }
-    
+
     /**
      * Validates the hierarchy consistency of the changes in the changelog.
-     * 
+     *
      * @param changeLog
      *            The local changelog the should be validated
      * @throws ItemStateException
      *             If the hierarchy changes are inconsistent.
      * @throws RepositoryException
      *             If the consistency could not be validated
-     * 
+     *
      */
     private void validateHierarchy(ChangeLog changeLog) throws ItemStateException, RepositoryException {
 
@@ -1142,7 +1156,7 @@ public class SharedItemStateManager
 
     /**
      * Checks the parents and children of all deleted node states in the changelog.
-     * 
+     *
      * @param changeLog
      *            The local changelog the should be validated
      * @throws ItemStateException
@@ -1173,13 +1187,11 @@ public class SharedItemStateManager
                 boolean addedAndRemoved = changeLog.has(removedNodeState.getId());
                 if (!addedAndRemoved) {
 
-                    // Check the old parent
+                    // Check the old parent; it should be either also deleted
+                    // or at least modified to reflect the removal of a child
                     NodeId oldParentId = overlayedState.getParentId();
-                    if (changeLog.deleted(oldParentId)) {
-                        // parent has been deleted aswell
-                    } else if (changeLog.isModified(oldParentId)) {
-                        // the modified state will be check later on
-                    } else {
+                    if (!changeLog.deleted(oldParentId)
+                            && !changeLog.isModified(oldParentId)) {
                         String message = "Node with id " + id
                                 + " has been removed, but the parent node isn't part of the changelog " + oldParentId;
                         log.error(message);
@@ -1189,15 +1201,11 @@ public class SharedItemStateManager
                     // Get the original list of child ids
                     for (ChildNodeEntry entry : overlayedState.getChildNodeEntries()) {
 
-                        // Check the next child
+                        // Check the next child; it should be either also deleted
+                        // or at least modified to reflect being moved elsewhere
                         NodeId childId = entry.getId();
-
-                        if (changeLog.deleted(childId)) {
-                            // child has been deleted aswell
-                        } else if (changeLog.isModified(childId)) {
-
-                            // the modified state will be check later on
-                        } else {
+                        if (!changeLog.deleted(childId)
+                                && !changeLog.isModified(childId)) {
                             String message = "Node with id " + id
                                     + " has been removed, but the old child node isn't part of the changelog "
                                     + childId;
@@ -1212,7 +1220,7 @@ public class SharedItemStateManager
 
     /**
      * Checks the parents and children of all added node states in the changelog.
-     * 
+     *
      * @param changeLog
      *            The local changelog the should be validated
      * @throws ItemStateException
@@ -1264,7 +1272,7 @@ public class SharedItemStateManager
 
     /**
      * Checks the parents and children of all modified node states in the changelog.
-     * 
+     *
      * @param changeLog
      *            The local changelog the should be validated
      * @throws ItemStateException
@@ -1303,13 +1311,10 @@ public class SharedItemStateManager
                     checkParent(changeLog, modifiedNodeState, parentId);
                 }
 
-                // Check whether this node is the root node
-                if (parentId == null && oldParentId == null) {
-                    // The root node can be ignored
-
-                } else if (!parentId.equals(oldParentId)) {
-
-                    // This node has been moved, check whether the parent has been modified aswell
+                if (!(parentId == null && oldParentId == null)
+                        && (parentId != null && !parentId.equals(oldParentId))) {
+                    // This node (not the root) has been moved; check
+                    // whether the parent has been modified as well
                     if (changeLog.has(parentId)) {
                         checkParent(changeLog, modifiedNodeState, parentId);
                     } else if (!isShareable(modifiedNodeState)) {
@@ -1321,7 +1326,7 @@ public class SharedItemStateManager
                     // The old parent must be modified or deleted
                     if (!changeLog.isModified(oldParentId) && !changeLog.deleted(oldParentId)) {
                         String message = "Node with id " + id
-                                + " has been move, but the original parent is not part of the changelog: "
+                                + " has been moved, but the original parent is not part of the changelog: "
                                 + oldParentId;
                         log.error(message);
                         throw new ItemStateException(message);
@@ -1373,7 +1378,7 @@ public class SharedItemStateManager
 
     /**
      * Check the consistency of a parent/child relationship.
-     * 
+     *
      * @param changeLog
      *            The changelog to check
      * @param childState
@@ -1385,14 +1390,14 @@ public class SharedItemStateManager
      */
     void checkParent(ChangeLog changeLog, NodeState childState, NodeId expectedParent) throws ItemStateException {
 
-        // Check whether the the changelog contains an entry for the parent aswell.
+        // Check whether the the changelog contains an entry for the parent as well.
         NodeId parentId = childState.getParentId();
         if (!parentId.equals(expectedParent)) {
-            Set sharedSet = childState.getSharedSet();
+            Set<NodeId> sharedSet = childState.getSharedSet();
             if (sharedSet.contains(expectedParent)) {
                 return;
             }
-            String message = "Child node has another parent id " + parentId + ", expected " + expectedParent;
+            String message = "Child node " + childState.getId() + " has another parent id " + parentId + ", expected " + expectedParent;
             log.error(message);
             throw new ItemStateException(message);
         }
@@ -1419,7 +1424,7 @@ public class SharedItemStateManager
     /**
      * Determines whether the specified node is <i>shareable</i>, i.e. whether the mixin type <code>mix:shareable</code>
      * is either directly assigned or indirectly inherited.
-     * 
+     *
      * @param state
      *            node state to check
      * @return true if the specified node is <i>shareable</i>, false otherwise.
@@ -1427,7 +1432,7 @@ public class SharedItemStateManager
      *             if an error occurs
      */
     private boolean isShareable(NodeState state) throws RepositoryException {
-        // shortcut: check some wellknown built-in types first
+        // shortcut: check some well-known built-in types first
         Name primary = state.getNodeTypeName();
         Set<Name> mixins = state.getMixinTypeNames();
         if (mixins.contains(NameConstants.MIX_SHAREABLE)) {
@@ -1443,7 +1448,7 @@ public class SharedItemStateManager
             throw new RepositoryException(msg, ntce);
         }
     }
-    
+
     /**
      * Begin update operation. This will return an object that can itself be
      * ended/canceled.
@@ -1850,4 +1855,9 @@ public class SharedItemStateManager
             throw new ItemStateException("Interrupted while acquiring write lock");
         }
     }
+
+    public NodeIdFactory getNodeIdFactory() {
+        return this.nodeIdFactory;
+    }
+
 }

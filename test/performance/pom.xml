@@ -30,7 +30,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-perf-parent</artifactId>
-    <version>SNAPSHOT</version>
+    <version>1-SNAPSHOT</version>
     <relativePath>parent/pom.xml</relativePath>
   </parent>
 
@@ -51,6 +51,8 @@
     <module>jackrabbit20</module>
     <module>jackrabbit21</module>
     <module>jackrabbit22</module>
+    <module>jackrabbit23</module>
+    <module>jackrabbit24</module>
   </modules>
 
 </project>

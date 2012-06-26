@@ -25,37 +25,51 @@ public final class Permission {
 
     public static final int READ = 1;   
 
-    public static final int SET_PROPERTY = 2;
+    public static final int SET_PROPERTY = READ << 1;
 
-    public static final int ADD_NODE = 4;
+    public static final int ADD_NODE = SET_PROPERTY << 1;
 
-    public static final int REMOVE_NODE = 8;
+    public static final int REMOVE_NODE = ADD_NODE << 1;
 
-    public static final int REMOVE_PROPERTY = 16;
+    public static final int REMOVE_PROPERTY = REMOVE_NODE << 1;
 
-    public static final int READ_AC = 32;
+    public static final int READ_AC = REMOVE_PROPERTY << 1;
     
-    public static final int MODIFY_AC = 64;
+    public static final int MODIFY_AC = READ_AC << 1;
 
-    public static final int NODE_TYPE_MNGMT = 128;
+    public static final int NODE_TYPE_MNGMT = MODIFY_AC << 1;
 
-    public static final int VERSION_MNGMT = 256;
+    public static final int VERSION_MNGMT = NODE_TYPE_MNGMT << 1;
 
-    public static final int LOCK_MNGMT = 512;
+    public static final int LOCK_MNGMT = VERSION_MNGMT << 1;
 
-    public static final int LIFECYCLE_MNGMT = 1024;
+    public static final int LIFECYCLE_MNGMT = LOCK_MNGMT << 1;
 
-    public static final int RETENTION_MNGMT = 2048;
+    public static final int RETENTION_MNGMT = LIFECYCLE_MNGMT << 1;
 
-    public static final int ALL = (READ | SET_PROPERTY | ADD_NODE | REMOVE_NODE | REMOVE_PROPERTY | READ_AC | MODIFY_AC | NODE_TYPE_MNGMT | VERSION_MNGMT | LOCK_MNGMT | LIFECYCLE_MNGMT | RETENTION_MNGMT);
+    public static final int MODIFY_CHILD_NODE_COLLECTION = RETENTION_MNGMT << 1;
+
+    public static final int NODE_TYPE_DEF_MNGMT = MODIFY_CHILD_NODE_COLLECTION << 1;
+
+    public static final int NAMESPACE_MNGMT = NODE_TYPE_DEF_MNGMT << 1;
+
+    public static final int WORKSPACE_MNGMT = NAMESPACE_MNGMT << 1;
+
+    public static final int PRIVILEGE_MNGMT = WORKSPACE_MNGMT << 1;
+
+    public static final int ALL = (READ | SET_PROPERTY | ADD_NODE | REMOVE_NODE
+            | REMOVE_PROPERTY | READ_AC | MODIFY_AC | NODE_TYPE_MNGMT
+            | VERSION_MNGMT | LOCK_MNGMT | LIFECYCLE_MNGMT | RETENTION_MNGMT
+            | MODIFY_CHILD_NODE_COLLECTION | NODE_TYPE_DEF_MNGMT | NAMESPACE_MNGMT
+            | WORKSPACE_MNGMT | PRIVILEGE_MNGMT);
 
     /**
      * Returns those bits from <code>permissions</code> that are not present in
      * the <code>otherPermissions</code>, i.e. subtracts the other permissions
      * from permissions.<br>
-     * If the specified <code>otherBits</code> do not intersect with
-     * <code>bits</code>,  <code>bits</code> are returned.<br>
-     * If <code>bits</code> is included <code>otherBits</code>,
+     * If the specified <code>otherPermissions</code> do not intersect with
+     * <code>permissions</code>,  <code>permissions</code> are returned.<br>
+     * If <code>permissions</code> is included in <code>otherPermissions</code>,
      * {@link #NONE} is returned.
      *
      * @param permissions

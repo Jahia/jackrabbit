@@ -18,6 +18,7 @@ package org.apache.jackrabbit.core.query.lucene;
 
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.SessionImpl;
+import org.apache.jackrabbit.core.query.lucene.hits.AbstractHitCollector;
 import org.apache.jackrabbit.core.query.lucene.hits.AdaptingHits;
 import org.apache.jackrabbit.core.query.lucene.hits.Hits;
 import org.apache.jackrabbit.core.query.lucene.hits.ScorerHits;
@@ -32,7 +33,6 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermDocs;
 import org.apache.lucene.search.Explanation;
-import org.apache.lucene.search.HitCollector;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.Searcher;
@@ -54,6 +54,7 @@ import java.util.ArrayList;
  * Implements a lucene <code>Query</code> which returns the child nodes of the
  * nodes selected by another <code>Query</code>.
  */
+@SuppressWarnings("serial")
 class ChildAxisQuery extends Query implements JackrabbitQuery {
 
     /**
@@ -192,14 +193,14 @@ class ChildAxisQuery extends Query implements JackrabbitQuery {
      * @param searcher the <code>Searcher</code> instance to use.
      * @return a <code>ChildAxisWeight</code>.
      */
-    protected Weight createWeight(Searcher searcher) {
+    public Weight createWeight(Searcher searcher) {
         return new ChildAxisWeight(searcher);
     }
 
     /**
      * {@inheritDoc}
      */
-    public void extractTerms(Set terms) {
+    public void extractTerms(Set<Term> terms) {
         contextQuery.extractTerms(terms);
     }
 
@@ -273,7 +274,7 @@ class ChildAxisQuery extends Query implements JackrabbitQuery {
     /**
      * The <code>Weight</code> implementation for this <code>ChildAxisQuery</code>.
      */
-    private class ChildAxisWeight implements Weight {
+    private class ChildAxisWeight extends Weight {
 
         /**
          * The searcher in use
@@ -326,10 +327,11 @@ class ChildAxisQuery extends Query implements JackrabbitQuery {
          * @return a <code>ChildAxisScorer</code>.
          * @throws IOException if an error occurs while reading from the index.
          */
-        public Scorer scorer(IndexReader reader) throws IOException {
-            contextScorer = contextQuery.weight(searcher).scorer(reader);
+        @Override
+        public Scorer scorer(IndexReader reader, boolean scoreDocsInOrder, boolean topScorer) throws IOException {
+            contextScorer = contextQuery.weight(searcher).scorer(reader, scoreDocsInOrder, topScorer);
             if (nameTest != null) {
-                nameTestScorer = new NameQuery(nameTest, version, nsMappings).weight(searcher).scorer(reader);
+                nameTestScorer = new NameQuery(nameTest, version, nsMappings).weight(searcher).scorer(reader, scoreDocsInOrder, topScorer);
             }
             return new ChildAxisScorer(searcher.getSimilarity(),
                     reader, (HierarchyResolver) reader);
@@ -385,52 +387,56 @@ class ChildAxisQuery extends Query implements JackrabbitQuery {
             this.hResolver = hResolver;
         }
 
-        /**
-         * {@inheritDoc}
-         */
-        public boolean next() throws IOException {
+        @Override
+        public int nextDoc() throws IOException {
+            if (nextDoc == NO_MORE_DOCS) {
+                return nextDoc;
+            }
+
             calculateChildren();
             do {
                 nextDoc = hits.next();
             } while (nextDoc > -1 && !indexIsValid(nextDoc));
 
-            return nextDoc > -1;
-        }
-
-        /**
-         * {@inheritDoc}
-         */
-        public int doc() {
+            if (nextDoc < 0) {
+                nextDoc = NO_MORE_DOCS;
+            }
             return nextDoc;
         }
 
-        /**
-         * {@inheritDoc}
-         */
+        @Override
+        public int docID() {
+            return nextDoc;
+        }
+
+        @Override
         public float score() throws IOException {
             return 1.0f;
         }
 
-        /**
-         * {@inheritDoc}
-         */
-        public boolean skipTo(int target) throws IOException {
+        @Override
+        public int advance(int target) throws IOException {
+            if (nextDoc == NO_MORE_DOCS) {
+                return nextDoc;
+            }
+            
+            // optimize in the case of an advance to finish.
+            // see https://issues.apache.org/jira/browse/JCR-3091
+            if (target == NO_MORE_DOCS) {
+                hits.skipTo(target);
+                nextDoc = NO_MORE_DOCS;
+                return nextDoc;
+            }
+
             calculateChildren();
             nextDoc = hits.skipTo(target);
             while (nextDoc > -1 && !indexIsValid(nextDoc)) {
-                next();
+                nextDoc();
             }
-            return nextDoc > -1;
-        }
-
-        /**
-         * {@inheritDoc}
-         *
-         * @throws UnsupportedOperationException this implementation always
-         *                                       throws an <code>UnsupportedOperationException</code>.
-         */
-        public Explanation explain(int doc) throws IOException {
-            throw new UnsupportedOperationException();
+            if (nextDoc < 0) {
+                nextDoc = NO_MORE_DOCS;
+            }
+            return nextDoc;
         }
 
         private void calculateChildren() throws IOException {
@@ -440,19 +446,21 @@ class ChildAxisQuery extends Query implements JackrabbitQuery {
                 if (nameTestScorer == null) {
                     // always use simple in that case
                     calc[0] = new SimpleChildrenCalculator(reader, hResolver);
-                    contextScorer.score(new HitCollector() {
-                        public void collect(int doc, float score) {
+                    contextScorer.score(new AbstractHitCollector() {
+                        @Override
+                        protected void collect(int doc, float score) {
                             calc[0].collectContextHit(doc);
                         }
                     });
                 } else {
                     // start simple but switch once threshold is reached
                     calc[0] = new SimpleChildrenCalculator(reader, hResolver);
-                    contextScorer.score(new HitCollector() {
+                    contextScorer.score(new AbstractHitCollector() {
 
                         private List<Integer> docIds = new ArrayList<Integer>();
 
-                        public void collect(int doc, float score) {
+                        @Override
+                        protected void collect(int doc, float score) {
                             calc[0].collectContextHit(doc);
                             if (docIds != null) {
                                 docIds.add(doc);

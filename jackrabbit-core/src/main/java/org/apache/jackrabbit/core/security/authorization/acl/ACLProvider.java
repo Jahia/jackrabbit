@@ -43,6 +43,7 @@ import javax.jcr.Session;
 import javax.jcr.query.Query;
 import javax.jcr.query.QueryManager;
 import javax.jcr.query.QueryResult;
+import javax.jcr.security.AccessControlEntry;
 import javax.jcr.security.AccessControlList;
 import javax.jcr.security.AccessControlManager;
 import javax.jcr.security.AccessControlPolicy;
@@ -107,7 +108,7 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
         // minimal protection on the root node.
         NodeImpl root = (NodeImpl) session.getRootNode();
         rootNodeId = root.getNodeId();
-        ACLEditor systemEditor = new ACLEditor(systemSession, this);
+        ACLEditor systemEditor = new ACLEditor(session, this);
 
         // TODO: replace by configurable default policy (see JCR-2331)
         boolean initializedWithDefaults = !configuration.containsKey(PARAM_OMIT_DEFAULT_PERMISSIONS);
@@ -115,7 +116,7 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
             initRootACL(session, systemEditor);
         }
 
-        entryCollector = createEntryCollector((SessionImpl) systemSession);
+        entryCollector = createEntryCollector(session);
     }
 
     @Override
@@ -130,12 +131,27 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
     public AccessControlPolicy[] getEffectivePolicies(Path absPath, CompiledPermissions permissions) throws ItemNotFoundException, RepositoryException {
         checkInitialized();
 
-        NodeImpl targetNode = (NodeImpl) session.getNode(session.getJCRPath(absPath));
-        NodeImpl node = getNode(targetNode, isAcItem(targetNode));
+        NodeImpl targetNode;
         List<AccessControlList> acls = new ArrayList<AccessControlList>();
+        if (absPath == null) {
+            targetNode = (NodeImpl) session.getRootNode();
+            if (isRepoAccessControlled(targetNode)) {
+                if (permissions.grants(targetNode.getPrimaryPath(), Permission.READ_AC)) {
+                    // retrieve the entries for the access controlled node
+                    List<AccessControlEntry> entries = entryCollector.collectEntries(null, new EntryFilterImpl(null, (NodeId) null, session));
+                    acls.add(new UnmodifiableAccessControlList(entries));
+                } else {
+                    throw new AccessDeniedException("Access denied at " + targetNode.getPath());
+                }
+            }
+        } else {
+            targetNode = (NodeImpl) session.getNode(session.getJCRPath(absPath));
+            NodeImpl node = getNode(targetNode, isAcItem(targetNode));
 
-        // collect all ACLs effective at node
-        collectAcls(node, permissions, acls);
+            // collect all ACLs effective at node
+            collectAcls(node, permissions, acls);
+        }
+
         // if no effective ACLs are present -> add a default, empty acl.
         if (acls.isEmpty()) {
             // no access control information can be retrieved for the specified
@@ -183,15 +199,24 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
         Set<AccessControlPolicy> acls = new LinkedHashSet<AccessControlPolicy>();
         for (NodeIterator it = result.getNodes(); it.hasNext();) {
             NodeImpl aclNode = (NodeImpl) it.nextNode().getParent();
+            Name aclName = aclNode.getQName();
             NodeImpl accessControlledNode = (NodeImpl) aclNode.getParent();
-            
-            if (isAccessControlled(accessControlledNode)) {
+
+            if (N_POLICY.equals(aclName) && isAccessControlled(accessControlledNode)) {
                 if (permissions.canRead(aclNode.getPrimaryPath(), aclNode.getNodeId())) {
-                    acls.add(new UnmodifiableAccessControlList(entryCollector.getEntries(accessControlledNode), accessControlledNode.getPath(), Collections.<String, Integer>emptyMap()));
+                    List<AccessControlEntry> aces = entryCollector.getEntries(accessControlledNode).getACEs();
+                    acls.add(new UnmodifiableAccessControlList(aces, accessControlledNode.getPath(), Collections.<String, Integer>emptyMap()));
                 } else {
                     throw new AccessDeniedException("Access denied at " + Text.getRelativeParent(aclNode.getPath(), 1));
                 }
-            }
+            } else if (N_REPO_POLICY.equals(aclName) && isRepoAccessControlled(accessControlledNode)) {
+                if (permissions.canRead(aclNode.getPrimaryPath(), aclNode.getNodeId())) {
+                    List<AccessControlEntry> aces = entryCollector.collectEntries(null, new EntryFilterImpl(null, (NodeId) null, session));
+                    acls.add(new UnmodifiableAccessControlList(aces));
+                } else {
+                    throw new AccessDeniedException("Access denied at " + Text.getRelativeParent(aclNode.getPath(), 1));
+                }
+            } // else: not a regular policy node -> ignore.
         }
 
         return acls.toArray(new AccessControlPolicy[acls.size()]);
@@ -266,7 +291,8 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
         if (isAccessControlled(node)) {
             if (permissions.grants(node.getPrimaryPath(), Permission.READ_AC)) {
                 // retrieve the entries for the access controlled node
-                acls.add(new UnmodifiableAccessControlList(entryCollector.getEntries(node), node.getPath(), Collections.<String, Integer>emptyMap()));
+                List<AccessControlEntry> aces = entryCollector.getEntries(node).getACEs();
+                acls.add(new UnmodifiableAccessControlList(aces, node.getPath(), Collections.<String, Integer>emptyMap()));
             } else {
                 throw new AccessDeniedException("Access denied at " + node.getPath());
             }
@@ -282,11 +308,11 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
      * Set-up minimal permissions for the workspace:
      *
      * <ul>
-     * <li>adminstrators principal -> all privileges</li>
-     * <li>everybody -> read privilege</li>
+     * <li>'adminstrators' principal -> all privileges</li>
+     * <li>'everyone' -> read privilege</li>
      * </ul>
      *
-     * @param session to the workspace to set-up inital ACL to
+     * @param session to the workspace to set-up initial ACL to
      * @param editor for the specified session.
      * @throws RepositoryException If an error occurs.
      */
@@ -332,7 +358,7 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
      * controlled if it is of node type
      * {@link AccessControlConstants#NT_REP_ACCESS_CONTROLLABLE "rep:AccessControllable"}
      * and if it has a child node named
-     * {@link AccessControlConstants#N_POLICY "rep:ACL"}.
+     * {@link AccessControlConstants#N_POLICY}.
      *
      * @param node the node to be tested
      * @return <code>true</code> if the node is access controlled and has a
@@ -341,6 +367,23 @@ public class ACLProvider extends AbstractAccessControlProvider implements Access
      */
     static boolean isAccessControlled(NodeImpl node) throws RepositoryException {
         return node.hasNode(N_POLICY) && node.isNodeType(NT_REP_ACCESS_CONTROLLABLE);
+    }
+
+
+    /**
+     * Test if the given node is access controlled. The node is access
+     * controlled if it is of node type
+     * {@link AccessControlConstants#NT_REP_REPO_ACCESS_CONTROLLABLE "rep:RepoAccessControllable"}
+     * and if it has a child node named
+     * {@link AccessControlConstants#N_REPO_POLICY}.
+     *
+     * @param node the node to be tested
+     * @return <code>true</code> if the node is access controlled and has a
+     * rep:policy child; <code>false</code> otherwise.
+     * @throws RepositoryException if an error occurs
+     */
+    static boolean isRepoAccessControlled(NodeImpl node) throws RepositoryException {
+        return node.hasNode(N_REPO_POLICY) && node.isNodeType(NT_REP_REPO_ACCESS_CONTROLLABLE);
     }
 
     /**

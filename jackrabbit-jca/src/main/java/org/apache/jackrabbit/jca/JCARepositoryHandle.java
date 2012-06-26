@@ -38,7 +38,9 @@ import java.io.Serializable;
 public final class JCARepositoryHandle extends ProxyRepository
         implements Referenceable, Serializable {
 
-    /**
+	private static final long serialVersionUID = 1235867375647927916L;
+
+	/**
      * Managed connection factory.
      */
     private final JCAManagedConnectionFactory mcf;
@@ -108,7 +110,9 @@ public final class JCARepositoryHandle extends ProxyRepository
     private static class JCARepositoryFactory
             implements RepositoryFactory, Serializable {
 
-        private final JCAManagedConnectionFactory mcf;
+		private static final long serialVersionUID = 5364039431121341634L;
+		
+		private final JCAManagedConnectionFactory mcf;
 
         public JCARepositoryFactory(JCAManagedConnectionFactory mcf) {
             this.mcf = mcf;

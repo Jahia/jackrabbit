@@ -16,10 +16,7 @@
  */
 package org.apache.jackrabbit.core.query.lucene;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-
+import junit.framework.TestCase;
 import org.apache.jackrabbit.core.query.lucene.directory.DirectoryManager;
 import org.apache.jackrabbit.core.query.lucene.directory.RAMDirectoryManager;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -27,8 +24,11 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.search.Similarity;
 import org.apache.lucene.store.RAMDirectory;
+import org.apache.lucene.util.Version;
 
-import junit.framework.TestCase;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 /**
  * <code>IndexMigrationTest</code> contains a test case for JCR-2393.
@@ -50,7 +50,7 @@ public class IndexMigrationTest extends TestCase {
         DirectoryManager dirMgr = new RAMDirectoryManager();
 
         PersistentIndex idx = new PersistentIndex("index",
-                new StandardAnalyzer(), Similarity.getDefault(),
+                new StandardAnalyzer(Version.LUCENE_24), Similarity.getDefault(),
                 new DocNumberCache(100),
                 new IndexingQueue(new IndexingQueueStore(new RAMDirectory())),
                 dirMgr, 0);
@@ -66,9 +66,14 @@ public class IndexMigrationTest extends TestCase {
 
     protected static Document createDocument(String name, String value) {
         Document doc = new Document();
-        doc.add(new Field(FieldNames.UUID, UUID.randomUUID().toString(), Field.Store.YES, Field.Index.NO));
-        doc.add(new Field(FieldNames.PROPERTIES, createNamedValue14(name, value), Field.Store.NO, Field.Index.NOT_ANALYZED));
-        doc.add(new Field(FieldNames.FULLTEXT_PREFIX + ":" + name, value, Field.Store.NO, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
+        doc.add(new Field(FieldNames.UUID, false, UUID.randomUUID().toString(),
+                Field.Store.YES, Field.Index.NO, Field.TermVector.NO));
+        doc.add(new Field(FieldNames.PROPERTIES, false, createNamedValue14(
+                name, value), Field.Store.NO, Field.Index.NOT_ANALYZED,
+                Field.TermVector.NO));
+        doc.add(new Field(FieldNames.FULLTEXT_PREFIX + ":" + name, true, value,
+                Field.Store.NO, Field.Index.ANALYZED,
+                Field.TermVector.WITH_POSITIONS_OFFSETS));
         return doc;
     }
 }

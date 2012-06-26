@@ -16,16 +16,16 @@
  */
 package org.apache.jackrabbit.core.query.lucene;
 
-import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.TermDocs;
 import org.apache.lucene.search.Explanation;
-import org.apache.lucene.search.HitCollector;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.Searcher;
 import org.apache.lucene.search.Similarity;
 import org.apache.lucene.search.Weight;
+import org.apache.jackrabbit.core.query.lucene.hits.AbstractHitCollector;
 import org.apache.jackrabbit.spi.Name;
 
 import java.io.IOException;
@@ -38,6 +38,7 @@ import java.util.Set;
  * Implements a lucene <code>Query</code> which returns the nodes selected by
  * a reference property of the context node.
  */
+@SuppressWarnings("serial")
 class DerefQuery extends Query {
 
     /**
@@ -102,7 +103,7 @@ class DerefQuery extends Query {
      * @param searcher the <code>Searcher</code> instance to use.
      * @return a <code>DerefWeight</code>.
      */
-    protected Weight createWeight(Searcher searcher) {
+    public Weight createWeight(Searcher searcher) {
         return new DerefWeight(searcher);
     }
 
@@ -127,7 +128,7 @@ class DerefQuery extends Query {
     /**
      * {@inheritDoc}
      */
-    public void extractTerms(Set terms) {
+    public void extractTerms(Set<Term> terms) {
         // no terms to extract
     }
 
@@ -148,7 +149,7 @@ class DerefQuery extends Query {
     /**
      * The <code>Weight</code> implementation for this <code>DerefQuery</code>.
      */
-    private class DerefWeight implements Weight {
+    private class DerefWeight extends Weight {
 
         /**
          * The searcher in use
@@ -201,10 +202,12 @@ class DerefQuery extends Query {
          * @return a <code>DerefScorer</code>.
          * @throws IOException if an error occurs while reading from the index.
          */
-        public Scorer scorer(IndexReader reader) throws IOException {
-            contextScorer = contextQuery.weight(searcher).scorer(reader);
+        @Override
+        public Scorer scorer(IndexReader reader, boolean scoreDocsInOrder,
+                boolean topScorer) throws IOException {
+            contextScorer = contextQuery.weight(searcher).scorer(reader, scoreDocsInOrder, topScorer);
             if (nameTest != null) {
-                nameTestScorer = new NameQuery(nameTest, version, nsMappings).weight(searcher).scorer(reader);
+                nameTestScorer = new NameQuery(nameTest, version, nsMappings).weight(searcher).scorer(reader, scoreDocsInOrder, topScorer);
             }
             return new DerefScorer(searcher.getSimilarity(), reader);
         }
@@ -256,46 +259,49 @@ class DerefQuery extends Query {
             this.hits = new BitSet(reader.maxDoc());
         }
 
-        /**
-         * {@inheritDoc}
-         */
-        public boolean next() throws IOException {
+        @Override
+        public int nextDoc() throws IOException {
+            if (nextDoc == NO_MORE_DOCS) {
+                return nextDoc;
+            }
+
             calculateChildren();
             nextDoc = hits.nextSetBit(nextDoc + 1);
-            return nextDoc > -1;
-        }
-
-        /**
-         * {@inheritDoc}
-         */
-        public int doc() {
+            if (nextDoc < 0) {
+                nextDoc = NO_MORE_DOCS;
+            }
             return nextDoc;
         }
 
-        /**
-         * {@inheritDoc}
-         */
+        @Override
+        public int docID() {
+            return nextDoc;
+        }
+
+        @Override
         public float score() throws IOException {
             return 1.0f;
         }
 
-        /**
-         * {@inheritDoc}
-         */
-        public boolean skipTo(int target) throws IOException {
+        @Override
+        public int advance(int target) throws IOException {
+            if (nextDoc == NO_MORE_DOCS) {
+                return nextDoc;
+            }
+
+            // optimize in the case of an advance to finish.
+            // see https://issues.apache.org/jira/browse/JCR-3091
+            if (target == NO_MORE_DOCS) {
+                nextDoc = NO_MORE_DOCS;
+                return nextDoc;
+            }
+
             calculateChildren();
             nextDoc = hits.nextSetBit(target);
-            return nextDoc > -1;
-        }
-
-        /**
-         * {@inheritDoc}
-         *
-         * @throws UnsupportedOperationException this implementation always
-         *                                       throws an <code>UnsupportedOperationException</code>.
-         */
-        public Explanation explain(int doc) throws IOException {
-            throw new UnsupportedOperationException();
+            if (nextDoc < 0) {
+                nextDoc = NO_MORE_DOCS;
+            }
+            return nextDoc;
         }
 
         /**
@@ -311,8 +317,9 @@ class DerefQuery extends Query {
         private void calculateChildren() throws IOException {
             if (uuids == null) {
                 uuids = new ArrayList<String>();
-                contextScorer.score(new HitCollector() {
-                    public void collect(int doc, float score) {
+                contextScorer.score(new AbstractHitCollector() {
+                    @Override
+                    protected void collect(int doc, float score) {
                         hits.set(doc);
                     }
                 });
@@ -320,8 +327,9 @@ class DerefQuery extends Query {
                 // collect nameTest hits
                 final BitSet nameTestHits = new BitSet();
                 if (nameTestScorer != null) {
-                    nameTestScorer.score(new HitCollector() {
-                        public void collect(int doc, float score) {
+                    nameTestScorer.score(new AbstractHitCollector() {
+                        @Override
+                        protected void collect(int doc, float score) {
                             nameTestHits.set(doc);
                         }
                     });

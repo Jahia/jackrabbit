@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 
 /**
- * The JCR Version Manager impementation is split in several classes in order to
+ * The JCR Version Manager implementation is split in several classes in order to
  * group related methods together.
  * </p>
  * this class provides basic routines for all operations and the methods related
@@ -74,7 +74,7 @@ abstract public class VersionManagerImplBase {
     protected final UpdatableItemStateManager stateMgr;
 
     /**
-     * hierarch manager that operates on the localte state manager
+     * hierarchy manager that operates on the locale state manager
      */
     protected final HierarchyManager hierMgr;
 
@@ -242,7 +242,8 @@ abstract public class VersionManagerImplBase {
     }
 
     /**
-     * Recursivly collects all base versions of this configuration tree.
+     * Recursively collects all base versions of this configuration tree.
+     * 
      * @param root node to traverse
      * @param baseVersions set of base versions to fill
      * @throws RepositoryException if an error occurs

@@ -52,7 +52,7 @@ class InternalFrozenNodeImpl extends InternalFreezeImpl
     private NodeId frozenUUID = null;
 
     /**
-     * the frozen primary type of the orginal node
+     * the frozen primary type of the original node
      */
     private Name frozenPrimaryType = null;
 
@@ -62,7 +62,7 @@ class InternalFrozenNodeImpl extends InternalFreezeImpl
     private Set<Name> frozenMixinTypes = null;
 
     /**
-     * Creates a new frozen node based on the given persistance node.
+     * Creates a new frozen node based on the given persistence node.
      *
      * @param vMgr version manager
      * @param node underlying node
@@ -109,11 +109,8 @@ class InternalFrozenNodeImpl extends InternalFreezeImpl
                         mixins.add(value.getName());
                     }
                 }
-            } else if (prop.getName().equals(NameConstants.JCR_PRIMARYTYPE)) {
-                // ignore
-            } else if (prop.getName().equals(NameConstants.JCR_UUID)) {
-                // ignore
-            } else {
+            } else if (!prop.getName().equals(NameConstants.JCR_PRIMARYTYPE)
+                    && !prop.getName().equals(NameConstants.JCR_UUID)) {
                 propList.add(prop);
             }
         }
@@ -136,6 +133,7 @@ class InternalFrozenNodeImpl extends InternalFreezeImpl
     /**
      * {@inheritDoc}
      */
+    @Override
     public NodeId getId() {
         return node.getNodeId();
     }

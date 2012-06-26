@@ -32,11 +32,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.jcr.AccessDeniedException;
 import javax.jcr.Credentials;
@@ -57,7 +53,9 @@ import org.apache.commons.collections.map.ReferenceMap;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.api.JackrabbitRepository;
 import org.apache.jackrabbit.api.management.RepositoryManager;
+import org.apache.jackrabbit.api.security.authentication.token.TokenCredentials;
 import org.apache.jackrabbit.commons.AbstractRepository;
+import org.apache.jackrabbit.core.cache.CacheManager;
 import org.apache.jackrabbit.core.cluster.ClusterContext;
 import org.apache.jackrabbit.core.cluster.ClusterException;
 import org.apache.jackrabbit.core.cluster.ClusterNode;
@@ -79,6 +77,7 @@ import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.fs.FileSystemException;
 import org.apache.jackrabbit.core.fs.FileSystemResource;
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.id.NodeIdFactory;
 import org.apache.jackrabbit.core.lock.LockManager;
 import org.apache.jackrabbit.core.lock.LockManagerImpl;
 import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
@@ -94,8 +93,9 @@ import org.apache.jackrabbit.core.retention.RetentionRegistry;
 import org.apache.jackrabbit.core.retention.RetentionRegistryImpl;
 import org.apache.jackrabbit.core.security.JackrabbitSecurityManager;
 import org.apache.jackrabbit.core.security.authentication.AuthContext;
+import org.apache.jackrabbit.core.security.authentication.token.TokenBasedAuthentication;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.security.simple.SimpleSecurityManager;
-import org.apache.jackrabbit.core.cache.CacheManager;
 import org.apache.jackrabbit.core.state.ChangeLog;
 import org.apache.jackrabbit.core.state.ISMLocking;
 import org.apache.jackrabbit.core.state.ItemStateException;
@@ -162,6 +162,12 @@ public class RepositoryImpl extends AbstractRepository
     private static final String PROPERTIES_RESOURCE = "repository.properties";
 
     /**
+     * Key to a <code>string</code> descriptor. Returns the repository cluster id if
+     * and only if clustering is enabled.
+     */
+    public static final String JACKRABBIT_CLUSTER_ID = "jackrabbit.cluster.id";
+
+    /**
      * the repository descriptors, maps String keys to Value/Value[] objects
      */
     private final Map<String, DescriptorValue> repDescriptors = new HashMap<String, DescriptorValue>();
@@ -184,6 +190,8 @@ public class RepositoryImpl extends AbstractRepository
     // configuration of the repository
     protected final RepositoryConfig repConfig;
 
+    protected NodeIdFactory nodeIdFactory;
+
     /**
      * the delegating observation dispatcher for all workspaces
      */
@@ -198,7 +206,7 @@ public class RepositoryImpl extends AbstractRepository
     /**
      * active sessions (weak references)
      */
-    private final Map<SessionImpl, SessionImpl> activeSessions =
+    private final Map<Session, Session> activeSessions =
             new ReferenceMap(ReferenceMap.WEAK, ReferenceMap.WEAK);
 
     // flag indicating if repository has been shut down
@@ -231,11 +239,6 @@ public class RepositoryImpl extends AbstractRepository
     private WorkspaceEventChannel createWorkspaceEventChannel;
 
     /**
-     * Scheduled executor service.
-     */
-    protected final ScheduledExecutorService executor;
-
-    /**
      * Protected constructor.
      *
      * @param repConfig the repository configuration.
@@ -244,32 +247,6 @@ public class RepositoryImpl extends AbstractRepository
      *                             or another error occurs.
      */
     protected RepositoryImpl(RepositoryConfig repConfig) throws RepositoryException {
-        // we should use the jackrabbit classloader for all background threads
-        // from the pool
-        final ClassLoader poolClassLoader = this.getClass().getClassLoader();
-        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(
-                Runtime.getRuntime().availableProcessors() * 2,
-                new ThreadFactory() {
-
-                    final AtomicInteger threadNumber = new AtomicInteger(1);
-
-                    /**
-                     * @see java.util.concurrent.ThreadFactory#newThread(java.lang.Runnable)
-                     */
-                    public Thread newThread(Runnable r) {
-                        final Thread t = new Thread(null, r,
-                                              "jackrabbit-pool-" + threadNumber.getAndIncrement(),
-                                              0);
-                        t.setDaemon(true);
-                        if (t.getPriority() != Thread.NORM_PRIORITY)
-                            t.setPriority(Thread.NORM_PRIORITY);
-                        t.setContextClassLoader(poolClassLoader);
-                        return t;
-                    }
-                },
-                new ThreadPoolExecutor.CallerRunsPolicy());
-        this.executor = executor;
-
         // Acquire a lock on the repository home
         repLock = repConfig.getRepositoryLockMechanism();
         repLock.init(repConfig.getHomeDir());
@@ -293,6 +270,7 @@ public class RepositoryImpl extends AbstractRepository
             // create registries
             context.setNamespaceRegistry(createNamespaceRegistry());
             context.setNodeTypeRegistry(createNodeTypeRegistry());
+            context.setPrivilegeRegistry(new PrivilegeRegistry(context.getNamespaceRegistry(), context.getFileSystem()));
 
             // Create item state cache manager
             context.setItemStateCacheFactory(
@@ -303,6 +281,10 @@ public class RepositoryImpl extends AbstractRepository
                 context.setDataStore(dataStore);
             }
 
+            nodeIdFactory = new NodeIdFactory(repConfig.getHomeDir());
+            nodeIdFactory.open();
+            context.setNodeIdFactory(nodeIdFactory);
+
             context.setWorkspaceManager(new WorkspaceManager(this));
 
             // init workspace configs
@@ -311,15 +293,15 @@ public class RepositoryImpl extends AbstractRepository
                 wspInfos.put(config.getName(), info);
             }
 
-            // initialize optional clustering
-            // put here before setting up any other external event source that a cluster node
-            // will be interested in
+            // initialize optional clustering before setting up any other
+            // external event source that a cluster node will be interested in
             ClusterNode clusterNode = null;
             if (repConfig.getClusterConfig() != null) {
                 clusterNode = createClusterNode();
                 context.setClusterNode(clusterNode);
                 context.getNamespaceRegistry().setEventChannel(clusterNode);
                 context.getNodeTypeRegistry().setEventChannel(clusterNode);
+                context.getPrivilegeRegistry().setEventChannel(clusterNode);
 
                 createWorkspaceEventChannel = clusterNode;
                 clusterNode.setListener(this);
@@ -355,6 +337,7 @@ public class RepositoryImpl extends AbstractRepository
 
             // now start cluster node as last step
             if (clusterNode != null) {
+                setDescriptor(JACKRABBIT_CLUSTER_ID, repConfig.getClusterConfig().getId());
                 try {
                     clusterNode.start();
                 } catch (ClusterException e) {
@@ -391,7 +374,7 @@ public class RepositoryImpl extends AbstractRepository
                     // ensure this exception does not overlay the original
                     // startup exception and only log it
                     log.error("In addition to startup fail, another unexpected problem " +
-                    		"occurred while shutting down the repository again.", t);
+                            "occurred while shutting down the repository again.", t);
                     // Clear the repository lock if it was left in place
                     repLock.release();
                 }
@@ -512,7 +495,8 @@ public class RepositoryImpl extends AbstractRepository
                 VERSION_STORAGE_NODE_ID,
                 ACTIVITIES_NODE_ID,
                 context.getItemStateCacheFactory(),
-                ismLocking);
+                ismLocking,
+                context.getNodeIdFactory());
     }
 
     /**
@@ -628,12 +612,11 @@ public class RepositoryImpl extends AbstractRepository
         if (systemSearchMgr == null) {
             if (repConfig.isSearchEnabled()) {
                 systemSearchMgr = new SearchManager(
-                        context,
+                        null, context,
                         repConfig,
                         getWorkspaceInfo(wspName).itemStateMgr,
                         context.getInternalVersionManager().getPersistenceManager(),
-                        SYSTEM_ROOT_NODE_ID,
-                        null, null, executor);
+                        SYSTEM_ROOT_NODE_ID, null, null);
 
                 SystemSession defSysSession = getSystemSession(wspName);
                 ObservationManager obsMgr = defSysSession.getWorkspace().getObservationManager();
@@ -1105,14 +1088,14 @@ public class RepositoryImpl extends AbstractRepository
         // (copy sessions to array to avoid ConcurrentModificationException;
         // manually copy entries rather than calling ReferenceMap#toArray() in
         // order to work around  http://issues.apache.org/bugzilla/show_bug.cgi?id=25551)
-        List<SessionImpl> sa;
+        List<Session> sa;
         synchronized (activeSessions) {
-            sa = new ArrayList<SessionImpl>(activeSessions.size());
-            for (SessionImpl session : activeSessions.values()) {
+            sa = new ArrayList<Session>(activeSessions.size());
+            for (Session session : activeSessions.values()) {
                 sa.add(session);
             }
         }
-        for (SessionImpl session : sa) {
+        for (Session session : sa) {
             if (session != null) {
                 session.logout();
             }
@@ -1158,6 +1141,12 @@ public class RepositoryImpl extends AbstractRepository
             log.error("error while closing repository file system", e);
         }
 
+        try {
+            nodeIdFactory.close();
+        } catch (RepositoryException e) {
+            log.error("error while closing repository file system", e);
+        }
+
         // make sure this instance is not used anymore
         disposed = true;
 
@@ -1165,6 +1154,7 @@ public class RepositoryImpl extends AbstractRepository
         notifyAll();
 
         // Shut down the executor service
+        ScheduledExecutorService executor = context.getExecutor();
         executor.shutdown();
         try {
             // Wait for all remaining background threads to terminate
@@ -1186,8 +1176,6 @@ public class RepositoryImpl extends AbstractRepository
                 log.error("failed to release the repository lock", e);
             }
         }
-
-        context.getTimer().cancel();
 
         log.info("Repository has been shutdown");
     }
@@ -1364,13 +1352,16 @@ public class RepositoryImpl extends AbstractRepository
             File homeDir, FileSystem fs, PersistenceManagerConfig pmConfig)
             throws RepositoryException {
         try {
-            PersistenceManager pm = pmConfig.newInstance(PersistenceManager.class);
-            pm.init(new PMContext(
+            PersistenceManager pm = pmConfig
+                    .newInstance(PersistenceManager.class);
+            PMContext pmContext = new PMContext(
                     homeDir, fs,
                     context.getRootNodeId(),
                     context.getNamespaceRegistry(),
                     context.getNodeTypeRegistry(),
-                    context.getDataStore()));
+                    context.getDataStore(),
+                    context.getRepositoryStatistics());
+            pm.init(pmContext);
             return pm;
         } catch (Exception e) {
             String msg = "Cannot instantiate persistence manager " + pmConfig.getClassName();
@@ -1397,7 +1388,8 @@ public class RepositoryImpl extends AbstractRepository
                 context.getNodeTypeRegistry(),
                 true,
                 context.getItemStateCacheFactory(),
-                locking);
+                locking,
+                context.getNodeIdFactory());
     }
 
     /**
@@ -1448,7 +1440,6 @@ public class RepositoryImpl extends AbstractRepository
         return new GarbageCollector(context.getDataStore(), ipmList, sessions);
     }
 
-
     //-----------------------------------------------------------< Repository >
     /**
      * {@inheritDoc}
@@ -1493,7 +1484,18 @@ public class RepositoryImpl extends AbstractRepository
             if (credentials instanceof SimpleCredentials) {
                 SimpleCredentials sc = (SimpleCredentials) credentials;
                 for (String name : sc.getAttributeNames()) {
-                    session.setAttribute(name, sc.getAttribute(name));
+                    if (!TokenBasedAuthentication.isMandatoryAttribute(name)) {
+                        session.setAttribute(name, sc.getAttribute(name));
+                    }
+                }
+            }
+            Set<TokenCredentials> tokenCreds = session.getSubject().getPublicCredentials(TokenCredentials.class);
+            if (!tokenCreds.isEmpty()) {
+                TokenCredentials tc = tokenCreds.iterator().next();
+                for (String name : tc.getAttributeNames()) {
+                    if (!TokenBasedAuthentication.isMandatoryAttribute(name)) {
+                        session.setAttribute(name, tc.getAttribute(name));
+                    }
                 }
             }
 
@@ -1879,12 +1881,13 @@ public class RepositoryImpl extends AbstractRepository
                     // search manager is lazily instantiated in order to avoid
                     // 'chicken & egg' bootstrap problems
                     searchMgr = new SearchManager(
+                            getName(),
                             context,
                             config,
                             itemStateMgr, persistMgr,
                             context.getRootNodeId(),
                             getSystemSearchManager(getName()),
-                            SYSTEM_ROOT_NODE_ID, executor);
+                            SYSTEM_ROOT_NODE_ID);
                 }
                 return searchMgr;
             }
@@ -1924,7 +1927,8 @@ public class RepositoryImpl extends AbstractRepository
          * @return the lock manager
          */
         protected LockManagerImpl createLockManager() throws RepositoryException {
-            return new LockManagerImpl(getSystemSession(), fs, executor);
+            return new LockManagerImpl(
+                    getSystemSession(), fs, context.getExecutor());
         }
 
         /**
@@ -2097,8 +2101,7 @@ public class RepositoryImpl extends AbstractRepository
             if (Boolean.getBoolean("org.apache.jackrabbit.version.recovery")) {
                 RepositoryChecker checker = new RepositoryChecker(
                         persistMgr, context.getInternalVersionManager());
-                checker.check(ROOT_NODE_ID, true);
-                checker.fix();
+                checker.check(ROOT_NODE_ID, true, true);
             }
         }
 
@@ -2391,7 +2394,7 @@ public class RepositoryImpl extends AbstractRepository
 
                 synchronized (activeSessions) {
                     // remove workspaces with active sessions
-                    for (SessionImpl ses : activeSessions.values()) {
+                    for (Session ses : activeSessions.values()) {
                         wspNames.remove(ses.getWorkspace().getName());
                     }
                 }
@@ -2456,7 +2459,7 @@ public class RepositoryImpl extends AbstractRepository
     /**
      * Represents a Repository Descriptor Value (either Value or Value[])
      */
-    protected final class DescriptorValue {
+    protected static final class DescriptorValue {
 
         private Value val;
         private Value[] vals;

@@ -114,6 +114,7 @@ public class NodeState extends ItemState {
     /**
      * {@inheritDoc}
      */
+    @Override
     public synchronized void copy(ItemState state, boolean syncModCount) {
         synchronized (state) {
             NodeState nodeState = (NodeState) state;
@@ -136,6 +137,7 @@ public class NodeState extends ItemState {
      *
      * @return always true
      */
+    @Override
     public final boolean isNode() {
         return true;
     }
@@ -143,6 +145,7 @@ public class NodeState extends ItemState {
     /**
      * {@inheritDoc}
      */
+    @Override
     public NodeId getParentId() {
         return parentId;
     }
@@ -150,6 +153,7 @@ public class NodeState extends ItemState {
     /**
      * {@inheritDoc}
      */
+    @Override
     public ItemId getId() {
         return id;
     }
@@ -341,7 +345,7 @@ public class NodeState extends ItemState {
      */
     public boolean renameChildNodeEntry(Name oldName, int index,
                                                      Name newName) {
-        ChildNodeEntry oldEntry = childNodeEntries.get(oldName, index);;
+        ChildNodeEntry oldEntry = childNodeEntries.get(oldName, index);
         if (oldEntry != null) {
             return renameChildNodeEntry(oldEntry.getId(), newName);
         }
@@ -380,9 +384,9 @@ public class NodeState extends ItemState {
      * with a new entry. Note that the entry will <i>overwrite</i> the old
      * entry at the same relative position within the child node entries list.
      *
-     * @param oldId id the entry to be replaced is refering to.
+     * @param oldId id the entry to be replaced is referring to.
      * @param newName <code>Name</code> object specifying the entry's new name
-     * @param newId the id the new entry is refering to.
+     * @param newId the id the new entry is referring to.
      * @return <code>true</code> if the entry was successfully replaced;
      *         otherwise <code>false</code>
      */
@@ -779,7 +783,7 @@ public class NodeState extends ItemState {
                         for (int j = i; j < ours.size(); j++) {
                             if (ours.get(j).getId().equals(other.getId())) {
                                 // found it
-                                entry = (ChildNodeEntry) ours.get(j);
+                                entry = ours.get(j);
                                 break;
                             }
                         }
@@ -849,6 +853,7 @@ public class NodeState extends ItemState {
      * If the listener passed is at the same time a <code>NodeStateListener</code>
      * we remember it as well.
      */
+    @Override
     public void setContainer(ItemStateListener listener) {
         if (listener instanceof NodeStateListener) {
             if (this.listener != null) {

@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Calendar;
+import java.util.TimeZone;
 
 import javax.jcr.Binary;
 import javax.jcr.PropertyType;
@@ -56,22 +57,24 @@ import org.apache.jackrabbit.util.ISO8601;
  * The following table specifies the internal format for every property type:
  * <pre>
  * <table>
- * <tr><b>PropertyType</b><td></td><td><b>Internal Format</b></td></tr>
- * <tr>STRING<td></td><td>String</td></tr>
- * <tr>LONG<td></td><td>Long</td></tr>
- * <tr>DOUBLE<td></td><td>Double</td></tr>
- * <tr>DATE<td></td><td>Calendar</td></tr>
- * <tr>BOOLEAN<td></td><td>Boolean</td></tr>
- * <tr>NAME<td></td><td>Name</td></tr>
- * <tr>PATH<td></td><td>Path</td></tr>
- * <tr>URI<td></td><td>URI</td></tr>
- * <tr>DECIMAL<td></td><td>BigDecimal</td></tr>
- * <tr>BINARY<td></td><td>BLOBFileValue</td></tr>
- * <tr>REFERENCE<td></td><td>{@link NodeId}</td></tr>
+ * <tr><td><b>PropertyType</b></td><td><b>Internal Format</b></td></tr>
+ * <tr><td>STRING</td><td>String</td></tr>
+ * <tr><td>LONG</td><td>Long</td></tr>
+ * <tr><td>DOUBLE</td><td>Double</td></tr>
+ * <tr><td>DATE</td><td>Calendar</td></tr>
+ * <tr><td>BOOLEAN</td><td>Boolean</td></tr>
+ * <tr><td>NAME</td><td>Name</td></tr>
+ * <tr><td>PATH</td><td>Path</td></tr>
+ * <tr><td>URI</td><td>URI</td></tr>
+ * <tr><td>DECIMAL</td><td>BigDecimal</td></tr>
+ * <tr><td>BINARY</td><td>BLOBFileValue</td></tr>
+ * <tr><td>REFERENCE</td><td>{@link NodeId}</td></tr>
  * </table>
  * </pre>
  */
 public class InternalValue extends AbstractQValue {
+
+    private static final long serialVersionUID = -7340744360527434409L;
 
     public static final InternalValue[] EMPTY_ARRAY = new InternalValue[0];
 
@@ -240,7 +243,7 @@ public class InternalValue extends AbstractQValue {
             case PropertyType.PATH:
                 return new InternalValue(value.getPath());
             case PropertyType.STRING:
-                return new InternalValue(value.getString());
+                return new InternalValue(value.getString(), PropertyType.STRING);
             default:
                 throw new IllegalArgumentException("illegal value");
         }
@@ -287,7 +290,7 @@ public class InternalValue extends AbstractQValue {
      * @return the created value
      */
     public static InternalValue create(String value) {
-        return new InternalValue(value);
+        return new InternalValue(value, PropertyType.STRING);
     }
 
     /**
@@ -312,6 +315,18 @@ public class InternalValue extends AbstractQValue {
      */
     public static InternalValue create(Calendar value) {
         return new InternalValue(value);
+    }
+    
+    /**
+     * https://issues.apache.org/jira/browse/JCR-3083
+     * 
+     * @param value
+     * @return the created value
+     */
+    public static InternalValue createDate(String value) {
+        InternalValue iv = new InternalValue(Calendar.getInstance(TimeZone.getTimeZone("GMT+00:00")));
+        iv.val = value;
+        return iv;
     }
 
     /**
@@ -456,14 +471,9 @@ public class InternalValue extends AbstractQValue {
         return (NodeId) val;
     }
 
-    public Calendar getDate() {
+    public Calendar getDate() throws RepositoryException {
         assert val != null && type == PropertyType.DATE;
-        try {
-            return getCalendar();
-        } catch (RepositoryException ignore) {
-            assert false;
-            return null;
-        }
+        return getCalendar();
     }
 
     /**
@@ -531,10 +541,10 @@ public class InternalValue extends AbstractQValue {
     }
 
     //-------------------------------------------------------< implementation >
-    private InternalValue(String value) {
-        super(value, PropertyType.STRING);
+    private InternalValue(String value, int type) {
+        super(value, type);
     }
-
+    
     private InternalValue(Name value) {
         super(value);
     }
@@ -656,6 +666,7 @@ public class InternalValue extends AbstractQValue {
     /**
      * @see org.apache.jackrabbit.spi.QValue#getLength()
      */
+    @Override
     public long getLength() throws RepositoryException {
         if (PropertyType.BINARY == type) {
             return ((Binary) val).getSize();
@@ -683,6 +694,7 @@ public class InternalValue extends AbstractQValue {
     /**
      * @see org.apache.jackrabbit.spi.QValue#getBinary()
      */
+    @Override
     public Binary getBinary() throws RepositoryException {
         if (type == PropertyType.BINARY) {
             // return an independent copy that can be disposed without
@@ -702,6 +714,7 @@ public class InternalValue extends AbstractQValue {
     /**
      * @see org.apache.jackrabbit.spi.QValue#discard()
      */
+    @Override
     public void discard() {
         if (type == PropertyType.BINARY) {
             BLOBFileValue bfv = (BLOBFileValue) val;
@@ -726,8 +739,13 @@ public class InternalValue extends AbstractQValue {
         if (object instanceof InternalValue) {
             InternalValue that = (InternalValue) object;
             if (type == PropertyType.DATE) {
-                return that.type == PropertyType.DATE
-                    && getDate().getTimeInMillis() == that.getDate().getTimeInMillis();
+                try {
+                    return that.type == PropertyType.DATE
+                            && getDate().getTimeInMillis() == that.getDate()
+                                    .getTimeInMillis();
+                } catch (RepositoryException e) {
+                    return false;
+                }
             } else {
                 return type == that.type && val.equals(that.val);
             }

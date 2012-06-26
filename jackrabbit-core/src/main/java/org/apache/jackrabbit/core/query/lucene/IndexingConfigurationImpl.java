@@ -83,6 +83,16 @@ public class IndexingConfigurationImpl
     private static final PathFactory PATH_FACTORY = PathFactoryImpl.getInstance();
 
     /**
+     * An Iterator over an empty list of node states.
+     */
+    private static final Iterator<NodeState> EMPTY_NODESTATE_ITERATOR;
+    static {
+        Collection<NodeState> empty = Collections.emptyList();
+        EMPTY_NODESTATE_ITERATOR = empty.iterator();
+    }
+
+    
+    /**
      * The indexing configuration.
      */
     private Element configuration;
@@ -149,40 +159,26 @@ public class IndexingConfigurationImpl
                 for (int j = 0; j < childNodes.getLength(); j++) {
                     Node analyzerNode = childNodes.item(j);
                     if (analyzerNode.getNodeName().equals("analyzer")) {
-                        String analyzerClassName = analyzerNode.getAttributes().getNamedItem("class").getNodeValue();
-                        try {
-                        Class clazz = Class.forName(analyzerClassName);
-                            if (clazz == JackrabbitAnalyzer.class) {
-                                log.warn("Not allowed to configure " + JackrabbitAnalyzer.class.getName() +  " for a property. "
-                                        + "Using default analyzer for that property.");
-                            }
-                            else if (Analyzer.class.isAssignableFrom(clazz)) {
-                                Analyzer analyzer = (Analyzer) clazz.newInstance();
-                                NodeList propertyChildNodes = analyzerNode.getChildNodes();
-                                for (int k = 0; k < propertyChildNodes.getLength(); k++) {
-                                    Node propertyNode = propertyChildNodes.item(k);
-                                    if (propertyNode.getNodeName().equals("property")) {
-                                        // get property name
-                                        Name propName = resolver.getQName(getTextContent(propertyNode));
-                                        String fieldName = nsMappings.translateName(propName);
-                                        // set analyzer for the fulltext property fieldname
-                                        int idx = fieldName.indexOf(':');
-                                        fieldName = fieldName.substring(0, idx + 1)
-                                                    + FieldNames.FULLTEXT_PREFIX + fieldName.substring(idx + 1);
-                                        Object prevAnalyzer = analyzers.put(fieldName, analyzer);
-                                        if (prevAnalyzer != null) {
-                                            log.warn("Property " + propName.getLocalName()
-                                                    + " has been configured for multiple analyzers. "
-                                                    + " Last configured analyzer is used");
-                                        }
-                                    }
+                        Analyzer analyzer = JackrabbitAnalyzer.getAnalyzerInstance(
+                                analyzerNode.getAttributes().getNamedItem("class").getNodeValue());
+                        NodeList propertyChildNodes = analyzerNode.getChildNodes();
+                        for (int k = 0; k < propertyChildNodes.getLength(); k++) {
+                            Node propertyNode = propertyChildNodes.item(k);
+                            if (propertyNode.getNodeName().equals("property")) {
+                                // get property name
+                                Name propName = resolver.getQName(getTextContent(propertyNode));
+                                String fieldName = nsMappings.translateName(propName);
+                                // set analyzer for the fulltext property fieldname
+                                int idx = fieldName.indexOf(':');
+                                fieldName = fieldName.substring(0, idx + 1)
+                                        + FieldNames.FULLTEXT_PREFIX + fieldName.substring(idx + 1);
+                                Object prevAnalyzer = analyzers.put(fieldName, analyzer);
+                                if (prevAnalyzer != null) {
+                                    log.warn("Property " + propName.getLocalName()
+                                            + " has been configured for multiple analyzers. "
+                                            + " Last configured analyzer is used");
                                 }
-                            } else {
-                                log.warn("org.apache.lucene.analysis.Analyzer is not a superclass of "
-                                        + analyzerClassName + ". Ignoring this configure analyzer" );
                             }
-                        } catch (ClassNotFoundException e) {
-                            log.warn("Analyzer class not found: " + analyzerClassName, e);
                         }
                     }
                 }
@@ -861,7 +857,7 @@ public class IndexingConfigurationImpl
     /**
      * Simple class that holds boost and nodeScopeIndex flag.
      */
-    private class PropertyConfig {
+    private static class PropertyConfig {
 
         /**
          * The boost value for a property.
@@ -929,11 +925,11 @@ public class IndexingConfigurationImpl
          */
         boolean evaluate(final NodeState context) {
             // get iterator along specified axis
-            Iterator nodeStates;
+            Iterator<NodeState> nodeStates;
             if (axis == SELF) {
                 nodeStates = Collections.singletonList(context).iterator();
             } else if (axis == CHILD) {
-                nodeStates = new AbstractIteratorDecorator(
+                nodeStates = (Iterator<NodeState>) new AbstractIteratorDecorator(
                         context.getChildNodeEntries().iterator()) {
                     public Object next() {
                         ChildNodeEntry cne =
@@ -949,7 +945,7 @@ public class IndexingConfigurationImpl
                 };
             } else if (axis == ANCESTOR) {
                 try {
-                    nodeStates = new Iterator() {
+                    nodeStates = new Iterator<NodeState>() {
 
                         private NodeState next = context.getParentId() == null ? null :
                                 (NodeState) ism.getItemState(context.getParentId());
@@ -962,7 +958,7 @@ public class IndexingConfigurationImpl
                             return next != null;
                         }
 
-                        public Object next() {
+                        public NodeState next() {
                             NodeState tmp = next;
                             try {
                                 if (next.getParentId() != null) {
@@ -977,7 +973,7 @@ public class IndexingConfigurationImpl
                         }
                     };
                 } catch (ItemStateException e) {
-                    nodeStates = Collections.EMPTY_LIST.iterator();
+                    nodeStates = EMPTY_NODESTATE_ITERATOR;
                 }
             } else if (axis == PARENT) {
                 try {
@@ -985,20 +981,20 @@ public class IndexingConfigurationImpl
                         NodeState state = (NodeState) ism.getItemState(context.getParentId());
                         nodeStates = Collections.singletonList(state).iterator();
                     } else {
-                        nodeStates = Collections.EMPTY_LIST.iterator();
+                        nodeStates = EMPTY_NODESTATE_ITERATOR;
                     }
                 } catch (ItemStateException e) {
-                    nodeStates = Collections.EMPTY_LIST.iterator();
+                    nodeStates = EMPTY_NODESTATE_ITERATOR;
                 }
             } else {
                 // unsupported axis
-                nodeStates = Collections.EMPTY_LIST.iterator();
+                nodeStates = EMPTY_NODESTATE_ITERATOR;
             }
 
             // check node type, name and property value for each
             while (nodeStates.hasNext()) {
                 try {
-                    NodeState current = (NodeState) nodeStates.next();
+                    NodeState current = nodeStates.next();
                     if (elementTest != null
                             && !current.getNodeTypeName().equals(elementTest)) {
                         continue;

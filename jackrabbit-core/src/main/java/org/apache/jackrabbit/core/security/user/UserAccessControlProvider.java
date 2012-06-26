@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.core.security.user;
 
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
 import org.apache.jackrabbit.api.security.principal.ItemBasedPrincipal;
 import org.apache.jackrabbit.api.security.user.Authorizable;
 import org.apache.jackrabbit.api.security.user.UserManager;
@@ -33,8 +34,11 @@ import org.apache.jackrabbit.core.security.authorization.AccessControlEditor;
 import org.apache.jackrabbit.core.security.authorization.CompiledPermissions;
 import org.apache.jackrabbit.core.security.authorization.NamedAccessControlPolicyImpl;
 import org.apache.jackrabbit.core.security.authorization.Permission;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeBits;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeManagerImpl;
 import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.security.principal.PrincipalImpl;
+import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
 import org.apache.jackrabbit.util.Text;
 import org.slf4j.Logger;
@@ -70,7 +74,8 @@ import java.util.Set;
  * The default access control policy defined by this provider has the following
  * characteristics:
  * <ul>
- * <li>everybody has READ permission to all items,</li>
+ * <li>All authenticated users have READ permission to all items. If {link #PARAM_ANONYMOUS_ACCESS}
+ * is configured to be <code>true</code> this also applies to the anonymous user.</li>
  *
  * <li>every known user is allowed to modify it's own properties except for
  * her/his group membership,</li>
@@ -293,7 +298,7 @@ public class UserAccessControlProvider extends AbstractAccessControlProvider
     }
 
     private Node getExistingNode(Path path) throws RepositoryException {
-        String absPath = resolver.getJCRPath(path.getNormalizedPath());
+        String absPath = session.getJCRPath(path.getNormalizedPath());
         if (session.nodeExists(absPath)) {
             return session.getNode(absPath);
         } else if (session.propertyExists(absPath)) {
@@ -309,11 +314,6 @@ public class UserAccessControlProvider extends AbstractAccessControlProvider
             }
             throw new ItemNotFoundException("Unable to determine permissions: No item and no existing parent for target path " + absPath);
         }
-    }
-
-    private int getPrivilegeBits(String privName) throws RepositoryException {
-        Privilege[] privs = new Privilege[] {session.getAccessControlManager().privilegeFromName(privName)};
-        return PrivilegeRegistry.getBits(privs);
     }
 
     private static boolean containsGroup(Set<Principal> principals, Principal group) {
@@ -377,6 +377,23 @@ public class UserAccessControlProvider extends AbstractAccessControlProvider
             observationMgr.addEventListener(this, events, groupsPath, true, null, null, false);
         }
 
+        private PrivilegeBits getPrivilegeBits(String... privNames) throws RepositoryException {
+            PrivilegeManagerImpl impl = getPrivilegeManagerImpl();
+            Name[] names = new Name[privNames.length];
+            for (int i = 0; i < privNames.length; i++) {
+                names[i] = session.getQName(privNames[i]);
+            }
+            return impl.getBits(names);
+        }
+
+        private PrivilegeBits assertModifiable(PrivilegeBits bits) {
+            if (bits.isModifiable()) {
+                return bits;
+            } else {
+                return PrivilegeBits.getInstance(bits);
+            }
+        }
+
         //------------------------------------< AbstractCompiledPermissions >---
         /**
          * @see AbstractCompiledPermissions#buildResult(Path)
@@ -403,15 +420,15 @@ public class UserAccessControlProvider extends AbstractAccessControlProvider
             int denies = Permission.NONE;
             // default allow permission and default privileges
             int allows = Permission.READ;
-            int privs;
+            PrivilegeBits privs;
             // Determine if for path, the set of privileges must be calculated:
             // Generally, privileges can only be determined for existing nodes.
-            String jcrPath = resolver.getJCRPath(path.getNormalizedPath());
+            String jcrPath = session.getJCRPath(path.getNormalizedPath());
             boolean calcPrivs = session.nodeExists(jcrPath);
             if (calcPrivs) {
                 privs = getPrivilegeBits(Privilege.JCR_READ);
             } else {
-                privs = PrivilegeRegistry.NO_PRIVILEGE;
+                privs = PrivilegeBits.EMPTY;
             }
 
             if (Text.isDescendant(usersPath, jcrPath)) {
@@ -432,7 +449,8 @@ public class UserAccessControlProvider extends AbstractAccessControlProvider
                         if (calcPrivs) {
                             // grant WRITE privilege
                             // note: ac-read/modification is not included
-                            privs |= getPrivilegeBits(PrivilegeRegistry.REP_WRITE);
+                            privs = assertModifiable(privs);
+                            privs.add(getPrivilegeBits(PrivilegeRegistry.REP_WRITE));
                         }
                     }
                 } else {
@@ -444,14 +462,16 @@ public class UserAccessControlProvider extends AbstractAccessControlProvider
                         // user can only read && write his own props
                         allows |= (Permission.SET_PROPERTY | Permission.REMOVE_PROPERTY);
                         if (calcPrivs) {
-                            privs |= getPrivilegeBits(Privilege.JCR_MODIFY_PROPERTIES);
+                            privs = assertModifiable(privs);
+                            privs.add(getPrivilegeBits(Privilege.JCR_MODIFY_PROPERTIES));
                         }
                     } else if (isUserAdmin) {
                         allows |= (Permission.ADD_NODE | Permission.REMOVE_NODE | Permission.SET_PROPERTY | Permission.REMOVE_PROPERTY | Permission.NODE_TYPE_MNGMT);
                         if (calcPrivs) {
                             // grant WRITE privilege
                             // note: ac-read/modification is not included
-                            privs |= getPrivilegeBits(PrivilegeRegistry.REP_WRITE);
+                            privs = assertModifiable(privs);
+                            privs.add(getPrivilegeBits(PrivilegeRegistry.REP_WRITE));
                         }
                     } // else: normal user that isn't allowed to modify another user.
                 }
@@ -470,20 +490,32 @@ public class UserAccessControlProvider extends AbstractAccessControlProvider
                             // no remove perm on group-admin node
                             allows |= (Permission.ADD_NODE | Permission.SET_PROPERTY | Permission.REMOVE_PROPERTY | Permission.NODE_TYPE_MNGMT);
                             if (calcPrivs) {
-                                privs |= getPrivilegeBits(PrivilegeRegistry.REP_WRITE);
-                                privs ^= getPrivilegeBits(Privilege.JCR_REMOVE_NODE);
+                                privs = assertModifiable(privs);
+                                privs.add(getPrivilegeBits(Privilege.JCR_ADD_CHILD_NODES, Privilege.JCR_MODIFY_PROPERTIES, Privilege.JCR_NODE_TYPE_MANAGEMENT));
                             }
                         } else {
                             // complete write
                             allows |= (Permission.ADD_NODE | Permission.REMOVE_NODE | Permission.SET_PROPERTY | Permission.REMOVE_PROPERTY | Permission.NODE_TYPE_MNGMT);
                             if (calcPrivs) {
-                                privs |= getPrivilegeBits(PrivilegeRegistry.REP_WRITE);
+                                privs = assertModifiable(privs);
+                                privs.add(getPrivilegeBits(PrivilegeRegistry.REP_WRITE));
                             }
                         }
                     }
                 }
             } // else outside of user/group tree -> read only.
-            return new Result(allows, denies, privs, PrivilegeRegistry.NO_PRIVILEGE);
+            return new Result(allows, denies, privs, PrivilegeBits.EMPTY);
+        }
+
+        @Override
+        protected Result buildRepositoryResult() throws RepositoryException {
+            log.warn("TODO: JCR-2774 - Repository level permissions.");
+            return new Result(Permission.NONE, Permission.NONE, PrivilegeBits.EMPTY, PrivilegeBits.EMPTY);
+        }
+
+        @Override
+        protected PrivilegeManagerImpl getPrivilegeManagerImpl() throws RepositoryException {
+            return (PrivilegeManagerImpl) ((JackrabbitWorkspace) session.getWorkspace()).getPrivilegeManager();
         }
 
         //--------------------------------------------< CompiledPermissions >---

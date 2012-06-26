@@ -19,6 +19,7 @@ package org.apache.jackrabbit.core.query.lucene.join;
 import static javax.jcr.query.qom.QueryObjectModelConstants.JCR_OPERATOR_EQUAL_TO;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +35,8 @@ import javax.jcr.query.qom.Join;
 import javax.jcr.query.qom.Literal;
 import javax.jcr.query.qom.PropertyValue;
 import javax.jcr.query.qom.QueryObjectModelFactory;
+
+import org.apache.jackrabbit.commons.query.qom.OperandEvaluator;
 
 class EquiJoinMerger extends JoinMerger {
 
@@ -76,7 +79,7 @@ class EquiJoinMerger extends JoinMerger {
     }
 
     @Override
-    public List<Constraint> getRightJoinConstraints(List<Row> leftRows)
+    public List<Constraint> getRightJoinConstraints(Collection<Row> leftRows)
             throws RepositoryException {
         Map<String, Literal> literals = new HashMap<String, Literal>();
         for (Row leftRow : leftRows) {

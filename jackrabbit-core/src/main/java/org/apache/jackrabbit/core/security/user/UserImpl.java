@@ -26,6 +26,7 @@ import org.apache.jackrabbit.core.security.principal.AdminPrincipal;
 
 import javax.jcr.Credentials;
 import javax.jcr.RepositoryException;
+import javax.jcr.SimpleCredentials;
 import javax.jcr.Value;
 import java.io.UnsupportedEncodingException;
 import java.security.NoSuchAlgorithmException;
@@ -47,18 +48,13 @@ public class UserImpl extends AuthorizableImpl implements User {
     /**
      * Creates a hash of the specified password if it is found to be plain text.
      * 
-     * @param password
-     * @return
-     * @throws RepositoryException
+     * @param password The password string.
+     * @return Hash for the given password string.
+     * @throws RepositoryException If an error occurs.
+     * @see CryptedSimpleCredentials#buildPasswordHash(String)
      */
     static String buildPasswordValue(String password) throws RepositoryException {
-        try {
-            return new CryptedSimpleCredentials("_", password).getPassword();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RepositoryException(e);
-        } catch (UnsupportedEncodingException e) {
-            throw new RepositoryException(e);
-        }
+        return CryptedSimpleCredentials.buildPasswordHash(password);
     }
 
     //-------------------------------------------------------< Authorizable >---
@@ -125,8 +121,29 @@ public class UserImpl extends AuthorizableImpl implements User {
      * @see User#changePassword(String)
      */
     public void changePassword(String password) throws RepositoryException {
+        userManager.onPasswordChange(this, password);
         Value v = getSession().getValueFactory().createValue(buildPasswordValue(password));
         userManager.setProtectedProperty(getNode(), P_PASSWORD, v);
+    }
+
+    /**
+     * @see User#changePassword(String, String)
+     */
+    public void changePassword(String password, String oldPassword) throws RepositoryException {
+        // make sure the old password matches.
+        try {
+            CryptedSimpleCredentials csc = (CryptedSimpleCredentials) getCredentials();
+            SimpleCredentials creds = new SimpleCredentials(getID(), oldPassword.toCharArray());
+            if (!csc.matches(creds)) {
+                throw new RepositoryException("Failed to change password: Old password does not match.");
+            }
+        } catch (NoSuchAlgorithmException e) {
+            throw new RepositoryException("Cannot change password: failed to validate old password.");
+        } catch (UnsupportedEncodingException e) {
+            throw new RepositoryException("Cannot change password: failed to validate old password.");
+        }
+
+        changePassword(password);
     }
 
     /**

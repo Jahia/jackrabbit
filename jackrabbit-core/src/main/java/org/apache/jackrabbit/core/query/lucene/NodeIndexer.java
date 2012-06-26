@@ -20,7 +20,6 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -218,8 +217,9 @@ public class NodeIndexer {
             // parent UUID
             if (node.getParentId() == null) {
                 // root node
-                doc.add(new Field(FieldNames.PARENT, "", Field.Store.YES,
-                        Field.Index.NOT_ANALYZED_NO_NORMS));
+                doc.add(new Field(FieldNames.PARENT, false, "",
+                        Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS,
+                        Field.TermVector.NO));
                 addNodeName(doc, "", "");
             } else if (node.getSharedSet().isEmpty()) {
                 addParentChildRelation(doc, node.getParentId());
@@ -229,8 +229,9 @@ public class NodeIndexer {
                     addParentChildRelation(doc, id);
                 }
                 // mark shareable nodes
-                doc.add(new Field(FieldNames.SHAREABLE_NODE, "",
-                        Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
+                doc.add(new Field(FieldNames.SHAREABLE_NODE, false, "",
+                        Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS,
+                        Field.TermVector.NO));
             }
         } catch (NoSuchItemStateException e) {
             throwRepositoryException(e);
@@ -298,7 +299,8 @@ public class NodeIndexer {
     protected void addMVPName(Document doc, Name name) {
         try {
             String propName = resolver.getJCRName(name);
-            doc.add(new Field(FieldNames.MVP, propName, Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS, Field.TermVector.NO));
+            doc.add(new Field(FieldNames.MVP, false, propName, Field.Store.NO,
+                    Field.Index.NOT_ANALYZED_NO_NORMS, Field.TermVector.NO));
         } catch (NamespaceException e) {
             // will never happen, prefixes are created dynamically
         }
@@ -369,7 +371,7 @@ public class NodeIndexer {
                     // never fulltext index jcr:uuid String
                     if (name.equals(NameConstants.JCR_UUID)) {
                         addStringValue(doc, fieldName, value.getString(),
-                                false, false, DEFAULT_BOOST);
+                                false, false, DEFAULT_BOOST, true);
                     } else {
                         addStringValue(doc, fieldName, value.getString(),
                                 true, isIncludedInNodeIndex(name),
@@ -391,10 +393,30 @@ public class NodeIndexer {
                     addDecimalValue(doc, fieldName, value.getDecimal());
                 }
                 break;
-
-
             default:
                 throw new IllegalArgumentException("illegal internal value type: " + value.getType());
+        }
+        addValueProperty(doc, value, name, fieldName);
+    }
+
+    /**
+     * Adds a property related value to the lucene Document. <br>
+     *
+     * Like <code>length</code> for indexed fields.
+     *
+     * @param doc
+     *            the document.
+     * @param value
+     *            the internal jackrabbit value.
+     * @param name
+     *            the name of the property.
+     */
+    protected void addValueProperty(Document doc, InternalValue value,
+            Name name, String fieldName) throws RepositoryException {
+
+        // skip this method if field is not indexed
+        if (!isIndexed(name)) {
+            return;
         }
 
         // add length
@@ -416,7 +438,9 @@ public class NodeIndexer {
         } catch (NamespaceException e) {
             // will never happen
         }
-        doc.add(new Field(FieldNames.PROPERTIES_SET, fieldName, Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
+        doc.add(new Field(FieldNames.PROPERTIES_SET, false, fieldName,
+                Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS,
+                Field.TermVector.NO));
     }
 
     /**
@@ -520,7 +544,7 @@ public class NodeIndexer {
             field.setOmitNorms(true);
             return field;
         } else {
-            return new Field(FieldNames.PROPERTIES,
+            return new Field(FieldNames.PROPERTIES, false,
                     FieldNames.createNamedValue(fieldName, internalValue),
                     Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS,
                     Field.TermVector.NO);
@@ -539,15 +563,14 @@ public class NodeIndexer {
      * @param internalValue
      *            The value for the field to add to the document.
      */
-    protected void addCalendarValue(Document doc, String fieldName, Object internalValue) {
-        Calendar value = (Calendar) internalValue;
-        long millis = value.getTimeInMillis();
+    protected void addCalendarValue(Document doc, String fieldName, Calendar internalValue) {
         try {
-            doc.add(createFieldWithoutNorms(fieldName, DateField.timeToString(millis),
+            doc.add(createFieldWithoutNorms(fieldName,
+                    DateField.timeToString(internalValue.getTimeInMillis()),
                     PropertyType.DATE));
         } catch (IllegalArgumentException e) {
             log.warn("'{}' is outside of supported date value range.",
-                    new Date(value.getTimeInMillis()));
+                    internalValue);
         }
     }
 
@@ -560,9 +583,8 @@ public class NodeIndexer {
      * @param fieldName     The name of the field to add
      * @param internalValue The value for the field to add to the document.
      */
-    protected void addDoubleValue(Document doc, String fieldName, Object internalValue) {
-        double doubleVal = (Double) internalValue;
-        doc.add(createFieldWithoutNorms(fieldName, DoubleField.doubleToString(doubleVal),
+    protected void addDoubleValue(Document doc, String fieldName, double internalValue) {
+        doc.add(createFieldWithoutNorms(fieldName, DoubleField.doubleToString(internalValue),
                 PropertyType.DOUBLE));
     }
 
@@ -575,9 +597,8 @@ public class NodeIndexer {
      * @param fieldName     The name of the field to add
      * @param internalValue The value for the field to add to the document.
      */
-    protected void addLongValue(Document doc, String fieldName, Object internalValue) {
-        long longVal = (Long) internalValue;
-        doc.add(createFieldWithoutNorms(fieldName, LongField.longToString(longVal),
+    protected void addLongValue(Document doc, String fieldName, long internalValue) {
+        doc.add(createFieldWithoutNorms(fieldName, LongField.longToString(internalValue),
                 PropertyType.LONG));
     }
 
@@ -590,9 +611,8 @@ public class NodeIndexer {
      * @param fieldName     The name of the field to add
      * @param internalValue The value for the field to add to the document.
      */
-    protected void addDecimalValue(Document doc, String fieldName, Object internalValue) {
-        BigDecimal decVal = (BigDecimal) internalValue;
-        doc.add(createFieldWithoutNorms(fieldName, DecimalField.decimalToString(decVal),
+    protected void addDecimalValue(Document doc, String fieldName, BigDecimal internalValue) {
+        doc.add(createFieldWithoutNorms(fieldName, DecimalField.decimalToString(internalValue),
                 PropertyType.DECIMAL));
     }
 
@@ -608,16 +628,17 @@ public class NodeIndexer {
      * @param internalValue The value for the field to add to the document.
      * @param weak          Flag indicating whether it's a WEAKREFERENCE (true) or a REFERENCE (flase)
      */
-    protected void addReferenceValue(Document doc, String fieldName, Object internalValue, boolean weak) {
+    protected void addReferenceValue(Document doc, String fieldName, NodeId internalValue, boolean weak) {
         String uuid = internalValue.toString();
         doc.add(createFieldWithoutNorms(fieldName, uuid,
                 weak ? PropertyType.WEAKREFERENCE : PropertyType.REFERENCE));
-        doc.add(new Field(FieldNames.PROPERTIES,
-                FieldNames.createNamedValue(fieldName, uuid),
-                Field.Store.YES, Field.Index.NO, Field.TermVector.NO));
+        doc.add(new Field(FieldNames.PROPERTIES, false, FieldNames
+                .createNamedValue(fieldName, uuid), Field.Store.YES,
+                Field.Index.NO, Field.TermVector.NO));
         if (weak) {
-            doc.add(new Field(FieldNames.WEAK_REFS, uuid, Field.Store.NO,
-                    Field.Index.NOT_ANALYZED_NO_NORMS));
+            doc.add(new Field(FieldNames.WEAK_REFS, false, uuid,
+                    Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS,
+                    Field.TermVector.NO));
         }
     }
 
@@ -630,11 +651,10 @@ public class NodeIndexer {
      * @param fieldName     The name of the field to add
      * @param internalValue The value for the field to add to the document.
      */
-    protected void addPathValue(Document doc, String fieldName, Object internalValue) {
-        Path path = (Path) internalValue;
-        String pathString = path.toString();
+    protected void addPathValue(Document doc, String fieldName, Path internalValue) {
+        String pathString = internalValue.toString();
         try {
-            pathString = resolver.getJCRPath(path);
+            pathString = resolver.getJCRPath(internalValue);
         } catch (NamespaceException e) {
             // will never happen
         }
@@ -649,9 +669,8 @@ public class NodeIndexer {
      * @param fieldName     The name of the field to add
      * @param internalValue The value for the field to add to the document.
      */
-    protected void addURIValue(Document doc, String fieldName, Object internalValue) {
-        URI uri = (URI) internalValue;
-        doc.add(createFieldWithoutNorms(fieldName, uri.toString(),
+    protected void addURIValue(Document doc, String fieldName, URI internalValue) {
+        doc.add(createFieldWithoutNorms(fieldName, internalValue.toString(),
                 PropertyType.URI));
     }
 
@@ -665,8 +684,8 @@ public class NodeIndexer {
      * @deprecated Use {@link #addStringValue(Document, String, Object, boolean)
      *             addStringValue(Document, String, Object, boolean)} instead.
      */
-    protected void addStringValue(Document doc, String fieldName, Object internalValue) {
-        addStringValue(doc, fieldName, internalValue, true, true, DEFAULT_BOOST);
+    protected void addStringValue(Document doc, String fieldName, String internalValue) {
+        addStringValue(doc, fieldName, internalValue, true, true, DEFAULT_BOOST, true);
     }
 
     /**
@@ -681,8 +700,8 @@ public class NodeIndexer {
      *                      and fulltext indexed.
      */
     protected void addStringValue(Document doc, String fieldName,
-                                  Object internalValue, boolean tokenized) {
-        addStringValue(doc, fieldName, internalValue, tokenized, true, DEFAULT_BOOST);
+                                  String internalValue, boolean tokenized) {
+        addStringValue(doc, fieldName, internalValue, tokenized, true, DEFAULT_BOOST, true);
     }
 
     /**
@@ -703,7 +722,7 @@ public class NodeIndexer {
      * @deprecated use {@link #addStringValue(Document, String, Object, boolean, boolean, float, boolean)} instead.
      */
     protected void addStringValue(Document doc, String fieldName,
-                                  Object internalValue, boolean tokenized,
+                                  String internalValue, boolean tokenized,
                                   boolean includeInNodeIndex, float boost) {
         addStringValue(doc, fieldName, internalValue, tokenized, includeInNodeIndex, boost, true);
     }
@@ -727,33 +746,30 @@ public class NodeIndexer {
      *                           an excerpt.
      */
     protected void addStringValue(Document doc, String fieldName,
-                                  Object internalValue, boolean tokenized,
+                                  String internalValue, boolean tokenized,
                                   boolean includeInNodeIndex, float boost,
                                   boolean useInExcerpt) {
 
         // simple String
-        String stringValue = (String) internalValue;
-        doc.add(createFieldWithoutNorms(fieldName, stringValue,
+        doc.add(createFieldWithoutNorms(fieldName, internalValue,
                 PropertyType.STRING));
         if (tokenized) {
-            if (stringValue.length() == 0) {
+            if (internalValue.length() == 0) {
                 return;
             }
             // create fulltext index on property
             int idx = fieldName.indexOf(':');
             fieldName = fieldName.substring(0, idx + 1)
                     + FieldNames.FULLTEXT_PREFIX + fieldName.substring(idx + 1);
-            Field f = new Field(fieldName, stringValue,
-                    Field.Store.NO,
-                    Field.Index.ANALYZED,
-                    Field.TermVector.NO);
+            Field f = new Field(fieldName, true, internalValue, Field.Store.NO,
+                    Field.Index.ANALYZED, Field.TermVector.NO);
             f.setBoost(boost);
             doc.add(f);
 
             if (includeInNodeIndex) {
                 // also create fulltext index of this value
                 boolean store = supportHighlighting && useInExcerpt;
-                f = createFulltextField(stringValue, store, supportHighlighting);
+                f = createFulltextField(internalValue, store, supportHighlighting);
                 if (useInExcerpt) {
                     doc.add(f);
                 } else {
@@ -773,11 +789,10 @@ public class NodeIndexer {
      * @param fieldName     The name of the field to add
      * @param internalValue The value for the field to add to the document.
      */
-    protected void addNameValue(Document doc, String fieldName, Object internalValue) {
+    protected void addNameValue(Document doc, String fieldName, Name internalValue) {
         try {
-            Name qualiName = (Name) internalValue;
-            String normValue = mappings.getPrefix(qualiName.getNamespaceURI())
-                    + ":" + qualiName.getLocalName();
+            String normValue = mappings.getPrefix(internalValue.getNamespaceURI())
+                    + ":" + internalValue.getLocalName();
             doc.add(createFieldWithoutNorms(fieldName, normValue,
                     PropertyType.NAME));
         } catch (NamespaceException e) {
@@ -814,17 +829,13 @@ public class NodeIndexer {
             tv = Field.TermVector.NO;
         }
         if (store) {
-            // store field compressed if greater than 16k
-            Field.Store stored;
-            if (value.length() > 0x4000) {
-                stored = Field.Store.COMPRESS;
-            } else {
-                stored = Field.Store.YES;
-            }
-            return new Field(FieldNames.FULLTEXT, value, stored,
+            // We would be able to store the field compressed or not depending
+            // on a criterion but then we could not determine later is this field
+            // has been compressed or not, so we choose to store it uncompressed
+            return new Field(FieldNames.FULLTEXT, false, value, Field.Store.YES,
                     Field.Index.ANALYZED, tv);
         } else {
-            return new Field(FieldNames.FULLTEXT, value,
+            return new Field(FieldNames.FULLTEXT, false, value,
                     Field.Store.NO, Field.Index.ANALYZED, tv);
         }
     }
@@ -929,9 +940,9 @@ public class NodeIndexer {
                              InternalValue value) {
         long length = Util.getLength(value);
         if (length != -1) {
-            doc.add(new Field(FieldNames.PROPERTY_LENGTHS,
-                    FieldNames.createNamedLength(propertyName, length),
-                    Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
+            doc.add(new Field(FieldNames.PROPERTY_LENGTHS, false, FieldNames
+                    .createNamedLength(propertyName, length), Field.Store.NO,
+                    Field.Index.NOT_ANALYZED_NO_NORMS, Field.TermVector.NO));
         }
     }
 
@@ -947,11 +958,16 @@ public class NodeIndexer {
                                String namespaceURI,
                                String localName) throws NamespaceException {
         String name = mappings.getPrefix(namespaceURI) + ":" + localName;
-        doc.add(new Field(FieldNames.LABEL, name, Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
+        doc.add(new Field(FieldNames.LABEL, false, name, Field.Store.NO,
+                Field.Index.NOT_ANALYZED_NO_NORMS, Field.TermVector.NO));
         // as of version 3, also index combination of namespace URI and local name
         if (indexFormatVersion.getVersion() >= IndexFormatVersion.V3.getVersion()) {
-            doc.add(new Field(FieldNames.NAMESPACE_URI, namespaceURI, Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
-            doc.add(new Field(FieldNames.LOCAL_NAME, localName, Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
+            doc.add(new Field(FieldNames.NAMESPACE_URI, false, namespaceURI,
+                    Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS,
+                    Field.TermVector.NO));
+            doc.add(new Field(FieldNames.LOCAL_NAME, false, localName,
+                    Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS,
+                    Field.TermVector.NO));
         }
     }
 
@@ -967,9 +983,9 @@ public class NodeIndexer {
     protected void addParentChildRelation(Document doc,
                                           NodeId parentId)
             throws ItemStateException, RepositoryException {
-        doc.add(new Field(
-                FieldNames.PARENT, parentId.toString(),
-                Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS, Field.TermVector.NO));
+        doc.add(new Field(FieldNames.PARENT, false, parentId.toString(),
+                Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS,
+                Field.TermVector.NO));
         NodeState parent = (NodeState) stateProvider.getItemState(parentId);
         ChildNodeEntry child = parent.getChildNodeEntry(node.getNodeId());
         if (child == null) {

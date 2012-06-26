@@ -16,57 +16,168 @@
  */
 package org.apache.jackrabbit.core.security.authorization;
 
-import junit.framework.TestCase;
+import org.apache.jackrabbit.core.SessionImpl;
+import org.apache.jackrabbit.spi.Name;
+import org.apache.jackrabbit.spi.PrivilegeDefinition;
+import org.apache.jackrabbit.spi.commons.conversion.NameResolver;
+import org.apache.jackrabbit.spi.commons.name.NameConstants;
+import org.apache.jackrabbit.test.AbstractJCRTest;
+
+import javax.jcr.RepositoryException;
 import javax.jcr.security.AccessControlException;
 import javax.jcr.security.Privilege;
-import org.apache.jackrabbit.spi.commons.conversion.ParsingNameResolver;
-import org.apache.jackrabbit.spi.commons.conversion.NameResolver;
-import org.apache.jackrabbit.spi.commons.name.NameFactoryImpl;
-import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;
-import org.apache.jackrabbit.spi.Name;
-
-import javax.jcr.NamespaceException;
-import javax.jcr.RepositoryException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * <code>PrivilegeRegistryTest</code>...
  */
-public class PrivilegeRegistryTest extends TestCase {
+public class PrivilegeRegistryTest extends AbstractJCRTest {
 
     private NameResolver resolver;
     private PrivilegeRegistry privilegeRegistry;
 
+    @Override
     protected void setUp() throws Exception {
         super.setUp();
-        NamespaceResolver nsResolver = new NamespaceResolver() {
-            public String getURI(String prefix) throws NamespaceException {
-                if (Name.NS_JCR_PREFIX.equals(prefix)) {
-                    return Name.NS_JCR_URI;
-                } else if (Name.NS_EMPTY_PREFIX.equals(prefix)) {
-                    return Name.NS_DEFAULT_URI;
-                } else if (Name.NS_REP_PREFIX.equals(prefix)) {
-                    return Name.NS_REP_URI;
-                } else {
-                    throw new NamespaceException();
-                }
-            }
-            public String getPrefix(String uri) throws NamespaceException {
-                if (Name.NS_JCR_URI.equals(uri)) {
-                    return Name.NS_JCR_PREFIX;
-                } else if (Name.NS_DEFAULT_URI.equals(uri)) {
-                    return Name.NS_EMPTY_PREFIX;
-                } else if (Name.NS_REP_URI.equals(uri)) {
-                    return Name.NS_REP_PREFIX;
-                } else {
-                    throw new NamespaceException();
-                }
-            }
-        };
-        resolver = new ParsingNameResolver(NameFactoryImpl.getInstance(), nsResolver);
+        resolver = ((SessionImpl) superuser);
         privilegeRegistry = new PrivilegeRegistry(resolver);
+    }
+
+    public void testGetAll() throws RepositoryException {
+
+        PrivilegeDefinition[] defs = privilegeRegistry.getAll();
+
+        List<PrivilegeDefinition> l = new ArrayList<PrivilegeDefinition>(Arrays.asList(defs));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_READ)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_ADD_CHILD_NODES)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_REMOVE_CHILD_NODES)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_MODIFY_PROPERTIES)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_REMOVE_NODE)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_READ_ACCESS_CONTROL)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_MODIFY_ACCESS_CONTROL)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_WRITE)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_ALL)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_LIFECYCLE_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_LOCK_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_NODE_TYPE_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_RETENTION_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_VERSION_MANAGEMENT)));
+        // including repo-level operation privileges
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_NAMESPACE_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_NODE_TYPE_DEFINITION_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.get(NameConstants.JCR_WORKSPACE_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.get(resolver.getQName(PrivilegeRegistry.REP_PRIVILEGE_MANAGEMENT))));
+        // and aggregates
+        assertTrue(l.remove(privilegeRegistry.get(resolver.getQName(PrivilegeRegistry.REP_WRITE))));
+                
+        assertTrue(l.isEmpty());
+    }
+
+
+    public void testGet() throws RepositoryException {
+
+        for (PrivilegeDefinition def : privilegeRegistry.getAll()) {
+
+            PrivilegeDefinition d = privilegeRegistry.get(def.getName());
+            assertEquals(def, d);
+
+            assertNotNull(d.getName());
+            assertEquals(def.getName(), d.getName());
+
+            assertFalse(d.isAbstract());
+            assertEquals(def.isAbstract(), d.isAbstract());
+
+            assertNotNull(d.getDeclaredAggregateNames());
+            assertTrue(def.getDeclaredAggregateNames().containsAll(d.getDeclaredAggregateNames()));
+            assertTrue(d.getDeclaredAggregateNames().containsAll(def.getDeclaredAggregateNames()));
+
+            assertFalse(privilegeRegistry.getBits(d).isEmpty());
+        }
+    }
+
+    public void testAggregates() throws RepositoryException {
+
+        for (PrivilegeDefinition def : privilegeRegistry.getAll()) {
+            if (def.getDeclaredAggregateNames().isEmpty()) {
+                continue; // ignore non aggregate
+            }
+
+            for (Name n : def.getDeclaredAggregateNames()) {
+                PrivilegeDefinition d = privilegeRegistry.get(n);
+                assertNotNull(d);
+                Name[] names = privilegeRegistry.getNames(privilegeRegistry.getBits(d));
+                assertNotNull(names);
+                assertEquals(1, names.length);
+                assertEquals(d.getName(), names[0]);
+            }
+        }
+    }
+
+    public void testPrivilegeDefinition() throws RepositoryException {
+
+        for (PrivilegeDefinition def : privilegeRegistry.getAll()) {
+            assertNotNull(def.getName());
+            assertFalse(def.isAbstract());
+            assertNotNull(def.getDeclaredAggregateNames());
+            assertFalse(privilegeRegistry.getBits(def).isEmpty());
+        }
+    }
+
+    public void testJcrAll() throws RepositoryException {
+        PrivilegeDefinition p = privilegeRegistry.get(NameConstants.JCR_ALL);
+        assertEquals(p.getName(), NameConstants.JCR_ALL);
+        assertFalse(p.getDeclaredAggregateNames().isEmpty());
+        assertFalse(p.isAbstract());
+
+        Set<Name> l = new HashSet<Name>(p.getDeclaredAggregateNames());
+        assertTrue(l.remove(NameConstants.JCR_READ));
+        assertTrue(l.remove(NameConstants.JCR_WRITE));
+        assertTrue(l.remove(resolver.getQName(PrivilegeRegistry.REP_WRITE)));        
+        assertTrue(l.remove(NameConstants.JCR_READ_ACCESS_CONTROL));
+        assertTrue(l.remove(NameConstants.JCR_MODIFY_ACCESS_CONTROL));
+        assertTrue(l.remove(NameConstants.JCR_LIFECYCLE_MANAGEMENT));
+        assertTrue(l.remove(NameConstants.JCR_LOCK_MANAGEMENT));
+        assertTrue(l.remove(NameConstants.JCR_NODE_TYPE_MANAGEMENT));
+        assertTrue(l.remove(NameConstants.JCR_RETENTION_MANAGEMENT));
+        assertTrue(l.remove(NameConstants.JCR_VERSION_MANAGEMENT));
+        // including repo-level operation privileges
+        assertTrue(l.remove(NameConstants.JCR_NAMESPACE_MANAGEMENT));
+        assertTrue(l.remove(NameConstants.JCR_NODE_TYPE_DEFINITION_MANAGEMENT));
+        assertTrue(l.remove(NameConstants.JCR_WORKSPACE_MANAGEMENT));
+        assertTrue(l.remove(resolver.getQName(PrivilegeRegistry.REP_PRIVILEGE_MANAGEMENT)));
+        assertTrue(l.isEmpty());
+    }
+
+    public void testJcrWrite() throws RepositoryException {
+        Name rw = resolver.getQName(PrivilegeRegistry.REP_WRITE);
+        PrivilegeDefinition p = privilegeRegistry.get(rw);
+
+        assertEquals(p.getName(), rw);
+        assertFalse(p.getDeclaredAggregateNames().isEmpty());
+        assertFalse(p.isAbstract());
+
+        Set<Name> l = new HashSet<Name>(p.getDeclaredAggregateNames());
+        assertTrue(l.remove(NameConstants.JCR_WRITE));
+        assertTrue(l.remove(NameConstants.JCR_NODE_TYPE_MANAGEMENT));
+        assertTrue(l.isEmpty());
+    }
+
+    public void testRepWrite() throws RepositoryException {
+        PrivilegeDefinition p = privilegeRegistry.get(NameConstants.JCR_WRITE);
+        assertEquals(p.getName(), NameConstants.JCR_WRITE);
+        assertFalse(p.getDeclaredAggregateNames().isEmpty());
+        assertFalse(p.isAbstract());
+
+        Set<Name> l = new HashSet<Name>(p.getDeclaredAggregateNames());
+        assertTrue(l.remove(NameConstants.JCR_MODIFY_PROPERTIES));
+        assertTrue(l.remove(NameConstants.JCR_ADD_CHILD_NODES));
+        assertTrue(l.remove(NameConstants.JCR_REMOVE_CHILD_NODES));
+        assertTrue(l.remove(NameConstants.JCR_REMOVE_NODE));
+        assertTrue(l.isEmpty());
     }
 
     private void assertSamePrivilegeName(String expected, String present) throws RepositoryException {
@@ -100,7 +211,12 @@ public class PrivilegeRegistryTest extends TestCase {
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_NODE_TYPE_MANAGEMENT)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_RETENTION_MANAGEMENT)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_VERSION_MANAGEMENT)));
-        assertTrue(l.remove(privilegeRegistry.getPrivilege(PrivilegeRegistry.REP_WRITE)));        
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(PrivilegeRegistry.REP_WRITE)));
+        // including repo-level operation privileges
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_NAMESPACE_MANAGEMENT.toString())));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_NODE_TYPE_DEFINITION_MANAGEMENT.toString())));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_WORKSPACE_MANAGEMENT.toString())));        
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(PrivilegeRegistry.REP_PRIVILEGE_MANAGEMENT)));
         assertTrue(l.isEmpty());
     }
 
@@ -123,18 +239,31 @@ public class PrivilegeRegistryTest extends TestCase {
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_NODE_TYPE_MANAGEMENT)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_RETENTION_MANAGEMENT)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_VERSION_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_WRITE)));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(PrivilegeRegistry.REP_WRITE)));
+        // including repo-level operation privileges
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_NAMESPACE_MANAGEMENT.toString())));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_NODE_TYPE_DEFINITION_MANAGEMENT.toString())));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_WORKSPACE_MANAGEMENT.toString())));        
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(PrivilegeRegistry.REP_PRIVILEGE_MANAGEMENT)));
         assertTrue(l.isEmpty());
 
         l = new ArrayList<Privilege>(Arrays.asList(p.getDeclaredAggregatePrivileges()));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_READ)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_WRITE)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(PrivilegeRegistry.REP_WRITE)));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(PrivilegeRegistry.REP_PRIVILEGE_MANAGEMENT)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_READ_ACCESS_CONTROL)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_MODIFY_ACCESS_CONTROL)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_LIFECYCLE_MANAGEMENT)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_LOCK_MANAGEMENT)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_RETENTION_MANAGEMENT)));
         assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_VERSION_MANAGEMENT)));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(Privilege.JCR_NODE_TYPE_MANAGEMENT)));
+        // including repo-level operation privileges
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_NAMESPACE_MANAGEMENT.toString())));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_NODE_TYPE_DEFINITION_MANAGEMENT.toString())));
+        assertTrue(l.remove(privilegeRegistry.getPrivilege(NameConstants.JCR_WORKSPACE_MANAGEMENT.toString())));
         assertTrue(l.isEmpty());
     }
 
@@ -149,20 +278,20 @@ public class PrivilegeRegistryTest extends TestCase {
                 PrivilegeRegistry.getBits(new Privilege[] {p2})));
     }
 
-    public void testGetBitsFromCustomPrivilege() throws AccessControlException {
-        Privilege p = buildCustomPrivilege(Privilege.JCR_READ, null);
+    public void testGetBitsFromInvalidPrivilege() throws AccessControlException {
+        Privilege p = buildUnregisteredPrivilege(Privilege.JCR_READ, null);
         try {
-            int bits = PrivilegeRegistry.getBits(new Privilege[] {p});
+            PrivilegeRegistry.getBits(new Privilege[] {p});
             fail("Retrieving bits from unknown privilege should fail.");
         } catch (AccessControlException e) {
             // ok
         }
     }
 
-    public void testGetBitsFromCustomAggregatePrivilege() throws RepositoryException {
-        Privilege p = buildCustomPrivilege("anyName", privilegeRegistry.getPrivilege(Privilege.JCR_WRITE));
+    public void testGetBitsFromInvalidAggregatePrivilege() throws RepositoryException {
+        Privilege p = buildUnregisteredPrivilege("anyName", privilegeRegistry.getPrivilege(Privilege.JCR_WRITE));
         try {
-            int bits = PrivilegeRegistry.getBits(new Privilege[] {p});
+            PrivilegeRegistry.getBits(new Privilege[] {p});
             fail("Retrieving bits from unknown privilege should fail.");
         } catch (AccessControlException e) {
             // ok
@@ -171,7 +300,7 @@ public class PrivilegeRegistryTest extends TestCase {
 
     public void testGetBitsFromNull() {
         try {
-            PrivilegeRegistry.getBits(null);
+            PrivilegeRegistry.getBits((Privilege[]) null);
             fail("Should throw AccessControlException");
         } catch (AccessControlException e) {
             // ok
@@ -188,7 +317,7 @@ public class PrivilegeRegistryTest extends TestCase {
     }
 
     public void testGetBitsWithInvalidPrivilege() {
-        Privilege p = buildCustomPrivilege("anyName", null);
+        Privilege p = buildUnregisteredPrivilege("anyName", null);
         try {
             PrivilegeRegistry.getBits(new Privilege[] {p});
             fail();
@@ -198,7 +327,8 @@ public class PrivilegeRegistryTest extends TestCase {
     }
 
     public void testGetPrivilegesFromBits() throws RepositoryException {
-        Privilege[] pvs = privilegeRegistry.getPrivileges(PrivilegeRegistry.getBits(privilegesFromNames(new String[] {Privilege.JCR_READ_ACCESS_CONTROL})));
+        int bits = PrivilegeRegistry.getBits(privilegesFromNames(new String[] {Privilege.JCR_READ_ACCESS_CONTROL}));
+        Privilege[] pvs = privilegeRegistry.getPrivileges(bits);
 
         assertTrue(pvs != null);
         assertTrue(pvs.length == 1);
@@ -303,7 +433,7 @@ public class PrivilegeRegistryTest extends TestCase {
         }
     }
 
-     private Privilege buildCustomPrivilege(final String name, final Privilege declaredAggr) {
+    private Privilege buildUnregisteredPrivilege(final String name, final Privilege declaredAggr) {
         return new Privilege() {
 
             public String getName() {

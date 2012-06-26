@@ -18,6 +18,7 @@ package org.apache.jackrabbit.core.query.lucene.hits;
 
 import java.io.IOException;
 
+import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.Scorer;
 
 /**
@@ -42,8 +43,9 @@ public class ScorerHits implements Hits {
      * {@inheritDoc}
      */
     public int next() throws IOException {
-        if (scorer.next()) {
-            return scorer.doc();
+        int docId = scorer.nextDoc();
+        if (docId != DocIdSetIterator.NO_MORE_DOCS) {
+            return docId;
         } else {
             return -1;
         }
@@ -53,8 +55,9 @@ public class ScorerHits implements Hits {
      * {@inheritDoc}
      */
     public int skipTo(int target) throws IOException {
-        if (scorer.skipTo(target)) {
-            return scorer.doc();
+        int docId = scorer.advance(target);
+        if (docId != DocIdSetIterator.NO_MORE_DOCS) {
+            return docId;
         } else {
             return -1;
         }

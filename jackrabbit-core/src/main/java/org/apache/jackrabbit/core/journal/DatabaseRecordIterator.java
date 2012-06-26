@@ -35,7 +35,7 @@ class DatabaseRecordIterator implements RecordIterator {
     /**
      * Logger.
      */
-    private static Logger log = LoggerFactory.getLogger(DatabaseJournal.class);
+    private static Logger log = LoggerFactory.getLogger(DatabaseRecordIterator.class);
 
     /**
      * Underlying result set.
@@ -93,7 +93,7 @@ class DatabaseRecordIterator implements RecordIterator {
     }
 
     /**
-     * Return the next record. If there are no more recors, throws
+     * Return the next record. If there are no more records, throws
      * a <code>NoSuchElementException</code>. If an error occurs,
      * throws a <code>JournalException</code>.
      *

@@ -17,6 +17,7 @@
 package org.apache.jackrabbit.core.security.authorization;
 
 import java.security.Principal;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
@@ -25,6 +26,7 @@ import javax.jcr.Session;
 import javax.jcr.observation.ObservationManager;
 import javax.jcr.security.Privilege;
 
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
 import org.apache.jackrabbit.core.ItemImpl;
 import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
@@ -34,7 +36,6 @@ import org.apache.jackrabbit.core.security.SystemPrincipal;
 import org.apache.jackrabbit.core.security.principal.AdminPrincipal;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
-import org.apache.jackrabbit.spi.commons.conversion.NamePathResolver;
 
 /**
  * <code>AbstractAccessControlProvider</code>...
@@ -59,10 +60,7 @@ public abstract class AbstractAccessControlProvider implements AccessControlProv
      */
     protected SessionImpl session;
     protected ObservationManager observationMgr;
-    protected NamePathResolver resolver;
-
-    protected int privAll;
-    protected int privRead;
+    protected PrivilegeManagerImpl privilegeManager;
 
     private boolean initialized;
 
@@ -77,6 +75,14 @@ public abstract class AbstractAccessControlProvider implements AccessControlProv
         if (!initialized) {
             throw new IllegalStateException("Not initialized or already closed.");
         }
+    }
+
+    /**
+     * @return the PrivilegeManager
+     * @throws RepositoryException
+     */
+    protected PrivilegeManagerImpl getPrivilegeManagerImpl() throws RepositoryException {
+        return privilegeManager;
     }
 
     /**
@@ -97,14 +103,24 @@ public abstract class AbstractAccessControlProvider implements AccessControlProv
             public boolean grants(Path absPath, int permissions) {
                 return true;
             }
-            public int getPrivileges(Path absPath) {
-                return privAll;
+            public int getPrivileges(Path absPath) throws RepositoryException {
+                return PrivilegeRegistry.getBits(new Privilege[] {getAllPrivilege()});
+            }
+            public boolean hasPrivileges(Path absPath, Privilege... privileges) {
+                return true;
+            }
+            public Set<Privilege> getPrivilegeSet(Path absPath) throws RepositoryException {
+                return Collections.singleton(getAllPrivilege());
             }
             public boolean canReadAll() {
                 return true;
             }
-            public boolean canRead(Path itemPath, ItemId itemId) throws RepositoryException {
+            public boolean canRead(Path itemPath, ItemId itemId) {
                 return true;
+            }
+
+            private Privilege getAllPrivilege() throws RepositoryException {
+                return getPrivilegeManagerImpl().getPrivilege(Privilege.JCR_ALL);
             }
         };
     }
@@ -133,7 +149,21 @@ public abstract class AbstractAccessControlProvider implements AccessControlProv
                 if (isAcItem(absPath)) {
                     return PrivilegeRegistry.NO_PRIVILEGE;
                 } else {
-                    return privRead;
+                    return PrivilegeRegistry.getBits(new Privilege[] {getReadPrivilege()});
+                }
+            }
+            public boolean hasPrivileges(Path absPath, Privilege... privileges) throws RepositoryException {
+                if (isAcItem(absPath)) {
+                    return false;
+                } else {
+                    return privileges != null && privileges.length == 1 && getReadPrivilege().equals(privileges[0]);
+                }
+            }
+            public Set<Privilege> getPrivilegeSet(Path absPath) throws RepositoryException {
+                if (isAcItem(absPath)) {
+                    return Collections.emptySet();
+                } else {
+                    return Collections.singleton(getReadPrivilege());
                 }
             }
             public boolean canReadAll() {
@@ -146,6 +176,10 @@ public abstract class AbstractAccessControlProvider implements AccessControlProv
                     return !isAcItem(session.getItemManager().getItem(itemId));
                 }
             }
+
+            private Privilege getReadPrivilege() throws RepositoryException {
+                return getPrivilegeManagerImpl().getPrivilege(Privilege.JCR_READ);
+            }
         };
     }
 
@@ -157,7 +191,7 @@ public abstract class AbstractAccessControlProvider implements AccessControlProv
         Path.Element[] elems = absPath.getElements();
         // start looking for a rep:policy name starting from the last element.
         // NOTE: with the current content structure max. 3 levels must be looked
-        // at as the rep:policy node may only have ACE nodes with a properties.
+        // at as the rep:policy node may only have ACE nodes with properties.
         if (elems.length > 1) {
             for (int index = elems.length-1, j = 1; index >= 0 && j <= 3; index--, j++) {
                 if (N_POLICY.equals(elems[index].getName())) {
@@ -219,10 +253,7 @@ public abstract class AbstractAccessControlProvider implements AccessControlProv
         }
         session = (SessionImpl) systemSession;
         observationMgr = systemSession.getWorkspace().getObservationManager();
-        resolver = (NamePathResolver) systemSession;
-
-        privAll = PrivilegeRegistry.getBits(new Privilege[] {session.getAccessControlManager().privilegeFromName(Privilege.JCR_ALL)});
-        privRead = PrivilegeRegistry.getBits(new Privilege[] {session.getAccessControlManager().privilegeFromName(Privilege.JCR_READ)});
+        privilegeManager = (PrivilegeManagerImpl) ((JackrabbitWorkspace) session.getWorkspace()).getPrivilegeManager();
 
         initialized = true;
     }

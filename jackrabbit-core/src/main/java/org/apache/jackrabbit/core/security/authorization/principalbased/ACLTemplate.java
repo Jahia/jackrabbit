@@ -16,12 +16,16 @@
  */
 package org.apache.jackrabbit.core.security.authorization.principalbased;
 
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
 import org.apache.jackrabbit.api.security.JackrabbitAccessControlList;
 import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.security.authorization.AccessControlEntryImpl;
 import org.apache.jackrabbit.core.security.authorization.AbstractACLTemplate;
 import org.apache.jackrabbit.core.security.authorization.GlobPattern;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeBits;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeManagerImpl;
+import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.commons.conversion.NamePathResolver;
 import org.apache.jackrabbit.spi.commons.conversion.NameResolver;
@@ -34,6 +38,7 @@ import javax.jcr.NodeIterator;
 import javax.jcr.Property;
 import javax.jcr.PropertyType;
 import javax.jcr.RepositoryException;
+import javax.jcr.Session;
 import javax.jcr.Value;
 import javax.jcr.ValueFactory;
 import javax.jcr.security.AccessControlEntry;
@@ -73,6 +78,7 @@ class ACLTemplate extends AbstractACLTemplate {
     private final String jcrGlobName;
 
     private final NameResolver resolver;
+    private final PrivilegeManagerImpl privilegeMgr;
 
     ACLTemplate(Principal principal, String path, NamePathResolver resolver, ValueFactory vf)
             throws RepositoryException {
@@ -95,6 +101,8 @@ class ACLTemplate extends AbstractACLTemplate {
         jcrGlobName = resolver.getJCRName(P_GLOB);
 
         this.resolver = resolver;
+        Session session = (acNode != null) ? acNode.getSession() : (Session) resolver;
+        this.privilegeMgr = (PrivilegeManagerImpl) ((JackrabbitWorkspace) session.getWorkspace()).getPrivilegeManager();
 
         if (acNode != null && acNode.hasNode(N_POLICY)) {
             // build the list of policy entries;
@@ -108,10 +116,10 @@ class ACLTemplate extends AbstractACLTemplate {
                     // the isAllow flag:
                     boolean isAllow = aceNode.isNodeType(NT_REP_GRANT_ACE);
                     // the privileges
-                    Value[] pValues = aceNode.getProperty(P_PRIVILEGES).getValues();
-                    Privilege[] privileges = new Privilege[pValues.length];
+                    InternalValue[] pValues = aceNode.getProperty(P_PRIVILEGES).internalGetValues();
+                    Name[] privilegeNames = new Name[pValues.length];
                     for (int i = 0; i < pValues.length; i++) {
-                        privileges[i] = acMgr.privilegeFromName(pValues[i].getString());
+                        privilegeNames[i] = pValues[i].getName();
                     }
                     // the restrictions:
                     Map<String, Value> restrictions = new HashMap<String, Value>(2);
@@ -123,7 +131,7 @@ class ACLTemplate extends AbstractACLTemplate {
                         restrictions.put(prop.getName(), prop.getValue());
                     }
                     // finally add the entry
-                    AccessControlEntry entry = createEntry(principal, privileges, isAllow, restrictions);
+                    AccessControlEntry entry = new Entry(principal, privilegeMgr.getBits(privilegeNames), isAllow, restrictions);
                     entries.add(entry);
                 } else {
                     log.warn("ACE must be of nodetype rep:ACE -> ignored child-node " + aceNode.getPath());
@@ -318,16 +326,27 @@ class ACLTemplate extends AbstractACLTemplate {
             }
         }
 
+        private Entry(Principal principal, PrivilegeBits privilegeBits, boolean allow,
+                      Map<String, Value> restrictions)
+                throws AccessControlException, RepositoryException {
+            super(principal, privilegeBits, allow, restrictions);
+
+            Map<Name, Value> rstr = getRestrictions();
+            nodePath = rstr.get(P_NODE_PATH).getString();
+            Value glob = rstr.get(P_GLOB);
+            if (glob != null) {
+                pattern = GlobPattern.create(nodePath, glob.getString());
+            } else {
+                pattern = GlobPattern.create(nodePath);
+            }
+        }
+
         boolean matches(String jcrPath) throws RepositoryException {
             return pattern.matches(jcrPath);
         }
 
         boolean matches(Item item) throws RepositoryException {
             return pattern.matches(item);
-        }
-
-        boolean matchesNodePath(String jcrPath) {
-            return nodePath.equals(jcrPath);
         }
 
         @Override
@@ -338,6 +357,11 @@ class ACLTemplate extends AbstractACLTemplate {
         @Override
         protected ValueFactory getValueFactory() {
             return valueFactory;
+        }
+
+        @Override
+        protected PrivilegeManagerImpl getPrivilegeManager() {
+            return privilegeMgr;
         }
     }
 }

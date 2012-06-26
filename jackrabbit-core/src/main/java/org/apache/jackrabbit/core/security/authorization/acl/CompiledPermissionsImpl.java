@@ -16,7 +16,8 @@
  */
 package org.apache.jackrabbit.core.security.authorization.acl;
 
-import org.apache.commons.collections.map.LRUMap;
+import org.apache.jackrabbit.api.JackrabbitWorkspace;
+import org.apache.jackrabbit.core.cache.GrowingLRUMap;
 import org.apache.jackrabbit.core.ItemImpl;
 import org.apache.jackrabbit.core.ItemManager;
 import org.apache.jackrabbit.core.NodeImpl;
@@ -29,6 +30,8 @@ import org.apache.jackrabbit.core.security.authorization.AccessControlListener;
 import org.apache.jackrabbit.core.security.authorization.AccessControlModifications;
 import org.apache.jackrabbit.core.security.authorization.AccessControlUtils;
 import org.apache.jackrabbit.core.security.authorization.Permission;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeBits;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeManagerImpl;
 import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
@@ -59,12 +62,7 @@ class CompiledPermissionsImpl extends AbstractCompiledPermissions implements Acc
      * removing LRU items.
      */
     @SuppressWarnings("unchecked")
-    private final Map<ItemId, Boolean> readCache = new LRUMap(1024) {
-        @Override
-        protected boolean removeLRU(LinkEntry entry) {
-            return size() > 5000;
-        }
-    };
+    private final Map<ItemId, Boolean> readCache = new GrowingLRUMap(1024, 5000);
 
     private final Object monitor = new Object();
 
@@ -89,7 +87,8 @@ class CompiledPermissionsImpl extends AbstractCompiledPermissions implements Acc
         }
     }
 
-    private Result buildResult(NodeImpl node, boolean isExistingNode, boolean isAcItem, EntryFilterImpl filter) throws RepositoryException {
+    private Result buildResult(NodeImpl node, boolean isExistingNode,
+                               boolean isAcItem, EntryFilterImpl filter) throws RepositoryException {
         // retrieve all ACEs at path or at the direct ancestor of path that
         // apply for the principal names.
         NodeImpl n = ACLProvider.getNode(node, isAcItem);
@@ -104,12 +103,13 @@ class CompiledPermissionsImpl extends AbstractCompiledPermissions implements Acc
         int allows = Permission.NONE;
         int denies = Permission.NONE;
 
-        int allowPrivileges = PrivilegeRegistry.NO_PRIVILEGE;
-        int denyPrivileges = PrivilegeRegistry.NO_PRIVILEGE;
-        int parentAllows = PrivilegeRegistry.NO_PRIVILEGE;
-        int parentDenies = PrivilegeRegistry.NO_PRIVILEGE;
+        PrivilegeBits allowBits = PrivilegeBits.getInstance();
+        PrivilegeBits denyBits = PrivilegeBits.getInstance();
+        PrivilegeBits parentAllowBits = PrivilegeBits.getInstance();
+        PrivilegeBits parentDenyBits = PrivilegeBits.getInstance();
 
         String parentPath = Text.getRelativeParent(filter.getPath(), 1);
+        NodeId nodeId = (node == null) ? null : node.getNodeId();
 
         while (entries.hasNext()) {
             ACLTemplate.Entry ace = (ACLTemplate.Entry) entries.next();
@@ -121,27 +121,28 @@ class CompiledPermissionsImpl extends AbstractCompiledPermissions implements Acc
             parent. For inherited ACEs determine if the ACE matches the
             parent path.
             */
-            int entryBits = ace.getPrivilegeBits();
-            boolean isLocal = isExistingNode && ace.isLocal(node.getNodeId());
+            PrivilegeBits entryBits = ace.getPrivilegeBits();
+            boolean isLocal = isExistingNode && ace.isLocal(nodeId);
             boolean matchesParent = (!isLocal && ace.matches(parentPath));
             if (matchesParent) {
                 if (ace.isAllow()) {
-                    parentAllows |= Permission.diff(entryBits, parentDenies);
+                    parentAllowBits.addDifference(entryBits, parentDenyBits);
                 } else {
-                    parentDenies |= Permission.diff(entryBits, parentAllows);
+                    parentDenyBits.addDifference(entryBits, parentAllowBits);
                 }
             }
             if (ace.isAllow()) {
-                allowPrivileges |= Permission.diff(entryBits, denyPrivileges);
-                int permissions = PrivilegeRegistry.calculatePermissions(allowPrivileges, parentAllows, true, isAcItem);
+                allowBits.addDifference(entryBits, denyBits);
+                int permissions = PrivilegeRegistry.calculatePermissions(allowBits, parentAllowBits, true, isAcItem);
                 allows |= Permission.diff(permissions, denies);
             } else {
-                denyPrivileges |= Permission.diff(entryBits, allowPrivileges);
-                int permissions = PrivilegeRegistry.calculatePermissions(denyPrivileges, parentDenies, false, isAcItem);
+                denyBits.addDifference(entryBits, allowBits);
+                int permissions = PrivilegeRegistry.calculatePermissions(denyBits, parentDenyBits, false, isAcItem);
                 denies |= Permission.diff(permissions, allows);
             }
         }
-        return new Result(allows, denies, allowPrivileges, denyPrivileges);
+
+        return new Result(allows, denies, allowBits, denyBits);
     }
 
     //------------------------------------< AbstractCompiledPermissions >---
@@ -187,6 +188,19 @@ class CompiledPermissionsImpl extends AbstractCompiledPermissions implements Acc
 
         boolean isAcItem = util.isAcItem(absPath);
         return buildResult(node, existingNode, isAcItem, new EntryFilterImpl(principalNames, absPath, session));
+    }
+
+    @Override
+    protected Result buildRepositoryResult() throws RepositoryException {
+        return buildResult(null, true, false, new EntryFilterImpl(principalNames, session.getQPath("/"), session));
+    }
+
+    /**
+     * @see AbstractCompiledPermissions#getPrivilegeManagerImpl()
+     */
+    @Override
+    protected PrivilegeManagerImpl getPrivilegeManagerImpl() throws RepositoryException {
+        return (PrivilegeManagerImpl) ((JackrabbitWorkspace) session.getWorkspace()).getPrivilegeManager();
     }
 
     /**
@@ -237,7 +251,7 @@ class CompiledPermissionsImpl extends AbstractCompiledPermissions implements Acc
 
                 if (isAcItem) {
                     /* item defines ac content -> regular evaluation */
-                    Result result = buildResult(node, isExistingNode, util.isAcItem(node), filter);
+                    Result result = buildResult(node, isExistingNode, isAcItem, filter);
                     canRead = result.grants(Permission.READ);
                 } else {
                     /*
@@ -249,8 +263,7 @@ class CompiledPermissionsImpl extends AbstractCompiledPermissions implements Acc
                      */
                     for (AccessControlEntry accessControlEntry : entryCollector.collectEntries(node, filter)) {
                         ACLTemplate.Entry ace = (ACLTemplate.Entry) accessControlEntry;
-                        int entryBits = ace.getPrivilegeBits();
-                        if ((entryBits & Permission.READ) == Permission.READ) {
+                        if (ace.getPrivilegeBits().includesRead()) {
                             canRead = ace.isAllow();
                             break;
                         }

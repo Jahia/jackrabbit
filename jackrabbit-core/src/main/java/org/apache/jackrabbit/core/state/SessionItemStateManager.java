@@ -53,7 +53,7 @@ public class SessionItemStateManager
     /**
      * State manager that allows updates
      */
-    private final UpdatableItemStateManager stateMgr;
+    private final LocalItemStateManager stateMgr;
 
     /**
      * Hierarchy manager
@@ -64,13 +64,13 @@ public class SessionItemStateManager
      * map of those states that have been removed transiently
      */
     private final Map<ItemId, ItemState> atticStore =
-        new HashMap<ItemId, ItemState>();
+            Collections.synchronizedMap(new HashMap<ItemId, ItemState>());
 
     /**
      * map of new or modified transient states
      */
     private final Map<ItemId, ItemState> transientStore =
-        new HashMap<ItemId, ItemState>();
+            Collections.synchronizedMap(new HashMap<ItemId, ItemState>());
 
     /**
      * ItemStateManager view of the states in the attic; lazily instantiated
@@ -217,24 +217,10 @@ public class SessionItemStateManager
     /**
      * {@inheritDoc}
      */
-    public NodeState createNew(NodeId id, Name nodeTypeName,
-                               NodeId parentId)
-            throws IllegalStateException {
+    public NodeState createNew(
+            NodeId id, Name nodeTypeName, NodeId parentId)
+            throws RepositoryException {
         return stateMgr.createNew(id, nodeTypeName, parentId);
-    }
-
-    /**
-     * Customized variant of {@link #createNew(NodeId, Name, NodeId)} that
-     * connects the newly created persistent state with the transient state.
-     */
-    public NodeState createNew(NodeState transientState)
-            throws IllegalStateException {
-
-        NodeState persistentState = createNew(transientState.getNodeId(),
-                transientState.getNodeTypeName(),
-                transientState.getParentId());
-        transientState.connect(persistentState);
-        return persistentState;
     }
 
     /**
@@ -250,8 +236,7 @@ public class SessionItemStateManager
      * connects the newly created persistent state with the transient state.
      */
     public PropertyState createNew(PropertyState transientState)
-            throws IllegalStateException {
-
+            throws ItemStateException {
         PropertyState persistentState = createNew(transientState.getName(),
                 transientState.getParentId());
         transientState.connect(persistentState);
@@ -270,6 +255,7 @@ public class SessionItemStateManager
      * {@inheritDoc}
      */
     public void destroy(ItemState state) throws IllegalStateException {
+        assert state != null;
         stateMgr.destroy(state);
     }
 
@@ -414,7 +400,8 @@ public class SessionItemStateManager
             // Group the descendants by reverse relative depth
             SortedMap<Integer, Collection<ItemState>> statesByReverseDepth =
                 new TreeMap<Integer, Collection<ItemState>>();
-            for (ItemState state : store.values()) {
+            ItemState[] states = store.values().toArray(new ItemState[0]);
+            for (ItemState state : states) {
                 // determine relative depth: > 0 means it's a descendant
                 int depth = hierarchyManager.getShareRelativeDepth(
                         (NodeId) id, state.getId());
@@ -461,15 +448,18 @@ public class SessionItemStateManager
 
         // the nearest common ancestor of all transient states
         // must be either
-        // a) a node state with STATUS_EXISTING_MODIFIED, or
-        // b) the parent node of a property state with STATUS_EXISTING_MODIFIED
+        // a) a node state with STATUS_EXISTING_MODIFIED or STATUS_STALE_DESTROYED, or
+        // b) the parent node of a property state with STATUS_EXISTING_MODIFIED or STATUS_STALE_DESTROYED
 
         // collect all candidates based on above criteria
         Collection<NodeId> candidateIds = new LinkedList<NodeId>();
         try {
             HierarchyManager hierMgr = getHierarchyMgr();
-            for (ItemState state : transientStore.values()) {
-                if (state.getStatus() == ItemState.STATUS_EXISTING_MODIFIED) {
+            ItemState[] states =
+                    transientStore.values().toArray(new ItemState[0]);
+            for (ItemState state : states) {
+                if (state.getStatus() == ItemState.STATUS_EXISTING_MODIFIED
+                        || state.getStatus() == ItemState.STATUS_STALE_DESTROYED) {
                     NodeId nodeId;
                     if (state.isNode()) {
                         nodeId = (NodeId) state.getId();
@@ -479,7 +469,7 @@ public class SessionItemStateManager
                     // remove any descendant candidates
                     boolean skip = false;
                     for (Iterator<NodeId> it = candidateIds.iterator(); it.hasNext();) {
-                        NodeId id = it.next();    
+                        NodeId id = it.next();
                         if (nodeId.equals(id) || hierMgr.isAncestor(id, nodeId)) {
                             // already a candidate or a descendant thereof
                             // => skip
@@ -560,21 +550,27 @@ public class SessionItemStateManager
      * @param parentId
      * @param initialStatus
      * @return
-     * @throws ItemStateException
+     * @throws RepositoryException
      */
     public NodeState createTransientNodeState(NodeId id, Name nodeTypeName, NodeId parentId, int initialStatus)
-            throws ItemStateException {
+            throws RepositoryException {
+        if (initialStatus == ItemState.STATUS_NEW && id != null
+                && hasItemState(id)) {
+            throw new InvalidItemStateException(
+                    "Node " + id + " already exists");
+        }
 
         // check map; synchronized to ensure an entry is not created twice.
         synchronized (transientStore) {
-            if (transientStore.containsKey(id)) {
-                String msg = "there's already a node state instance with id " + id;
-                log.debug(msg);
-                throw new ItemStateException(msg);
+            if (id == null) {
+                id = stateMgr.getNodeIdFactory().newNodeId();
+            } else if (transientStore.containsKey(id)) {
+                throw new RepositoryException(
+                        "There is already a transient state for node " + id);
             }
 
-            NodeState state = new NodeState(id, nodeTypeName, parentId,
-                    initialStatus, true);
+            NodeState state = new NodeState(
+                    id, nodeTypeName, parentId, initialStatus, true);
             // put transient state in the map
             transientStore.put(state.getId(), state);
             state.setContainer(this);
@@ -730,11 +726,12 @@ public class SessionItemStateManager
     public void disposeAllTransientItemStates() {
         // dispose item states in transient map & attic
         // (use temp collection to avoid ConcurrentModificationException)
-        Collection<ItemState> tmp = new ArrayList<ItemState>(transientStore.values());
+        ItemState[] tmp;
+        tmp = transientStore.values().toArray(new ItemState[0]);
         for (ItemState state : tmp) {
             disposeTransientItemState(state);
         }
-        tmp = new ArrayList<ItemState>(atticStore.values());
+        tmp = atticStore.values().toArray(new ItemState[0]);
         for (ItemState state : tmp) {
             disposeTransientItemStateInAttic(state);
         }
@@ -839,9 +836,8 @@ public class SessionItemStateManager
                 visibleState = transientState;
             } else {
                 // check attic
-                transientState = atticStore.get(destroyed.getId());
+                transientState = atticStore.remove(destroyed.getId());
                 if (transientState != null) {
-                    atticStore.remove(destroyed.getId());
                     transientState.onDisposed();
                 }
             }
@@ -968,4 +964,32 @@ public class SessionItemStateManager
             return false;
         }
     }
+
+    /**
+     * Pushes the given transient state to the change log so it'll be
+     * persisted when the change log is committed. The transient state
+     * is replaced with the local state that has been pushed to the
+     * change log.
+     *
+     * @param transientState transient state
+     * @return the local state to be persisted
+     * @throws RepositoryException if the transiet state can not be persisted
+     */
+    public NodeState makePersistent(NodeState transientState)
+            throws RepositoryException {
+        NodeState localState = stateMgr.getOrCreateLocalState(transientState);
+
+        synchronized (localState) {
+            // copy state from transient state:
+            localState.copy(transientState, true);
+            // make state persistent
+            store(localState);
+        }
+
+        // disconnect the transient item state
+        disconnectTransientItemState(transientState);
+
+        return localState;
+    }
+
 }

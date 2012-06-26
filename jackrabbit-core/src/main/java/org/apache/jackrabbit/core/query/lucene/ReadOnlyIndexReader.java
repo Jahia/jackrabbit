@@ -16,12 +16,13 @@
  */
 package org.apache.jackrabbit.core.query.lucene;
 
-import java.io.IOException;
-import java.util.BitSet;
-
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermDocs;
 import org.apache.lucene.index.TermPositions;
+
+import java.io.IOException;
+import java.util.BitSet;
+import java.util.Map;
 
 /**
  * Overwrites the methods that would modify the index and throws an
@@ -30,11 +31,6 @@ import org.apache.lucene.index.TermPositions;
  * not been deleted at the time when the index reader is created.
  */
 class ReadOnlyIndexReader extends RefCountingIndexReader {
-
-    /**
-     * The underlying shared reader.
-     */
-    private final SharedIndexReader reader;
 
     /**
      * The deleted documents as initially read from the IndexReader passed
@@ -62,7 +58,6 @@ class ReadOnlyIndexReader extends RefCountingIndexReader {
                                BitSet deleted,
                                long deletedDocsVersion) {
         super(reader);
-        this.reader = reader;
         this.deleted = deleted;
         this.deletedDocsVersion = deletedDocsVersion;
         // acquire underlying reader
@@ -83,7 +78,7 @@ class ReadOnlyIndexReader extends RefCountingIndexReader {
      * @return the creation tick for the underlying reader.
      */
     long getCreationTick() {
-        return reader.getCreationTick();
+        return getBase().getCreationTick();
     }
 
     /**
@@ -175,7 +170,8 @@ class ReadOnlyIndexReader extends RefCountingIndexReader {
     /**
      * @exception UnsupportedOperationException always
      */
-    protected final void doCommit() {
+    @Override
+    protected void doCommit(Map<String,String> commitUserData) throws IOException { 
         throw new UnsupportedOperationException("IndexReader is read-only");
     }
 
@@ -192,7 +188,7 @@ class ReadOnlyIndexReader extends RefCountingIndexReader {
      */
     public TermDocs termDocs(Term term) throws IOException {
         // do not wrap for empty TermDocs
-        TermDocs td = reader.termDocs(term);
+        TermDocs td = in.termDocs(term);
         if (td != EmptyTermDocs.INSTANCE) {
             td = new FilteredTermDocs(td);
         }

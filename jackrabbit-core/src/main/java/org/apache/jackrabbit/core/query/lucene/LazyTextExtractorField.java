@@ -20,6 +20,7 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.util.concurrent.Executor;
 
+import org.apache.jackrabbit.core.LowPriorityTask;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.document.AbstractField;
@@ -42,6 +43,7 @@ import org.xml.sax.helpers.DefaultHandler;
  *
  * @see #isExtractorFinished()
  */
+@SuppressWarnings("serial")
 public class LazyTextExtractorField extends AbstractField {
 
     /**
@@ -146,7 +148,7 @@ public class LazyTextExtractorField extends AbstractField {
     /**
      * The background task for extracting text from a binary value.
      */
-    private class ParsingTask extends DefaultHandler implements Runnable {
+    private class ParsingTask extends DefaultHandler implements LowPriorityTask {
 
         private final Parser parser;
 
@@ -175,9 +177,20 @@ public class LazyTextExtractorField extends AbstractField {
                 } finally {
                     stream.close();
                 }
+            } catch (LinkageError e) {
+                // Capture and ignore errors caused by extraction libraries
+                // not being present. This is equivalent to disabling
+                // selected media types in configuration, so we can simply
+                // ignore these errors.
             } catch (Throwable t) {
+                // Capture and report any other full text extraction problems.
+                // The special STOP exception is used for normal termination.
                 if (t != STOP) {
-                    log.warn("Failed to extract text from a binary property", t);
+                    log.debug("Failed to extract text from a binary property."
+                            + " This is a fairly common case, and nothing to"
+                            + " worry about. The stack trace is included to"
+                            + " help improve the text extraction feature.", t);
+                    builder.replace(0, builder.length(), "TextExtractionError");
                 }
             } finally {
                 value.discard();

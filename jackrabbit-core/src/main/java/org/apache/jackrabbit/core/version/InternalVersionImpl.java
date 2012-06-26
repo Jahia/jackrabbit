@@ -70,14 +70,14 @@ class InternalVersionImpl extends InternalVersionItemImpl
 
     /**
      * Creates a new internal version with the given version history and
-     * persistance node. please note, that versions must be created by the
+     * persistence node. please note, that versions must be created by the
      * version history.
      *
      * @param vh containing version history
      * @param node node state of this version
      * @param name name of this version
      */
-    public InternalVersionImpl(InternalVersionHistoryImpl vh, NodeStateEx node, Name name) {
+    public InternalVersionImpl(InternalVersionHistoryImpl vh, NodeStateEx node, Name name) throws RepositoryException{
         super(vh.getVersionManager(), node);
         this.versionHistory = vh;
         this.name = name;
@@ -93,6 +93,7 @@ class InternalVersionImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
+    @Override
     public NodeId getId() {
         return node.getNodeId();
     }
@@ -100,6 +101,7 @@ class InternalVersionImpl extends InternalVersionItemImpl
     /**
      * {@inheritDoc}
      */
+    @Override
     public InternalVersionItem getParent() {
         return versionHistory;
     }
@@ -119,7 +121,7 @@ class InternalVersionImpl extends InternalVersionItemImpl
         try {
             return (InternalFrozenNode) vMgr.getItem(getFrozenNodeId());
         } catch (RepositoryException e) {
-            throw new IllegalStateException("unable to retrieve frozen node: " + e);
+            throw new InconsistentVersioningState("unable to retrieve frozen node: " + e, null, e);
         }
     }
 
@@ -129,7 +131,7 @@ class InternalVersionImpl extends InternalVersionItemImpl
     public NodeId getFrozenNodeId() {
         ChildNodeEntry entry = node.getState().getChildNodeEntry(NameConstants.JCR_FROZENNODE, 1);
         if (entry == null) {
-            throw new InternalError("version has no frozen node: " + getId());
+            throw new InconsistentVersioningState("version has no frozen node: " + getId());
         }
         return entry.getId();
     }
@@ -264,7 +266,7 @@ class InternalVersionImpl extends InternalVersionItemImpl
     }
 
     /**
-     * stores the given successors or predecessors to the persistance node
+     * stores the given successors or predecessors to the persistence node
      *
      * @param cessors list of versions to store
      * @param propname property name to store

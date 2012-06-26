@@ -20,8 +20,6 @@ import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_LANGUAGE;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_STATEMENT;
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.NT_QUERY;
 
-import java.text.NumberFormat;
-
 import javax.jcr.ItemExistsException;
 import javax.jcr.ItemNotFoundException;
 import javax.jcr.Node;
@@ -35,8 +33,10 @@ import javax.jcr.query.InvalidQueryException;
 import javax.jcr.query.QueryResult;
 import javax.jcr.version.VersionException;
 
+import org.apache.jackrabbit.api.stats.RepositoryStatistics.Type;
 import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.core.session.SessionOperation;
+import org.apache.jackrabbit.core.stats.RepositoryStatisticsImpl;
 import org.apache.jackrabbit.spi.Path;
 import org.apache.jackrabbit.spi.commons.conversion.NameException;
 import org.slf4j.Logger;
@@ -101,6 +101,7 @@ public class QueryImpl extends AbstractQueryImpl {
     /**
      * @inheritDoc
      */
+    @Override
     public void init(
             SessionContext sessionContext, QueryHandler handler,
             String statement, String language, Node node)
@@ -123,25 +124,27 @@ public class QueryImpl extends AbstractQueryImpl {
      */
     public QueryResult execute() throws RepositoryException {
         checkInitialized();
-        long time = System.currentTimeMillis();
+        long time = System.nanoTime();
         QueryResult result = sessionContext.getSessionState().perform(
                 new SessionOperation<QueryResult>() {
                     public QueryResult perform(SessionContext context)
                             throws RepositoryException {
                         return query.execute(offset, limit);
                     }
+
                     public String toString() {
                         return "query.execute(" + statement + ")";
                     }
                 });
-        if (log.isDebugEnabled()) {
-            time = System.currentTimeMillis() - time;
-            NumberFormat format = NumberFormat.getNumberInstance();
-            format.setMinimumFractionDigits(2);
-            format.setMaximumFractionDigits(2);
-            String seconds = format.format((double) time / 1000);
-            log.debug("executed in " + seconds + " s. (" + statement + ")");
-        }
+        time = System.nanoTime() - time;
+        final long timeMs = time / 1000000;
+        log.debug("executed in {} ms. ({})", timeMs, statement);
+        RepositoryStatisticsImpl statistics = sessionContext
+                .getRepositoryContext().getRepositoryStatistics();
+        statistics.getCounter(Type.QUERY_COUNT).incrementAndGet();
+        statistics.getCounter(Type.QUERY_DURATION).addAndGet(timeMs);
+        sessionContext.getRepositoryContext().getStatManager().getQueryStat()
+                .logQuery(language, statement, timeMs);
         return result;
     }
 
@@ -231,7 +234,7 @@ public class QueryImpl extends AbstractQueryImpl {
      */
     public void setLimit(long limit) {
         if (limit < 0) {
-            throw new IllegalArgumentException("limit must not be negativ");
+            throw new IllegalArgumentException("limit must not be negative");
         }
         this.limit = limit;
     }
@@ -243,7 +246,7 @@ public class QueryImpl extends AbstractQueryImpl {
      */
     public void setOffset(long offset) {
         if (offset < 0) {
-            throw new IllegalArgumentException("offset must not be negativ");
+            throw new IllegalArgumentException("offset must not be negative");
         }
         this.offset = offset;
     }

@@ -27,12 +27,16 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
+import org.apache.lucene.analysis.tokenattributes.TermAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.index.IndexDeletionPolicy;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.Payload;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.Similarity;
 import org.apache.lucene.store.Directory;
@@ -248,13 +252,7 @@ abstract class AbstractIndex {
         }
         if (indexReader == null) {
             IndexDeletionPolicy idp = getIndexDeletionPolicy();
-            IndexReader reader;
-            if (idp != null) {
-                reader = IndexReader.open(getDirectory(), idp);
-            } else {
-                reader = IndexReader.open(getDirectory());
-            }
-            reader.setTermInfosIndexDivisor(termInfosIndexDivisor);
+            IndexReader reader = IndexReader.open(getDirectory(), idp, false, termInfosIndexDivisor);
             indexReader = new CommittableIndexReader(reader);
         }
         return indexReader;
@@ -318,8 +316,7 @@ abstract class AbstractIndex {
         }
         if (sharedReader == null) {
             // create new shared reader
-            IndexReader reader = IndexReader.open(getDirectory(), true);
-            reader.setTermInfosIndexDivisor(termInfosIndexDivisor);
+            IndexReader reader = IndexReader.open(getDirectory(), null, true, termInfosIndexDivisor);
             CachingIndexReader cr = new CachingIndexReader(
                     reader, cache, initCache);
             sharedReader = new SharedIndexReader(cr);
@@ -489,26 +486,33 @@ abstract class AbstractIndex {
      * @throws IOException if the document cannot be added to the indexing
      *                     queue.
      */
-    @SuppressWarnings("unchecked")
     private Document getFinishedDocument(Document doc) throws IOException {
         if (!Util.isDocumentReady(doc)) {
             Document copy = new Document();
             // mark the document that reindexing is required
-            copy.add(new Field(FieldNames.REINDEXING_REQUIRED, "",
-                    Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS));
-            for (Fieldable f : (List<Fieldable>) doc.getFields()) {
+            copy.add(new Field(FieldNames.REINDEXING_REQUIRED, false, "",
+                    Field.Store.NO, Field.Index.NOT_ANALYZED_NO_NORMS, Field.TermVector.NO));
+            for (Fieldable f : doc.getFields()) {
                 Fieldable field = null;
                 Field.TermVector tv = getTermVectorParameter(f);
-                Field.Store stored = getStoreParameter(f);
+                Field.Store stored = f.isStored() ? Field.Store.YES : Field.Store.NO;
                 Field.Index indexed = getIndexParameter(f);
                 if (f instanceof LazyTextExtractorField || f.readerValue() != null) {
                     // replace all readers with empty string reader
                     field = new Field(f.name(), new StringReader(""), tv);
                 } else if (f.stringValue() != null) {
-                    field = new Field(f.name(), f.stringValue(),
-                            stored, indexed, tv);
+                    field = new Field(f.name(), false, f.stringValue(), stored,
+                            indexed, tv);
                 } else if (f.isBinary()) {
-                    field = new Field(f.name(), f.binaryValue(), stored);
+                    field = new Field(f.name(), f.getBinaryValue(), stored);
+                } else if (f.tokenStreamValue() != null && f.tokenStreamValue() instanceof SingletonTokenStream) {
+                    TokenStream tokenStream = f.tokenStreamValue();
+                    TermAttribute termAttribute = tokenStream.addAttribute(TermAttribute.class);
+                    PayloadAttribute payloadAttribute = tokenStream.addAttribute(PayloadAttribute.class);
+                    tokenStream.incrementToken();
+                    String value = new String(termAttribute.termBuffer(), 0, termAttribute.termLength());
+                    tokenStream.reset();
+                    field = new Field(f.name(), new SingletonTokenStream(value, (Payload) payloadAttribute.getPayload().clone()));
                 }
                 if (field != null) {
                     field.setOmitNorms(f.getOmitNorms());
@@ -581,22 +585,6 @@ abstract class AbstractIndex {
             return Field.Index.ANALYZED;
         } else {
             return Field.Index.NOT_ANALYZED;
-        }
-    }
-
-    /**
-     * Returns the store parameter set on <code>f</code>.
-     *
-     * @param f a lucene field.
-     * @return the store parameter on <code>f</code>.
-     */
-    private Field.Store getStoreParameter(Fieldable f) {
-        if (f.isCompressed()) {
-            return Field.Store.COMPRESS;
-        } else if (f.isStored()) {
-            return Field.Store.YES;
-        } else {
-            return Field.Store.NO;
         }
     }
 
