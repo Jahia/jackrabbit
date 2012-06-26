@@ -84,7 +84,7 @@ public class QueryEngine {
 
     private static final int printIndentStep = 4;
     
-    private final Session session;
+    protected final Session session;
 
     protected final LuceneQueryFactory lqf;
 
