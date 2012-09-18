@@ -1,1 +1,1 @@
-mvn deploy -DaltDeploymentRepository=jahiaRepository::default::scpexe://maven.jahia.org/var/www/vhosts/maven.jahia.org/html/maven2 -Dmaven.test.skip=true
+mvn deploy -DaltDeploymentRepository=thirdparty-releases::default::https://devtools.jahia.com/nexus/content/repositories/thirdparty-releases -Dmaven.test.skip=true
