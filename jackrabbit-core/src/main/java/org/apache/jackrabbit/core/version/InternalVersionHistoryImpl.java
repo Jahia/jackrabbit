@@ -403,6 +403,22 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
 
         InternalVersionImpl v = (InternalVersionImpl) getVersion(versionName);
         if (v.equals(rootVersion)) {
+            if (!vMgr.hasItemReferences(node.getNodeId())) {
+                // Current version history has no references
+                NodeStateEx[] childNodes = node.getChildNodes();
+
+                // Check if there is only root version and version labels nodes
+                if (childNodes.length == 2) {
+                    // Removing orphan version history as it contains only two children
+                    NodeStateEx parentNode = node.getParent();
+                    // Remove version history node
+                    parentNode.removeNode(node.getName());
+                    // store changes for this node and his children
+                    parentNode.store();
+                    
+                    return;
+                }
+            }
             String msg = "Removal of " + versionName + " not allowed.";
             log.debug(msg);
             throw new VersionException(msg);
