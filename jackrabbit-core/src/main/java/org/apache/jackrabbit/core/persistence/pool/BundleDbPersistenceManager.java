@@ -27,6 +27,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -153,6 +154,8 @@ public class BundleDbPersistenceManager
     protected String nodeReferenceSelectSQL;
     protected String nodeReferenceDeleteSQL;
 
+    protected String batchNodeReferenceSelectSQL;
+    
     /** file system where BLOB data is stored */
     protected CloseableBLOBStore blobStore;
 
@@ -1092,7 +1095,67 @@ public class BundleDbPersistenceManager
             DbUtility.close(rs);
         }
     }
+    
+    /**
+     * Checks if the specified nodes have references.
+     * 
+     * @param targetIds
+     *            the node id list to check
+     * @return a map by {@link NodeId} as a key and a {@link Boolean} as a value, indicating if the node has references or not
+     * @throws ItemStateException
+     *             in case of a repository error
+     */
+    public synchronized Map<NodeId, Boolean> existsReferencesToNodes(List<NodeId> targetIds) throws ItemStateException {
+        if (!initialized) {
+            throw new IllegalStateException("not initialized");
+        }
 
+        Map<NodeId, Boolean> result = new LinkedHashMap<NodeId, Boolean>(targetIds.size());
+
+        List<Object> params = new LinkedList<Object>();
+        StringBuilder sql = new StringBuilder(512);
+        sql.append(batchNodeReferenceSelectSQL);
+        boolean binaryKeys = getStorageModel() == SM_BINARY_KEYS;
+        // build where clause: for binary keys we will use "in (?, ..., ?)"; for long key pair - "hi = ? and lo = ?"
+        for (NodeId targetId : targetIds) {
+            if (!result.isEmpty()) {
+                sql.append(binaryKeys ? ", " : " or ");
+            }
+
+            if (binaryKeys) {
+                sql.append("?");
+                params.add(targetId.getRawBytes());
+            } else {
+                sql.append("NODE_ID_HI = ? and NODE_ID_LO = ?");
+                params.add(targetId.getMostSignificantBits());
+                params.add(targetId.getLeastSignificantBits());
+            }
+            result.put(targetId, Boolean.FALSE);
+        }
+        if (binaryKeys) {
+            sql.append(")");
+        }
+
+        ResultSet rs = null;
+        InputStream in = null;
+        try {
+            rs = conHelper.exec(sql.toString(), params.toArray(), false, 0);
+            while (rs.next()) {
+                NodeId id = binaryKeys ? new NodeId(rs.getBytes(1)) : new NodeId(rs.getLong(1), rs.getLong(2));
+                result.put(id, Boolean.TRUE);
+            }
+        } catch (SQLException e) {
+            String msg = "failed to check references for: " + targetIds.toArray();
+            log.error(msg, e);
+            throw new ItemStateException(msg, e);
+        } finally {
+            IOUtils.closeQuietly(in);
+            DbUtility.close(rs);
+        }
+
+        return result;
+    }
+    
     /**
      * @inheritDoc
      */
@@ -1116,6 +1179,8 @@ public class BundleDbPersistenceManager
             nodeReferenceSelectSQL = "select REFS_DATA from " + schemaObjectPrefix + "REFS where NODE_ID = ?";
             nodeReferenceDeleteSQL = "delete from " + schemaObjectPrefix + "REFS where NODE_ID = ?";
 
+            batchNodeReferenceSelectSQL = "select NODE_ID from " + schemaObjectPrefix + "REFS where NODE_ID in (";
+            
             bundleSelectAllIdsSQL = "select NODE_ID from " + schemaObjectPrefix + "BUNDLE ORDER BY NODE_ID";
             bundleSelectAllIdsFromSQL = "select NODE_ID from " + schemaObjectPrefix + "BUNDLE WHERE NODE_ID > ? ORDER BY NODE_ID";
             bundleSelectAllBundlesSQL = "select NODE_ID, BUNDLE_DATA from " + schemaObjectPrefix + "BUNDLE ORDER BY NODE_ID";
@@ -1135,6 +1200,8 @@ public class BundleDbPersistenceManager
             nodeReferenceSelectSQL = "select REFS_DATA from " + schemaObjectPrefix + "REFS where NODE_ID_HI = ? and NODE_ID_LO = ?";
             nodeReferenceDeleteSQL = "delete from " + schemaObjectPrefix + "REFS where NODE_ID_HI = ? and NODE_ID_LO = ?";
 
+            batchNodeReferenceSelectSQL = "select NODE_ID_HI, NODE_ID_LO from " + schemaObjectPrefix + "REFS where ";
+            
             bundleSelectAllIdsSQL = "select NODE_ID_HI, NODE_ID_LO from " + schemaObjectPrefix 
                 + "BUNDLE ORDER BY NODE_ID_HI, NODE_ID_LO";
             // need to use HI and LO parameters

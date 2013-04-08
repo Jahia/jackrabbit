@@ -419,6 +419,37 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     }
 
     /**
+     * Performs clean up of the versions in the specified version histories. Clean up removes completely orphaned histories and in
+     * non-orphaned histories removes unused versions.
+     * 
+     * @param session
+     *            current JCR session
+     * @param histories
+     *            a list of version histories to process
+     * @return a two element array with the first element as a count of completely deleted version histories and the second element as a
+     *         count of deleted single version items
+     * @throws VersionException
+     *             in case of a version management operation error
+     * @throws RepositoryException
+     *             in case of a repository operation error
+     * @since Jahia 6.6.1.6
+     */
+    public int[] purgeVersions(final Session session, final List<InternalVersionHistory> histories)
+            throws VersionException, RepositoryException {
+        final int[] counts = new int[] { 0, 0 };
+        escFactory.doSourced((SessionImpl) session, new SourcedTarget() {
+            public Object run() throws RepositoryException {
+                int[] result = internalPurgeVersions(histories);
+                counts[0] = result[0];
+                counts[1] = result[1];
+                return null;
+            }
+        });
+
+        return counts;
+    }
+    
+    /**
      * {@inheritDoc}
      * <p/>
      * This method must not be synchronized since it could cause deadlocks with

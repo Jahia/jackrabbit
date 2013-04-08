@@ -22,6 +22,7 @@ import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_VERSIONHI
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.MIX_VERSIONABLE;
 
 import java.util.Calendar;
+import java.util.List;
 
 import javax.jcr.ItemNotFoundException;
 import javax.jcr.ReferentialIntegrityException;
@@ -742,6 +743,89 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
             // best is root version
             return String.valueOf(best.getSuccessors().size() + 1) + ".0";
         }
+    }
+
+
+    /**
+     * Performs clean up of the versions in the specified version history.
+     * 
+     * @param history
+     *            the internal version history object to process
+     * @return a two element array with the first element as a count of completely deleted version histories (either 1 or 0) and a second
+     *         element as a count of deleted single version items
+     * @throws VersionException
+     *             in case of a version management operation error
+     * @throws RepositoryException
+     *             in case of a repository operation error
+     * @since Jahia 6.6.1.6
+     */
+    protected int[] internalPurgeVersions(InternalVersionHistoryImpl history) throws VersionException,
+            RepositoryException {
+        int versionsDeleted = 0;
+        boolean completeHistoryDeleted = false;
+        Name[] versionNames = history.getVersionNames();
+        if (versionNames.length == 1) {
+            // we have only root version -> check if we can delete it
+            try {
+                history.removeVersion(versionNames[0]);
+                versionsDeleted++;
+                completeHistoryDeleted = true;
+            } catch (VersionException e) {
+                // version history is still referenced
+            }
+        } else {
+            // we try to delete all versions (reverse order) except the first one which is a root version
+            // (root version is automatically deleted in case of a version history becomes orphaned)
+            for (int i = versionNames.length - 1; i > 0; i--) {
+                Name versionName = versionNames[i];
+                try {
+                    history.removeVersion(versionName);
+                    versionsDeleted++;
+                } catch (ReferentialIntegrityException e) {
+                    // version still referenced -> skip
+                }
+            }
+            if (versionsDeleted == versionNames.length - 1) {
+                versionsDeleted++; // root version is automatically deleted too
+                completeHistoryDeleted = true;
+            }
+        }
+
+        return new int[] { completeHistoryDeleted ? 1 : 0, versionsDeleted };
+    }
+
+    /**
+     * Performs clean up of the versions in the specified version histories. Clean up removes completely orphaned histories and in
+     * non-orphaned histories removes unused versions.
+     * 
+     * @param histories
+     *            a list of version histories to process
+     * @return a two element array with the first element as a count of completely deleted version histories and a second element as a
+     *         count of deleted single version items
+     * @throws VersionException
+     *             in case of a version management operation error
+     * @throws RepositoryException
+     *             in case of a repository operation error
+     * @since Jahia 6.6.1.6
+     */
+    protected int[] internalPurgeVersions(List<InternalVersionHistory> histories)
+            throws VersionException, RepositoryException {
+        int[] counts = new int[] { 0, 0 };
+        WriteOperation operation = startWriteOperation();
+        try {
+            for (InternalVersionHistory history : histories) {
+                int[] result = internalPurgeVersions((InternalVersionHistoryImpl) history);
+                counts[0] += +result[0];
+                counts[1] += +result[1];
+            }
+            operation.save();
+        } catch (ItemStateException e) {
+            log.error("Error while storing: " + e.toString());
+        } finally {
+            operation.close();
+        }
+
+        return counts;
     }
 
     /**
