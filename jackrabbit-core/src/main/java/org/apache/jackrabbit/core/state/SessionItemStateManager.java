@@ -164,6 +164,30 @@ public class SessionItemStateManager
     /**
      * {@inheritDoc}
      */
+    public ItemState getItemStateFromCache(ItemId id) throws NoSuchItemStateException, ItemStateException {
+        // first check if the specified item has been transiently removed
+        if (atticStore.containsKey(id)) {
+            /**
+             * check if there's new transient state for the specified item
+             * (e.g. if a property with name 'x' has been removed and a new
+             * property with same name has been created);
+             * this will throw a NoSuchItemStateException if there's no new
+             * transient state
+             */
+            return getTransientItemState(id);
+        }
+
+        // check if there's transient state for the specified item
+        if (transientStore.containsKey(id)) {
+            return getTransientItemState(id);
+        }
+
+        return stateMgr.getItemStateFromCache(id);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public boolean hasItemState(ItemId id) {
         // first check if the specified item has been transiently removed
         if (atticStore.containsKey(id)) {

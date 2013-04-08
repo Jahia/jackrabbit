@@ -715,9 +715,7 @@ public class NodeStateEx {
     }
 
     /**
-     * Stores the persistent state and depending on the <code>recursively</code>
-     * flag also stores the modified child nodes recursively.
-     *
+     * stores the persistent state recursively
      *
      * @param recursively whether to store the nodes recursively or just this
      *                    single node.
@@ -739,7 +737,6 @@ public class NodeStateEx {
      */
     private void store(NodeState state, boolean recursively)
             throws ItemStateException {
-
         if (state.getStatus() != ItemState.STATUS_EXISTING) {
             // first store all transient properties
             for (Name propName : state.getPropertyNames()) {
@@ -752,8 +749,10 @@ public class NodeStateEx {
             if (recursively) {
                 // now store all child node entries
                 for (ChildNodeEntry entry : state.getChildNodeEntries()) {
-                    NodeState nstate = (NodeState) stateMgr.getItemState(entry.getId());
-                    store(nstate, true);
+                    NodeState nstate = (NodeState) stateMgr.getItemStateFromCache(entry.getId());
+                    if (nstate != null) {
+                        store(nstate, true);
+                    }
                 }
             }
             // and store itself

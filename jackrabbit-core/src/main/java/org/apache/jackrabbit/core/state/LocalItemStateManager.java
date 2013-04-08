@@ -184,6 +184,19 @@ public class LocalItemStateManager
     /**
      * {@inheritDoc}
      */
+    public ItemState getItemStateFromCache(ItemId id) throws NoSuchItemStateException, ItemStateException {
+        // check change log
+        ItemState state = changeLog.get(id);
+        if (state != null) {
+            return state;
+        }
+        return cache.retrieve(id);
+    }
+
+
+    /**
+     * {@inheritDoc}
+     */
     public boolean hasItemState(ItemId id) {
 
         // check items in change log
