@@ -754,4 +754,8 @@ public class InternalValue extends AbstractQValue {
         }
     }
 
+
+    public boolean isInDataStore() {
+        return val instanceof BLOBInDataStore;
+    }
 }

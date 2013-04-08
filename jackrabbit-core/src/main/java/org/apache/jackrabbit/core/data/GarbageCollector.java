@@ -22,6 +22,7 @@ import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.observation.SynchronousEventListener;
 import org.apache.jackrabbit.core.persistence.IterablePersistenceManager;
+import org.apache.jackrabbit.core.persistence.util.NodeInfo;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.NoSuchItemStateException;
 import org.apache.jackrabbit.core.state.NodeState;
@@ -32,6 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -77,6 +79,11 @@ public class GarbageCollector implements DataStoreGarbageCollector {
 
     /** logger instance */
     private static final Logger LOG = LoggerFactory.getLogger(GarbageCollector.class);
+
+    /**
+     * The number of nodes to fetch at once from the persistence manager. Defaults to 8kb
+     */
+    private static int NODESATONCE = Integer.getInteger("org.apache.jackrabbit.garbagecollector.nodesatonce", 1024 * 8);
 
     private MarkEventListener callback;
 
@@ -201,31 +208,40 @@ public class GarbageCollector implements DataStoreGarbageCollector {
     }
 
     private void scanPersistenceManagers() throws RepositoryException, ItemStateException {
-        for (IterablePersistenceManager pm : pmList) {
-            for (NodeId id : pm.getAllNodeIds(null, 0)) {
-                if (callback != null) {
-                    callback.beforeScanning(null);
-                }
-                try {
-                    NodeState state = pm.load(id);
-                    Set<Name> propertyNames = state.getPropertyNames();
-                    for (Name name : propertyNames) {
-                        PropertyId pid = new PropertyId(id, name);
-                        PropertyState ps = pm.load(pid);
-                        if (ps.getType() == PropertyType.BINARY) {
-                            for (InternalValue v : ps.getValues()) {
-                                // getLength will update the last modified date
-                                // if the persistence manager scan is running
-                                v.getLength();
-                            }
-                        }
-                    }
-                } catch (NoSuchItemStateException e) {
-                    // the node may have been deleted or moved in the meantime
-                    // ignore it
-                }
-            }
-        }
+        NODESATONCE = Integer.getInteger("org.apache.jackrabbit.garbagecollector.nodesatonce", 1024 * 8);
+		for (IterablePersistenceManager pm : pmList) {
+			Map<NodeId, NodeInfo> batch = pm.getAllNodeInfos(null, NODESATONCE);
+			while (!batch.isEmpty()) {
+				NodeId lastId = null;
+				for (NodeInfo info : batch.values()) {
+					lastId = info.getId();
+					if (callback != null) {
+						callback.beforeScanning(null);
+					}
+					if (info.hasBlobsInDataStore()) {
+						try {
+							NodeState state = pm.load(info.getId());
+							Set<Name> propertyNames = state.getPropertyNames();
+							for (Name name : propertyNames) {
+								PropertyId pid = new PropertyId(info.getId(),
+										name);
+								PropertyState ps = pm.load(pid);
+								if (ps.getType() == PropertyType.BINARY) {
+									for (InternalValue v : ps.getValues()) {
+										// getLength will update the last modified date
+										// if the persistence manager scan is running
+										v.getLength();
+									}
+								}
+							}
+						} catch (NoSuchItemStateException ignored) {
+							// the node may have been deleted in the meantime
+						}
+					}
+				}
+				batch = pm.getAllNodeInfos(lastId, NODESATONCE);
+			}
+		}
     }
 
     /**
