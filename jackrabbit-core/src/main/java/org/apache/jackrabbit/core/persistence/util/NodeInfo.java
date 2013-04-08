@@ -64,6 +64,11 @@ public final class NodeInfo {
     private boolean hasBlobsInDataStore;
 
     /**
+     * The node type name
+     */
+    private final Name nodeTypeName;
+
+    /**
      * Create a new NodeInfo object from a bundle
      *
      * @param bundle the node bundle
@@ -71,6 +76,7 @@ public final class NodeInfo {
     public NodeInfo(final NodePropBundle bundle) {
         nodeId = bundle.getId();
         parentId = bundle.getParentId();
+        nodeTypeName = bundle.getNodeTypeName();
 
         List<NodePropBundle.ChildNodeEntry> childNodeEntries = bundle.getChildNodeEntries();
         if (!childNodeEntries.isEmpty()) {
@@ -150,5 +156,14 @@ public final class NodeInfo {
      */
     public boolean hasBlobsInDataStore() {
         return hasBlobsInDataStore;
+    }
+
+    /**
+     * Returns the node type name.
+     * 
+     * @return the node type name
+     */
+    public Name getNodeTypeName() {
+        return nodeTypeName;
     }
 }
