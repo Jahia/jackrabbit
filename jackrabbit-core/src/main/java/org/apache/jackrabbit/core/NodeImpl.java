@@ -2179,23 +2179,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
         // IMPORTANT: an implementation of Node.getNodes() must not use
         // a class derived from TraversingElementVisitor to traverse the
         // hierarchy because this would lead to an infinite recursion!
-        return perform(new SessionOperation<NodeIterator>() {
-            public NodeIterator perform(SessionContext context)
-                    throws RepositoryException {
-                try {
-                    return itemMgr.getChildNodes((NodeId) id);
-                } catch (ItemNotFoundException e) {
-                    throw new RepositoryException(
-                            "Failed to list child nodes of " + NodeImpl.this, e);
-                } catch (AccessDeniedException e) {
-                    throw new RepositoryException(
-                            "Failed to list child nodes of " + NodeImpl.this, e);
-                }
-            }
-            public String toString() {
-                return "node.getNodes()";
-            }
-        });
+        return getNodesInternal(null, null);
     }
 
     /**
@@ -2464,12 +2448,29 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
      * {@inheritDoc}
      */
     public NodeIterator getNodes(String namePattern) throws RepositoryException {
-        // check state of this instance
-        sanityCheck();
-
-        return ChildrenCollectorFilter.collectChildNodes(this, namePattern);
+        return getNodesInternal(namePattern, null);
     }
 
+    private NodeIterator getNodesInternal(final String namePattern, final String[] nameGlobs) throws RepositoryException {
+        return perform(new SessionOperation<NodeIterator>() {
+            public NodeIterator perform(SessionContext context)
+                    throws RepositoryException {
+                try {
+                    return itemMgr.getChildNodes((NodeId) id, namePattern, nameGlobs);
+                } catch (ItemNotFoundException e) {
+                    throw new RepositoryException(
+                            "Failed to list child nodes of " + NodeImpl.this, e);
+                } catch (AccessDeniedException e) {
+                    throw new RepositoryException(
+                            "Failed to list child nodes of " + NodeImpl.this, e);
+                }
+            }
+            public String toString() {
+                return "node.getNodes()";
+            }
+        });
+    }
+    
     /**
      * {@inheritDoc}
      */
@@ -3185,12 +3186,9 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
     /**
      * {@inheritDoc}
      */
-    public NodeIterator getNodes(String[] nameGlobs)
+    public NodeIterator getNodes(final String[] nameGlobs)
             throws RepositoryException {
-        // check state of this instance
-        sanityCheck();
-
-        return ChildrenCollectorFilter.collectChildNodes(this, nameGlobs);
+        return getNodesInternal(null, nameGlobs);
     }
 
     /**
