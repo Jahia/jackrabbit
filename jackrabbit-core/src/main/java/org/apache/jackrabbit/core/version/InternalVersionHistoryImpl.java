@@ -480,6 +480,56 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
     }
 
     /**
+     * Internal method for removing unused version from the version history without performing any reference checks and also skipping check
+     * for removing the whole version history if this version was the last one (except root version).
+     * 
+     * @param v
+     *            the version node to remove
+     * @throws RepositoryException
+     *             in case of versioning operation error
+     * @returns <code>true</code> if the version was deleted; <code>false</code> otherwise
+     * @since Jahia 6.6.1.6
+     */
+    synchronized boolean removeUnusedVersion(InternalVersionImpl v) throws RepositoryException {
+        if (v.equals(rootVersion)) {
+            return false;
+        }
+
+        // unregister from labels
+        Name[] labels = v.internalGetLabels();
+        for (Name label : labels) {
+            v.internalRemoveLabel(label);
+            labelNode.removeProperty(label);
+        }
+        // detach from the version graph
+        v.internalDetach();
+
+        // check if referenced by an activity
+        InternalActivityImpl activity = v.getActivity();
+        if (activity != null) {
+            activity.removeVersion(v);
+        }
+
+        // remove from persistence state
+        node.removeNode(v.getName());
+
+        // and remove from history
+        versionCache.remove(v.getId());
+        nameCache.remove(v.getName());
+        vMgr.versionDestroyed(v);
+
+        // store changes
+        node.store();
+
+        // now also remove from labelCache
+        for (Name label : labels) {
+            labelCache.remove(label);
+        }
+        
+        return true;
+    }
+
+    /**
      * Sets the version <code>label</code> to the given <code>version</code>.
      * If the label is already assigned to another version, a VersionException is
      * thrown unless <code>move</code> is <code>true</code>. If <code>version</code>

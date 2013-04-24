@@ -847,6 +847,45 @@ abstract class InternalVersionManagerBase implements InternalVersionManager {
 
         return counts;
     }
+    
+    /**
+     * Performs removal of the specified versions which are unused (the check is done before the call to this method).
+     * 
+     * @param unusedVersions
+     *            a list of version items to process
+     * @return the number of version items effectively removed
+     * @throws RepositoryException
+     *             in case of a repository operation error
+     * @since Jahia 6.6.1.6
+     */
+    protected int internalPurgeUnusedVersions(List<NodeId> unusedVersions) throws RepositoryException {
+        int count = 0;
+        WriteOperation operation = startWriteOperation();
+        try {
+            for (NodeId versionNodeId : unusedVersions) {
+                try {
+                    InternalVersion version = getVersion(versionNodeId);
+                    if (((InternalVersionHistoryImpl) version.getVersionHistory())
+                            .removeUnusedVersion((InternalVersionImpl) version)) {
+                        count++;
+                    }
+                } catch (Exception e) {
+                    if (log.isDebugEnabled()) {
+                        log.warn("Unable to remove version " + versionNodeId + ". Skipping.", e);
+                    } else {
+                        log.warn("Unable to remove version " + versionNodeId + ". Skipping.");
+                    }
+                }
+            }
+            operation.save();
+        } catch (ItemStateException e) {
+            log.error("Error while storing: " + e.toString());
+        } finally {
+            operation.close();
+        }
+
+        return count;
+    }
 
     /**
      * Removes the specified version from the history
