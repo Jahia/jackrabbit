@@ -263,6 +263,23 @@ public class InternalXAVersionManager extends InternalVersionManagerBase
     }
     
     /**
+     * Performs removal of the specified versions which are unused (the check is done before the call to this method).
+     * 
+     * @param session
+     *            current JCR session
+     * @param unusedVersions
+     *            a list of version items to process
+     * @return the number of version items effectively removed
+     * @throws RepositoryException
+     *             in case of a repository operation error
+     * @since Jahia 6.6.1.6
+     */
+    public int purgeUnusedVersions(SessionImpl session, List<NodeId> unusedVersions) throws RepositoryException {
+        return isInXA() ? internalPurgeUnusedVersions(unusedVersions) : vMgr.purgeUnusedVersions(session,
+                unusedVersions);
+    }
+    
+    /**
      * {@inheritDoc}
      */
     public void removeVersion(Session session, InternalVersionHistory history,

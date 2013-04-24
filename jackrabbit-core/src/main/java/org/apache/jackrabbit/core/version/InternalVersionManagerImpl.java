@@ -450,6 +450,28 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     }
     
     /**
+     * Performs removal of the specified versions which are unused (the check is done before the call to this method).
+     * 
+     * @param session
+     *            current JCR session
+     * @param unusedVersions
+     *            a list of version items to process
+     * @return the number of version items effectively removed
+     * @throws RepositoryException
+     *             in case of a repository operation error
+     * @since Jahia 6.6.1.6
+     */
+    public int purgeUnusedVersions(SessionImpl session, final List<NodeId> unusedVersions) throws RepositoryException {
+        final int count = (Integer) escFactory.doSourced((SessionImpl) session, new SourcedTarget() {
+            public Object run() throws RepositoryException {
+                return Integer.valueOf(internalPurgeUnusedVersions(unusedVersions));
+            }
+        });
+
+        return count;
+    }
+    
+    /**
      * {@inheritDoc}
      * <p>
      * This method must not be synchronized since it could cause deadlocks with
@@ -778,4 +800,5 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     private abstract class SourcedTarget {
         public abstract Object run() throws RepositoryException;
     }
+
 }
