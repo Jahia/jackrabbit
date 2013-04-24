@@ -23,10 +23,12 @@ import java.util.List;
 import java.util.Map;
 
 import javax.jcr.PropertyType;
+import javax.jcr.RepositoryException;
 
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.spi.Name;
+import org.apache.jackrabbit.spi.commons.name.NameConstants;
 
 /**
  * Holds structural information about a node. Used by the consistency checker and garbage collector.
@@ -69,6 +71,11 @@ public final class NodeInfo {
     private final Name nodeTypeName;
 
     /**
+     * The original (unparsed) string value of the jcr:created property 
+     */
+    private String created;
+
+    /**
      * Create a new NodeInfo object from a bundle
      *
      * @param bundle the node bundle
@@ -98,15 +105,22 @@ public final class NodeInfo {
                     values.add(value.getNodeId());
                 }
                 references.put(entry.getName(), values);
-            }
-            else if (entry.getType() == PropertyType.BINARY) {
+            } else if (entry.getType() == PropertyType.BINARY) {
                 for (InternalValue internalValue : entry.getValues()) {
                     if (internalValue.isInDataStore()) {
                         hasBlobsInDataStore = true;
                         break;
                     }
                 }
-
+            } else if (entry.getType() == PropertyType.DATE && entry.getName().equals(NameConstants.JCR_CREATED)) {
+                InternalValue[] values = entry.getValues();
+                if (values != null && values.length > 0) {
+                    try {
+                        created = values[0].getString();
+                    } catch (RepositoryException e) {
+                        // should not happen
+                    }
+                }
             }
         }
         
@@ -165,5 +179,14 @@ public final class NodeInfo {
      */
     public Name getNodeTypeName() {
         return nodeTypeName;
+    }
+
+    /**
+     * Returns the the original (unparsed) string value of the jcr:created property.
+     * 
+     * @return the the original (unparsed) string value of the jcr:created property
+     */
+    public String getCreated() {
+        return created;
     }
 }
