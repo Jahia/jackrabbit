@@ -57,6 +57,7 @@ import org.apache.jackrabbit.spi.QNodeDefinition;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
 import org.apache.jackrabbit.spi.commons.nodetype.NodeDefinitionImpl;
 import org.apache.jackrabbit.spi.commons.nodetype.PropertyDefinitionImpl;
+import org.apache.jackrabbit.util.ChildrenCollectorFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -738,6 +739,25 @@ public class ItemManager implements ItemStateListener {
      */
     synchronized NodeIterator getChildNodes(NodeId parentId)
             throws ItemNotFoundException, AccessDeniedException, RepositoryException {
+        return getChildNodesInternal(parentId, null, null);
+    }
+
+    /**
+     * @param parentId
+     * @param namePattern a name pattern
+     * @param nameGlobs an array of globbing strings
+     * @return
+     * @throws ItemNotFoundException
+     * @throws AccessDeniedException
+     * @throws RepositoryException
+     */
+    synchronized NodeIterator getChildNodes(NodeId parentId, String namePattern, String[] nameGlobs)
+            throws ItemNotFoundException, AccessDeniedException, RepositoryException {
+        return getChildNodesInternal(parentId, namePattern, nameGlobs);
+    }
+
+    private NodeIterator getChildNodesInternal(NodeId parentId, String namePattern, String[] nameGlobs)
+            throws ItemNotFoundException, AccessDeniedException, RepositoryException {
         sanityCheck();
 
         ItemData data = getItemData(parentId);
@@ -753,12 +773,20 @@ public class ItemManager implements ItemStateListener {
             ChildNodeEntry entry = iter.next();
             // delay check for read-access until item is being built
             // thus avoid duplicate check
-            childIds.add(entry.getId());
+            
+            // check for name
+            if (namePattern == null && nameGlobs == null ||
+                    namePattern != null
+                    && ChildrenCollectorFilter.matches(sessionContext.getJCRName(entry.getName()), namePattern)
+                    || nameGlobs != null
+                    && ChildrenCollectorFilter.matches(sessionContext.getJCRName(entry.getName()), nameGlobs)) {
+                childIds.add(entry.getId());
+            }
         }
 
         return new LazyItemIterator(sessionContext, childIds, parentId);
     }
-
+    
     /**
      * @param parentId
      * @return
