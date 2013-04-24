@@ -212,39 +212,39 @@ public class GarbageCollector implements DataStoreGarbageCollector {
 
     private void scanPersistenceManagers() throws RepositoryException, ItemStateException {
         NODESATONCE = Integer.getInteger("org.apache.jackrabbit.garbagecollector.nodesatonce", 1024 * 8);
-		for (IterablePersistenceManager pm : pmList) {
-			Map<NodeId, NodeInfo> batch = pm.getAllNodeInfos(null, NODESATONCE);
-			while (!batch.isEmpty()) {
-				NodeId lastId = null;
-				for (NodeInfo info : batch.values()) {
-					lastId = info.getId();
-					if (callback != null) {
-						callback.beforeScanning(null);
-					}
-					if (info.hasBlobsInDataStore()) {
-						try {
-							NodeState state = pm.load(info.getId());
-							Set<Name> propertyNames = state.getPropertyNames();
-							for (Name name : propertyNames) {
-								PropertyId pid = new PropertyId(info.getId(),
-										name);
-								PropertyState ps = pm.load(pid);
-								if (ps.getType() == PropertyType.BINARY) {
-									for (InternalValue v : ps.getValues()) {
-										// getLength will update the last modified date
-										// if the persistence manager scan is running
-										v.getLength();
-									}
-								}
-							}
-						} catch (NoSuchItemStateException ignored) {
-							// the node may have been deleted in the meantime
-						}
-					}
-				}
-				batch = pm.getAllNodeInfos(lastId, NODESATONCE);
-			}
-		}
+        for (IterablePersistenceManager pm : pmList) {
+            Map<NodeId, NodeInfo> batch = pm.getAllNodeInfos(null, NODESATONCE);
+            while (!batch.isEmpty()) {
+                NodeId lastId = null;
+                for (NodeInfo info : batch.values()) {
+                    lastId = info.getId();
+                    if (callback != null) {
+                        callback.beforeScanning(null);
+                    }
+                    if (info.hasBlobsInDataStore()) {
+                        try {
+                            NodeState state = pm.load(info.getId());
+                            Set<Name> propertyNames = state.getPropertyNames();
+                            for (Name name : propertyNames) {
+                                PropertyId pid = new PropertyId(info.getId(),
+                                        name);
+                                PropertyState ps = pm.load(pid);
+                                if (ps.getType() == PropertyType.BINARY) {
+                                    for (InternalValue v : ps.getValues()) {
+                                        // getLength will update the last modified date
+                                        // if the persistence manager scan is running
+                                        v.getLength();
+                                    }
+                                }
+                            }
+                        } catch (NoSuchItemStateException ignored) {
+                            // the node may have been deleted in the meantime
+                        }
+                    }
+                }
+                batch = pm.getAllNodeInfos(lastId, NODESATONCE);
+            }
+        }
     }
 
     /**
