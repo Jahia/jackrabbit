@@ -26,10 +26,12 @@ import org.slf4j.LoggerFactory;
 
 import javax.jcr.PropertyType;
 import javax.jcr.RepositoryException;
-import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -273,15 +275,17 @@ class InternalVersionImpl extends InternalVersionItemImpl
      * @param store if <code>true</code> the node is stored
      * @throws RepositoryException if a repository error occurs
      */
-    private void storeXCessors(List<InternalVersion> cessors, Name propname, boolean store)
+    private void storeXCessors(Collection<InternalVersion> cessors, Name propname, boolean store)
             throws RepositoryException {
         InternalValue[] values = new InternalValue[cessors.size()];
-        for (int i = 0; i < values.length; i++) {
-            values[i] = InternalValue.create((cessors.get(i)).getId());
+        int i = 0;
+        for (Iterator<InternalVersion> iterator = cessors.iterator(); iterator.hasNext();) {
+            values[i] = InternalValue.create(iterator.next().getId());
+            i++;
         }
         node.setPropertyValues(propname, PropertyType.REFERENCE, values);
         if (store) {
-            node.store();
+            node.store(false);
         }
     }
 
@@ -348,11 +352,17 @@ class InternalVersionImpl extends InternalVersionItemImpl
     private void internalDetachPredecessor(InternalVersionImpl v, boolean store)
             throws RepositoryException {
         // remove 'v' from predecessor list
-        List<InternalVersion> l = new ArrayList<InternalVersion>(Arrays.asList(getPredecessors()));
-        l.remove(v);
+        LinkedHashSet<InternalVersion> l = new LinkedHashSet<InternalVersion>();
+        for (InternalVersion predecessor : getPredecessors()) {
+            if (!predecessor.equals(v)) {
+                l.add(predecessor);
+            }
+        }
 
         // attach V's predecessors
-        l.addAll(Arrays.asList(v.getPredecessors()));
+        for (InternalVersion predecessor : v.getPredecessors()) {
+            l.add(predecessor);
+        }
         storeXCessors(l, NameConstants.JCR_PREDECESSORS, store);
     }
 
@@ -369,11 +379,17 @@ class InternalVersionImpl extends InternalVersionItemImpl
     private void internalDetachSuccessor(InternalVersionImpl v, boolean store)
             throws RepositoryException {
         // remove 'v' from successors list
-        List<InternalVersion> l = new ArrayList<InternalVersion>(getSuccessors());
-        l.remove(v);
+        LinkedHashSet<InternalVersion> l = new LinkedHashSet<InternalVersion>();
+        for (InternalVersion successor : getSuccessors()) {
+            if (!successor.equals(v)) {
+                l.add(successor);
+            }
+        }
 
         // attach V's successors
-        l.addAll(v.getSuccessors());
+        for (InternalVersion successor : v.getSuccessors()) {
+            l.add(successor);
+        }
         storeXCessors(l, NameConstants.JCR_SUCCESSORS, store);
     }
 
