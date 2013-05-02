@@ -239,6 +239,34 @@ public class ExcerptTest extends AbstractQueryTest {
         checkExcerpt(content, expectedExcerpt, jTest);
     }
 
+    /**
+     * test for https://issues.apache.org/jira/browse/JCR-3428
+     * 
+     * when given an incomplete fulltext search token, the excerpt should
+     * highlight the entire matching token
+     * 
+     */
+    public void testEagerMatch() throws RepositoryException {
+        checkExcerpt("lorem ipsum dolor sit amet",
+                "lorem <strong>ipsum</strong> dolor sit amet", "ipsu*");
+    }
+
+    /**
+     * @see #testEagerMatch()
+     */
+    public void testEagerMatch2() throws RepositoryException {
+        checkExcerpt("lorem ipsum dolor sit amet",
+                "<strong>lorem</strong> <strong>ipsum</strong> dolor sit amet",
+                "lorem ipsu*");
+    }
+
+    /**
+     * @see #testEagerMatch()
+     */
+    public void testEagerMatch3() throws RepositoryException {
+        checkExcerpt("lorem ipsum dolor sit amet",
+                "lorem <strong>ipsum</strong> <strong>dolor</strong> sit amet", "ipsu* dolor");
+    }
 
     private void checkExcerpt(String text, String fragmentText, String terms)
             throws RepositoryException {
@@ -272,5 +300,37 @@ public class ExcerptTest extends AbstractQueryTest {
 
     private String createExcerpt(String fragments) {
         return EXCERPT_START + fragments + EXCERPT_END;
+    }
+
+    /**
+     * <p>
+     * Test when there are multiple tokens that match the fulltext search (which
+     * will generate multiple lucene terms for the highlighter to use) in the
+     * repository but not all of them are present in the current property.
+     * </p>
+     * 
+     */
+    public void testMatchMultipleNonMatchingTokens() throws RepositoryException {
+        String text = "lorem ipsum";
+        String fragmentText = "lorem <strong>ipsum</strong>";
+        String terms = "ipsu*";
+
+        String excerpt = createExcerpt(fragmentText);
+
+        // here we'll add more matching garbage data so we have more tokens
+        // passed to the highlighter
+        Node parent = testRootNode.addNode(nodeName1);
+        Node n = parent.addNode("test");
+        n.setProperty("text", text);
+        testRootNode.addNode(nodeName2).setProperty("foo", "ipsuFoo");
+        testRootNode.addNode(nodeName3).setProperty("bar", "ipsuBar");
+        superuser.save();
+        // --
+        String stmt = testPath + "/" + nodeName1 + "//*[jcr:contains(., '"
+                + terms + "')]/rep:excerpt(.)";
+        QueryResult result = executeQuery(stmt);
+        RowIterator rows = result.getRows();
+        assertEquals(1, rows.getSize());
+        assertEquals(excerpt, getExcerpt(rows.nextRow()));
     }
 }

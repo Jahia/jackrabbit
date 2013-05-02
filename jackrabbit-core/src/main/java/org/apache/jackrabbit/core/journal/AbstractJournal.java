@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.jackrabbit.core.util.XAReentrantWriterPreferenceReadWriteLock;
 import org.apache.jackrabbit.core.version.InternalVersionManagerImpl;
 import org.apache.jackrabbit.core.version.VersioningLock;
 import org.apache.jackrabbit.spi.commons.conversion.DefaultNamePathResolver;
@@ -28,9 +29,6 @@ import org.apache.jackrabbit.spi.commons.conversion.NamePathResolver;
 import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import EDU.oswego.cs.dl.util.concurrent.ReadWriteLock;
-import EDU.oswego.cs.dl.util.concurrent.ReentrantWriterPreferenceReadWriteLock;
 
 /**
  * Base journal implementation.
@@ -71,7 +69,7 @@ public abstract class AbstractJournal implements Journal {
      * Journal lock, allowing multiple readers (synchronizing their contents)
      * but only one writer (appending a new entry).
      */
-    private final ReadWriteLock rwLock = new ReentrantWriterPreferenceReadWriteLock();
+    private final XAReentrantWriterPreferenceReadWriteLock rwLock = new XAReentrantWriterPreferenceReadWriteLock();
 
     /**
      * The path of the local revision file on disk. Configurable through the repository.xml.
@@ -327,9 +325,13 @@ public abstract class AbstractJournal implements Journal {
      *                   successful
      */
     public void unlock(boolean successful) {
-        doUnlock(successful);
-
-        rwLock.writeLock().release();
+    	try {
+    		doUnlock(successful);
+    	} finally {
+    		//Should not happen that a RuntimeException will be thrown in subCode, but it's safer
+    		//to release the rwLock in finally block.
+            rwLock.writeLock().release();
+    	}
     }
 
     /**

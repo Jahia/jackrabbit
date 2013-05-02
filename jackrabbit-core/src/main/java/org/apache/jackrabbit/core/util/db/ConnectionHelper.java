@@ -22,9 +22,13 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.sql.DataSource;
 
+import org.apache.jackrabbit.core.TransactionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,8 +80,8 @@ public class ConnectionHelper {
 
     protected final DataSource dataSource;
 
-    private ThreadLocal<Connection> batchConnectionTl = new ThreadLocal<Connection>();
-    
+    private Map<Object, Connection> batchConnectionMap = Collections.synchronizedMap(new HashMap<Object, Connection>());
+
     /**
      * The default fetchSize is '0'. This means the fetchSize Hint will be ignored 
      */
@@ -164,14 +168,14 @@ public class ConnectionHelper {
 
     /**
      * Returns true if we are currently in a batch mode, false otherwise.
-     * @return true if the current thread is running in batch mode, false otherwise.
+     * 
+     * @return true if the current thread or the active transaction is running in batch mode, false otherwise.
      */
-    protected boolean inBatchMode()
-    {
-      return batchConnectionTl.get() != null;
+    protected boolean inBatchMode() {
+    	return getTransactionAwareBatchConnection() != null;
     }
 
-    /**
+	/**
      * The default implementation returns the {@code extraNameCharacters} provided by the databases metadata.
      *
      * @return the additional characters for identifiers supported by the db
@@ -233,18 +237,18 @@ public class ConnectionHelper {
         try {
             batchConnection = getConnection();
             batchConnection.setAutoCommit(false);
-            batchConnectionTl.set(batchConnection);
+            setTransactionAwareBatchConnection(batchConnection);
         } catch (SQLException e) {
+            removeTransactionAwareBatchConnection();
             // Strive for failure atomicity
             if (batchConnection != null) {
                 DbUtility.close(batchConnection, null, null);
             }
-            batchConnectionTl.remove();
             throw e;
         }
     }
 
-    /**
+	/**
      * This method always ends the <i>batch mode</i>.
      *
      * @param commit whether the changes in the batch should be committed or rolled back
@@ -253,17 +257,20 @@ public class ConnectionHelper {
      */
     public final void endBatch(boolean commit) throws SQLException {
         if (!inBatchMode()) {
-            throw new IllegalStateException("not in batch mode");
+            throw new SQLException("not in batch mode");
         }
+        Connection batchConnection = getTransactionAwareBatchConnection(); 
         try {
             if (commit) {
-                batchConnectionTl.get().commit();
+            	batchConnection.commit();
             } else {
-                batchConnectionTl.get().rollback();
+            	batchConnection.rollback();
             }
         } finally {
-            DbUtility.close(batchConnectionTl.get(), null, null);
-            batchConnectionTl.set(null);
+            removeTransactionAwareBatchConnection();
+            if (batchConnection != null) {
+            	DbUtility.close(batchConnection, null, null);
+            }
         }
     }
 
@@ -278,7 +285,7 @@ public class ConnectionHelper {
      * @throws SQLException on error
      */
     public final void exec(final String sql, final Object... params) throws SQLException {
-        new RetryManager<Void>() {
+        new RetryManager<Void>(params) {
 
             @Override
             protected Void call() throws SQLException {
@@ -316,7 +323,7 @@ public class ConnectionHelper {
      * @throws SQLException on error
      */
     public final int update(final String sql, final Object... params) throws SQLException {
-        return new RetryManager<Integer>() {
+        return new RetryManager<Integer>(params) {
 
             @Override
             protected Integer call() throws SQLException {
@@ -363,11 +370,11 @@ public class ConnectionHelper {
      */
     public final ResultSet exec(final String sql, final Object[] params, final boolean returnGeneratedKeys,
             final int maxRows) throws SQLException {
-        return new RetryManager<ResultSet>() {
+        return new RetryManager<ResultSet>(params) {
 
             @Override
             protected ResultSet call() throws SQLException {
-                return reallyExec(sql, params, returnGeneratedKeys, maxRows);
+            	return reallyExec(sql, params, returnGeneratedKeys, maxRows);
             }
 
         }.doTry();
@@ -399,6 +406,7 @@ public class ConnectionHelper {
             }
             // Don't wrap null
             if (rs == null) {
+            	closeResources(con, stmt, rs);
                 return null;
             }
             if (inBatchMode()) {
@@ -422,7 +430,7 @@ public class ConnectionHelper {
      */
     protected final Connection getConnection() throws SQLException {
         if (inBatchMode()) {
-            return batchConnectionTl.get();
+            return getTransactionAwareBatchConnection();
         } else {
             Connection con = dataSource.getConnection();
             // JCR-1013: Setter may fail unnecessarily on a managed connection
@@ -434,6 +442,36 @@ public class ConnectionHelper {
     }
 
     /**
+     * Returns the Batch Connection.
+     * 
+     * @return Connection
+     */
+    private Connection getTransactionAwareBatchConnection() {
+    	Object threadId = TransactionContext.getCurrentThreadId();
+       	return batchConnectionMap.get(threadId);
+	}
+
+    /**
+     * Stores the given Connection to the batchConnectionMap.
+     * If we are running in a XA Environment the globalTransactionId will be used as Key.
+     * In Non-XA Environment the ThreadName is used.
+     * 
+     * @param batchConnection
+     */
+	private void setTransactionAwareBatchConnection(Connection batchConnection) {
+    	Object threadId = TransactionContext.getCurrentThreadId();
+    	batchConnectionMap.put(threadId, batchConnection);
+	}
+
+    /**
+     * Removes the Batch Connection from the batchConnectionMap
+     */
+	private void removeTransactionAwareBatchConnection() {
+    	Object threadId = TransactionContext.getCurrentThreadId();
+    	batchConnectionMap.remove(threadId);
+	}
+	
+	/**
      * Closes the given resources given the {@code batchMode} state.
      *
      * @param con the {@code Connection} obtained through the {@link #getConnection()} method
@@ -462,7 +500,6 @@ public class ConnectionHelper {
     protected PreparedStatement execute(PreparedStatement stmt, Object[] params) throws SQLException {
         for (int i = 0; params != null && i < params.length; i++) {
             Object p = params[i];
-            // FIXME: what about already consumed input streams when in a retry?
             if (p instanceof StreamWrapper) {
                 StreamWrapper wrapper = (StreamWrapper) p;
                 stmt.setBinaryStream(i + 1, wrapper.getStream(), (int) wrapper.getSize());
@@ -470,17 +507,39 @@ public class ConnectionHelper {
                 stmt.setObject(i + 1, p);
             }
         }
-        stmt.execute();
+        try {
+        	stmt.execute();
+        } catch (SQLException e) {
+        	//Reset Stream for retry ...
+            for (int i = 0; params != null && i < params.length; i++) {
+                Object p = params[i];
+                if (p instanceof StreamWrapper) {
+                    StreamWrapper wrapper = (StreamWrapper) p;
+                    if(!wrapper.resetStream()) {
+                    	wrapper.cleanupResources();
+                    	throw new RuntimeException("Unable to reset the Stream.");
+                    }
+                }
+            }
+        	throw e;
+        }
         return stmt;
     }
 
     /**
      * This class encapsulates the logic to retry a method invocation if it threw an SQLException.
+     * The RetryManager must cleanup the Params it will get.
      *
      * @param <T> the return type of the method which is retried if it failed
      */
     public abstract class RetryManager<T> {
 
+    	private Object[] params;
+    	
+    	public RetryManager(Object[] params) {
+    		this.params = params;
+    	}
+    	
         public final T doTry() throws SQLException {
             if (inBatchMode()) {
                 return call();
@@ -490,11 +549,13 @@ public class ConnectionHelper {
                 SQLException lastException = null;
                 while (!sleepInterrupted && (blockOnConnectionLoss || failures <= RETRIES)) {
                     try {
-                        return call();
+                    	T object = call(); 
+                        cleanupParamResources();
+                        return object;
                     } catch (SQLException e) {
                         lastException = e;
                     }
-                    log.error("Failed to execute SQL (stacktrace on DEBUG log level)", lastException);
+                    log.error("Failed to execute SQL (stacktrace on DEBUG log level): " + lastException);
                     log.debug("Failed to execute SQL", lastException);
                     failures++;
                     if (blockOnConnectionLoss || failures <= RETRIES) { // if we're going to try again
@@ -507,10 +568,26 @@ public class ConnectionHelper {
                         }
                     }
                 }
+                cleanupParamResources();
                 throw lastException;
             }
         }
 
         protected abstract T call() throws SQLException;
+
+		/**
+		 * Cleans up the Parameter resources that are not automatically closed or deleted.
+		 *
+		 * @param params
+		 */
+		protected void cleanupParamResources() {
+		    for (int i = 0; params != null && i < params.length; i++) {
+		        Object p = params[i];
+		        if (p instanceof StreamWrapper) {
+		            StreamWrapper wrapper = (StreamWrapper) p;
+		            wrapper.cleanupResources();
+		        }
+		    }
+		}
     }
 }

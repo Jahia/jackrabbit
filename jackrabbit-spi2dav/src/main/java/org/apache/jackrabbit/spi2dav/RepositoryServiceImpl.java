@@ -22,6 +22,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -250,6 +251,9 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     private boolean remoteServerProvidesNodeTypes = false;
     private boolean remoteServerProvidesNoLocalFlag = false;
 
+    /* DAV conformance levels */
+    private Set<String> remoteDavComplianceClasses = null;
+
     /**
      * Same as {@link #RepositoryServiceImpl(String, IdFactory, NameFactory, PathFactory, QValueFactory, int, int)}
      * using {@link ItemInfoCacheImpl#DEFAULT_CACHE_SIZE)} as size for the item
@@ -361,6 +365,20 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         }
     }
 
+    /**
+     * Resolve the given URI against a base URI (usually the request URI of an HTTP request)
+     */
+    private static String resolve(String baseUri, String relUri) throws RepositoryException {
+        try {
+            java.net.URI base = new java.net.URI(baseUri);
+            java.net.URI rel = new java.net.URI(relUri);
+            return base.resolve(rel).toString();
+        }
+        catch (URISyntaxException ex) {
+            throw new RepositoryException(ex);
+        }
+    }
+
     private static void checkSubscription(Subscription subscription) throws RepositoryException {
         if (!(subscription instanceof EventSubscriptionImpl)) {
             throw new RepositoryException("Unknown Subscription implementation.");
@@ -434,11 +452,15 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     }
 
     private static boolean isSameResource(String requestURI, MultiStatusResponse response) {
-        String href = response.getHref();
-        if (href.endsWith("/") && !requestURI.endsWith("/")) {
-            href = href.substring(0, href.length() - 1);
+        try {
+            String href = resolve(requestURI, response.getHref());
+            if (href.endsWith("/") && !requestURI.endsWith("/")) {
+                href = href.substring(0, href.length() - 1);
+            }
+            return requestURI.equals(href);
+        } catch (RepositoryException e) {
+            return false;
         }
-        return requestURI.equals(href);
     }
 
     private String saveGetIdString(ItemId id, SessionInfo sessionInfo) {
@@ -554,7 +576,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         return parentUri + Text.escape(resolver.getJCRName(childName));
     }
 
-    private NodeId getParentId(DavPropertySet propSet, SessionInfo sessionInfo)
+    private NodeId getParentId(String baseUri, DavPropertySet propSet, SessionInfo sessionInfo)
         throws RepositoryException {
         NodeId parentId = null;
         DavProperty<?> p = propSet.get(JcrRemotingConstants.JCR_PARENT_LN, ItemResourceConstants.NAMESPACE);
@@ -562,7 +584,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             HrefProperty parentProp = new HrefProperty(p);
             String parentHref = parentProp.getHrefs().get(0);
             if (parentHref != null && parentHref.length() > 0) {
-                parentId = uriResolver.getNodeId(parentHref, sessionInfo);
+                parentId = uriResolver.getNodeId(resolve(baseUri, parentHref), sessionInfo);
             }
         }
         return parentId;
@@ -845,7 +867,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     public boolean isGranted(SessionInfo sessionInfo, ItemId itemId, String[] actions) throws RepositoryException {
         ReportMethod method = null;
         try {
-            String uri = getItemUri(itemId, sessionInfo);
+            String uri = obtainAbsolutePathFromUri(getItemUri(itemId, sessionInfo));
             ReportInfo reportInfo = new ReportInfo(JcrRemotingConstants.REPORT_PRIVILEGES, ItemResourceConstants.NAMESPACE);
             reportInfo.setContentElement(DomUtil.hrefToXml(uri, DomUtil.createDocument()));
 
@@ -1016,9 +1038,9 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             }
 
             NamePathResolver resolver = getNamePathResolver(sessionInfo);
-            NodeId parentId = getParentId(propSet, sessionInfo);
+            NodeId parentId = getParentId(uri, propSet, sessionInfo);
 
-            NodeInfoImpl nInfo = buildNodeInfo(nodeResponse, parentId, propSet, sessionInfo, resolver);
+            NodeInfoImpl nInfo = buildNodeInfo(uri, nodeResponse, parentId, propSet, sessionInfo, resolver);
 
             for (MultiStatusResponse resp : childResponses) {
                 DavPropertySet childProps = resp.getProperties(DavServletResponse.SC_OK);
@@ -1068,11 +1090,11 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         }
     }
 
-    private NodeInfoImpl buildNodeInfo(MultiStatusResponse nodeResponse,
+    private NodeInfoImpl buildNodeInfo(String baseUri, MultiStatusResponse nodeResponse,
                                        NodeId parentId, DavPropertySet propSet,
                                        SessionInfo sessionInfo,
                                        NamePathResolver resolver) throws NameException, RepositoryException {
-        NodeId id = uriResolver.buildNodeId(parentId, nodeResponse, sessionInfo.getWorkspaceName(), getNamePathResolver(sessionInfo));
+        NodeId id = uriResolver.buildNodeId(parentId, baseUri, nodeResponse, sessionInfo.getWorkspaceName(), getNamePathResolver(sessionInfo));
         NodeInfoImpl nInfo = new NodeInfoImpl(id, propSet, resolver);
         DavProperty p = propSet.get(JcrRemotingConstants.JCR_REFERENCES_LN, ItemResourceConstants.NAMESPACE);
         if (p != null) {
@@ -1185,12 +1207,9 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     public Iterator<PropertyId> getReferences(SessionInfo sessionInfo, NodeId nodeId, Name propertyName, boolean weakReferences) throws ItemNotFoundException, RepositoryException {
         // set of properties to be retrieved
         DavPropertyNameSet nameSet = new DavPropertyNameSet();
-        if (weakReferences) {
-            nameSet.add(JcrRemotingConstants.JCR_WEAK_REFERENCES_LN, ItemResourceConstants.NAMESPACE);
-        } else {
-            nameSet.add(JcrRemotingConstants.JCR_REFERENCES_LN, ItemResourceConstants.NAMESPACE);
-        }
-
+        String refType = weakReferences ? JcrRemotingConstants.JCR_WEAK_REFERENCES_LN : JcrRemotingConstants.JCR_REFERENCES_LN;
+        nameSet.add(refType, ItemResourceConstants.NAMESPACE);
+ 
         DavMethodBase method = null;
         try {
             String uri = getItemUri(nodeId, sessionInfo);
@@ -1207,18 +1226,13 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             for (MultiStatusResponse resp : responses) {
                 if (isSameResource(uri, resp)) {
                     DavPropertySet props = resp.getProperties(DavServletResponse.SC_OK);
-                    DavProperty<?> p;
-                    if (weakReferences) {
-                        p = props.get(JcrRemotingConstants.JCR_WEAK_REFERENCES_LN, ItemResourceConstants.NAMESPACE);
-                    } else {
-                        p = props.get(JcrRemotingConstants.JCR_REFERENCES_LN, ItemResourceConstants.NAMESPACE);
-                    }
+                    DavProperty<?> p = props.get(refType, ItemResourceConstants.NAMESPACE);
 
                     if (p != null) {
                         refIds = new ArrayList<PropertyId>();
                         HrefProperty hp = new HrefProperty(p);
                         for (String propHref : hp.getHrefs()) {
-                            PropertyId propId = uriResolver.getPropertyId(propHref, sessionInfo);
+                            PropertyId propId = uriResolver.getPropertyId(resolve(uri, propHref), sessionInfo);
                             if (propertyName == null || propertyName.equals(propId.getName())) {
                                 refIds.add(propId);
                             }
@@ -1449,6 +1463,9 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     public void move(SessionInfo sessionInfo, NodeId srcNodeId, NodeId destParentNodeId, Name destName) throws RepositoryException {
         String uri = getItemUri(srcNodeId, sessionInfo);
         String destUri = getItemUri(destParentNodeId, destName, sessionInfo);
+        if (isDavClass3(sessionInfo)) {
+            destUri = obtainAbsolutePathFromUri(destUri);
+        }
         MoveMethod method = new MoveMethod(uri, destUri, false);
         execute(method, sessionInfo);
         // need to clear the cache as the move may have affected nodes with uuid.
@@ -1461,6 +1478,9 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     public void copy(SessionInfo sessionInfo, String srcWorkspaceName, NodeId srcNodeId, NodeId destParentNodeId, Name destName) throws RepositoryException {
         String uri = uriResolver.getItemUri(srcNodeId, srcWorkspaceName, sessionInfo);
         String destUri = getItemUri(destParentNodeId, destName, sessionInfo);
+        if (isDavClass3(sessionInfo)) {
+            destUri = obtainAbsolutePathFromUri(destUri);
+        }
         CopyMethod method = new CopyMethod(uri, destUri, false, false);
         execute(method, sessionInfo);
     }
@@ -1511,7 +1531,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             if (ps.contains(DavPropertyName.LOCKDISCOVERY)) {
                 DavProperty<?> p = ps.get(DavPropertyName.LOCKDISCOVERY);
                 LockDiscovery ld = LockDiscovery.createFromXml(p.toXml(DomUtil.createDocument()));
-                NodeId parentId = getParentId(ps, sessionInfo);
+                NodeId parentId = getParentId(uri, ps, sessionInfo);
                 return retrieveLockInfo(ld, sessionInfo, nodeId, parentId);
             }  else {
                 // no lock present
@@ -1645,7 +1665,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         CheckinMethod method = new CheckinMethod(uri);
         execute(method, sessionInfo);
         Header rh = method.getResponseHeader(DeltaVConstants.HEADER_LOCATION);
-        return uriResolver.getNodeId(rh.getValue(), sessionInfo);
+        return uriResolver.getNodeId(resolve(uri, rh.getValue()), sessionInfo);
     }
 
     /**
@@ -1766,8 +1786,9 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     private void update(String uri, Path relPath, String[] updateSource, int updateType, boolean removeExisting, SessionInfo sessionInfo) throws RepositoryException {
         try {
             UpdateInfo uInfo;
+            String tmpUpdateSource[] = obtainAbsolutePathsFromUris(updateSource);
             if (removeExisting || relPath != null) {
-                Element uElem = UpdateInfo.createUpdateElement(updateSource, updateType, DomUtil.createDocument());
+                Element uElem = UpdateInfo.createUpdateElement(tmpUpdateSource, updateType, DomUtil.createDocument());
                 if (removeExisting) {
                     DomUtil.addChildElement(uElem, JcrRemotingConstants.XML_REMOVEEXISTING, ItemResourceConstants.NAMESPACE);
                 }
@@ -1777,7 +1798,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
 
                 uInfo = new UpdateInfo(uElem);
             } else {
-                uInfo = new UpdateInfo(updateSource, updateType, new DavPropertyNameSet());
+                uInfo = new UpdateInfo(tmpUpdateSource, updateType, new DavPropertyNameSet());
             }
 
             UpdateMethod method = new UpdateMethod(uri, uInfo);
@@ -1804,20 +1825,21 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     public Iterator<NodeId> merge(SessionInfo sessionInfo, NodeId nodeId, String srcWorkspaceName, boolean bestEffort, boolean isShallow) throws NoSuchWorkspaceException, AccessDeniedException, MergeException, LockException, InvalidItemStateException, RepositoryException {
         try {
             Document doc = DomUtil.createDocument();
-            String wspHref = uriResolver.getWorkspaceUri(srcWorkspaceName);
-            Element mElem = MergeInfo.createMergeElement(new String[] {wspHref}, !bestEffort, false, doc);
+            String wspHref = obtainAbsolutePathFromUri(uriResolver.getWorkspaceUri(srcWorkspaceName));
+            Element mElem = MergeInfo.createMergeElement(new String[] { wspHref }, !bestEffort, false, doc);
             if (isShallow) {
                 mElem.appendChild(DomUtil.depthToXml(false, doc));
             }
             MergeInfo mInfo = new MergeInfo(mElem);
 
-            MergeMethod method = new MergeMethod(getItemUri(nodeId, sessionInfo), mInfo);
+            String uri = getItemUri(nodeId, sessionInfo);
+            MergeMethod method = new MergeMethod(uri, mInfo);
             execute(method, sessionInfo);
 
             MultiStatusResponse[] resps = method.getResponseBodyAsMultiStatus().getResponses();
             List<NodeId> failedIds = new ArrayList<NodeId>(resps.length);
             for (MultiStatusResponse resp : resps) {
-                String href = resp.getHref();
+                String href = resolve(uri, resp.getHref());
                 failedIds.add(uriResolver.getNodeId(href, sessionInfo));
             }
             return failedIds.iterator();
@@ -2077,7 +2099,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
                 Element contentElem = DomUtil.getChildElement(entryElem, AtomFeedConstants.N_CONTENT);
                 if (contentElem != null
                         && "application/vnd.apache.jackrabbit.event+xml".equals(contentElem.getAttribute("type"))) {
-                    List<Event> el = buildEventList(contentElem, (SessionInfoImpl) sessionInfo);
+                    List<Event> el = buildEventList(contentElem, (SessionInfoImpl) sessionInfo, rootUri);
                     for (Event e : el) {
                         if (e.getDate() > after && (filter == null || filter.accept(e, false))) {
                             events.add(e);
@@ -2248,7 +2270,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
                         isLocal = Boolean.parseBoolean(value);
                     }
                     bundles.add(new EventBundleImpl(
-                            buildEventList(bundleElement, sessionInfo),
+                            buildEventList(bundleElement, sessionInfo, uri),
                             isLocal));
                 }
                 events = bundles.toArray(new EventBundle[bundles.size()]);
@@ -2267,7 +2289,8 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         }
     }
 
-    private List<Event> buildEventList(Element bundleElement, SessionInfoImpl sessionInfo) throws IllegalNameException, NamespaceException {
+    private List<Event> buildEventList(Element bundleElement, SessionInfoImpl sessionInfo, String baseUri)
+            throws IllegalNameException, NamespaceException, RepositoryException {
         List<Event> events = new ArrayList<Event>();
         ElementIterator eventElementIterator = DomUtil.getChildren(bundleElement, ObservationConstants.N_EVENT);
 
@@ -2300,6 +2323,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             NodeId parentId = null;
 
             if (href != null) {
+                href = resolve(baseUri, href);
                 try {
                     eventPath = uriResolver.getQPath(href, sessionInfo);
                 } catch (RepositoryException e) {
@@ -2310,7 +2334,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
 
                 boolean isForNode = (type == Event.NODE_ADDED
                         || type == Event.NODE_REMOVED || type == Event.NODE_MOVED);
-                
+
                 try {
                     if (isForNode) {
                         eventId = uriResolver.getNodeIdAfterEvent(href,
@@ -2757,6 +2781,71 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         return new DefaultDavProperty<List<XmlSerializable>>(localName, val, ItemResourceConstants.NAMESPACE, false);
     }
 
+    private Set<String> getDavComplianceClasses(SessionInfo sessionInfo) throws RepositoryException {
+        if (this.remoteDavComplianceClasses == null) {
+            OptionsMethod method = new OptionsMethod(uriResolver.getWorkspaceUri(sessionInfo.getWorkspaceName()));
+            try {
+                getClient(sessionInfo).executeMethod(method);
+                method.checkSuccess();
+                Header davHeader = method.getResponseHeader("DAV");
+                if (davHeader!= null) {
+                    // TODO: think about coded-URLs containing a comma
+                    String[] classes = davHeader.getValue().split(",");
+                    this.remoteDavComplianceClasses = new HashSet<String>();
+                    for (String c : classes) {
+                        this.remoteDavComplianceClasses.add(c.trim());
+                    }
+                }
+            } catch (IOException e) {
+                throw new RepositoryException(e);
+            } catch (DavException e) {
+                throw ExceptionConverter.generate(e);
+            } finally {
+                method.releaseConnection();
+            }
+        }
+        return this.remoteDavComplianceClasses;
+    }
+
+    private boolean isDavClass3(SessionInfo sessionInfo) {
+        try {
+            return getDavComplianceClasses(sessionInfo).contains("3");
+        }
+        catch (RepositoryException ex) {
+            log.warn("failure to obtain OPTIONS response", ex);
+            return false;
+        }
+    }
+
+    private static String obtainAbsolutePathFromUri(String uri) {
+        try {
+            java.net.URI u = new java.net.URI(uri);
+            StringBuilder sb = new StringBuilder();
+            sb.append(u.getRawPath());
+            if (u.getRawQuery() != null) {
+                sb.append("?" + u.getRawQuery());
+            }
+            return sb.toString();
+        }
+        catch (java.net.URISyntaxException ex) {
+            log.warn("parsing " + uri, ex);
+            return uri;
+        }
+    }
+
+    private static String[] obtainAbsolutePathsFromUris(String[] uris) {
+        if (uris == null) {
+            return null;
+        } else {
+            String result[] = new String[uris.length];
+
+            for (int i = 0; i < result.length; i++) {
+                result[i] = obtainAbsolutePathFromUri(uris[i]);
+            }
+            return result;
+        }
+    }
+
     /**
      * The XML elements and attributes used in serialization
      */
@@ -3116,6 +3205,9 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             checkConsumed();
             String uri = getItemUri(srcNodeId, sessionInfo);
             String destUri = getItemUri(destParentNodeId, destName, sessionInfo);
+            if (isDavClass3(sessionInfo)) {
+                destUri = obtainAbsolutePathFromUri(destUri);
+            }
             MoveMethod method = new MoveMethod(uri, destUri, false);
 
             methods.add(method);

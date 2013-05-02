@@ -17,6 +17,7 @@
 package org.apache.jackrabbit.core.util.db;
 
 import java.sql.Connection;
+import java.sql.Driver;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import javax.sql.DataSource;
 
 import org.apache.commons.dbcp.BasicDataSource;
 import org.apache.commons.dbcp.DelegatingConnection;
+import org.apache.commons.pool.impl.GenericObjectPool;
 import org.apache.jackrabbit.core.config.DataSourceConfig;
 import org.apache.jackrabbit.core.config.DataSourceConfig.DataSourceDefinition;
 import org.apache.jackrabbit.util.Base64;
@@ -315,17 +317,23 @@ public final class ConnectionFactory {
         created.add(ds);
 
         if (driverClass != null) {
+        	Driver instance = null;
             try {
                 // Workaround for Apache Derby:
                 // The JDBC specification recommends the Class.forName
                 // method without the .newInstance() method call,
                 // but it is required after a Derby 'shutdown'
-                driverClass.newInstance();
+                instance = (Driver) driverClass.newInstance();
             } catch (Throwable e) {
                 // Ignore exceptions as there's no requirement for
                 // a JDBC driver class to have a public default constructor
             }
-
+            if (instance != null) {
+                if (instance.jdbcCompliant()) {
+                	// JCR-3445 At the moment the PostgreSQL isn't compliant because it doesn't implement this method...                	
+                    ds.setValidationQueryTimeout(3);
+                }
+            }
             ds.setDriverClassName(driverClass.getName());
         }
 
@@ -335,8 +343,10 @@ public final class ConnectionFactory {
         ds.setDefaultAutoCommit(true);
         ds.setTestOnBorrow(false);
         ds.setTestWhileIdle(true);
-        ds.setTimeBetweenEvictionRunsMillis(1000);
+        ds.setTimeBetweenEvictionRunsMillis(600000); // 10 Minutes
+        ds.setMinEvictableIdleTimeMillis(60000); // 1 Minute
         ds.setMaxActive(-1); // unlimited
+        ds.setMaxIdle(GenericObjectPool.DEFAULT_MAX_IDLE + 10);
         ds.setValidationQuery(guessValidationQuery(url));
         ds.setAccessToUnderlyingConnectionAllowed(true);
         ds.setPoolPreparedStatements(true);

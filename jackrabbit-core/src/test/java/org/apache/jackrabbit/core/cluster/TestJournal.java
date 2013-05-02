@@ -14,31 +14,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.security.principal;
+package org.apache.jackrabbit.core.cluster;
 
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
+import org.apache.jackrabbit.core.journal.JournalException;
+import org.apache.jackrabbit.core.journal.MemoryJournal;
 
 /**
- * Test suite
- */
-public class TestAll extends TestCase {
+* <code>TestJournal</code> extends the MemoryJournal with a static hook to
+* refuse lock acquisition.
+*/
+public final class TestJournal extends MemoryJournal {
 
-    /**
-     * Returns a <code>Test</code> suite that executes all tests inside this
-     * package.
-     *
-     * @return a <code>Test</code> suite that executes all tests inside this
-     *         package.
-     */
-    public static Test suite() {
-        TestSuite suite = new TestSuite("core.security.principal tests");
+    static boolean refuseLock = false;
 
-        suite.addTestSuite(AbstractPrincipalProviderTest.class);
-        suite.addTestSuite(EveryonePrincipalTest.class);
-        suite.addTestSuite(PrincipalManagerTest.class);
-
-        return suite;
+    @Override
+    protected void doLock() throws JournalException {
+        if (refuseLock) {
+            throw new JournalException("lock refused");
+        } else {
+            super.doLock();
+        }
     }
 }

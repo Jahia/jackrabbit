@@ -18,6 +18,7 @@ package org.apache.jackrabbit.core.state;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
@@ -27,6 +28,7 @@ import javax.jcr.RepositoryException;
 import javax.jcr.nodetype.NoSuchNodeTypeException;
 
 import org.apache.jackrabbit.core.RepositoryImpl;
+import org.apache.jackrabbit.core.cluster.ClusterException;
 import org.apache.jackrabbit.core.cluster.UpdateEventChannel;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
@@ -562,7 +564,11 @@ public class SharedItemStateManager
             virtualNodeReferences = new ChangeLog[virtualProviders.length];
 
             // let listener know about change
-            eventChannel.updateCreated(this);
+            try {
+                eventChannel.updateCreated(this);
+            } catch (ClusterException e) {
+                throw new ItemStateException(e.getMessage(), e);
+            }
 
             try {
                 writeLock = acquireWriteLock(local);
@@ -675,14 +681,21 @@ public class SharedItemStateManager
 
                     shared.modified(state.getOverlayedState());
                 }
-                for (ItemState state : local.deletedStates()) {
-                    state.connect(getItemState(state.getId()));
-                    if (state.isStale()) {
-                        String msg = state.getId() + " has been modified externally";
-                        log.debug(msg);
-                        throw new StaleItemStateException(msg);
+                Iterator<ItemState> deleted = local.deletedStates().iterator();
+                while (deleted.hasNext()) {
+                    ItemState state = deleted.next();
+                    try {
+                        state.connect(getItemState(state.getId()));
+                        if (state.isStale()) {
+                            String msg = state.getId() + " has been modified externally";
+                            log.debug(msg);
+                            throw new StaleItemStateException(msg);
+                        }
+                        shared.deleted(state.getOverlayedState());
+                    } catch (NoSuchItemStateException e) {
+                        // item state was already deleted externally
+                        deleted.remove();
                     }
-                    shared.deleted(state.getOverlayedState());
                 }
                 for (ItemState state : local.addedStates()) {
                     if (state.isNode() && state.getStatus() != ItemState.STATUS_NEW) {
@@ -831,14 +844,14 @@ public class SharedItemStateManager
 
                 for (ItemState state : shared.modifiedStates()) {
                     try {
-                        state.copy(loadItemState(state.getId()), false);
+                        state.copy(loadItemState(state.getId()), true);
                     } catch (ItemStateException e) {
                         state.discard();
                     }
                 }
                 for (ItemState state : shared.deletedStates()) {
                     try {
-                        state.copy(loadItemState(state.getId()), false);
+                        state.copy(loadItemState(state.getId()), true);
                     } catch (ItemStateException e) {
                         state.discard();
                     }
@@ -1502,18 +1515,18 @@ public class SharedItemStateManager
         boolean holdingWriteLock = false;
 
         ISMLocking.WriteLock wLock = null;
-        try {
-            wLock = acquireWriteLock(external);
-            holdingWriteLock = true;
-
-            doExternalUpdate(external);
-        } catch (ItemStateException e) {
-            String msg = "Unable to acquire write lock.";
-            log.error(msg);
-        }
-
         ISMLocking.ReadLock rLock = null;
         try {
+	        try {
+	            wLock = acquireWriteLock(external);
+	            holdingWriteLock = true;
+	
+	            doExternalUpdate(external);
+	        } catch (ItemStateException e) {
+	            String msg = "Unable to acquire write lock.";
+	            log.error(msg);
+	        }
+
             if (wLock != null) {
                 rLock = wLock.downgrade();
                 holdingWriteLock = false;

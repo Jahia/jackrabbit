@@ -18,6 +18,7 @@ package org.apache.jackrabbit.core.data;
 
 import org.apache.jackrabbit.api.management.DataStoreGarbageCollector;
 import org.apache.jackrabbit.api.management.MarkEventListener;
+import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.observation.SynchronousEventListener;
@@ -78,7 +79,7 @@ import javax.jcr.observation.ObservationManager;
 public class GarbageCollector implements DataStoreGarbageCollector {
 
     /** logger instance */
-    private static final Logger LOG = LoggerFactory.getLogger(GarbageCollector.class);
+    static final Logger LOG = LoggerFactory.getLogger(GarbageCollector.class);
 
     /**
      * The number of nodes to fetch at once from the persistence manager. Defaults to 8kb
@@ -99,11 +100,13 @@ public class GarbageCollector implements DataStoreGarbageCollector {
 
     private final IterablePersistenceManager[] pmList;
 
-    private final Session[] sessionList;
+    private final SessionImpl[] sessionList;
 
     private final AtomicBoolean closed = new AtomicBoolean();
 
     private boolean persistenceManagerScan;
+
+    private volatile RepositoryException observationException;
 
     /**
      * Create a new garbage collector.
@@ -116,7 +119,7 @@ public class GarbageCollector implements DataStoreGarbageCollector {
      */
     public GarbageCollector(
             DataStore dataStore, IterablePersistenceManager[] list,
-            Session[] sessionList) {
+            SessionImpl[] sessionList) {
         this.store = dataStore;
         this.pmList = list;
         this.persistenceManagerScan = list != null;
@@ -169,7 +172,7 @@ public class GarbageCollector implements DataStoreGarbageCollector {
         }
 
         if (pmList == null || !persistenceManagerScan) {
-            for (Session s : sessionList) {
+            for (SessionImpl s : sessionList) {
                 scanNodes(s);
             }
         } else {
@@ -181,11 +184,11 @@ public class GarbageCollector implements DataStoreGarbageCollector {
         }
     }
 
-    private void scanNodes(Session session) throws RepositoryException {
+    private void scanNodes(SessionImpl session) throws RepositoryException {
 
-        // add a listener to get 'new' nodes
-        // actually, new nodes are not the problem, but moved nodes
-        listeners.add(new Listener(session));
+        // add a listener to get 'moved' nodes
+        Session clonedSession = session.createSession(session.getWorkspace().getName());
+        listeners.add(new Listener(this, clonedSession));
 
         // adding a link to a BLOB updates the modified date
         // reading usually doesn't, but when scanning, it does
@@ -250,14 +253,11 @@ public class GarbageCollector implements DataStoreGarbageCollector {
     public void stopScan() throws RepositoryException {
         if (listeners.size() > 0) {
             for (Listener listener : listeners) {
-                try {
-                    listener.stop();
-                } catch (Exception e) {
-                    throw new RepositoryException(e);
-                }
+                listener.stop();
             }
             listeners.clear();
         }
+        checkObservationException();
     }
 
     /**
@@ -325,6 +325,7 @@ public class GarbageCollector implements DataStoreGarbageCollector {
         } catch (InvalidItemStateException e) {
             LOG.debug("Node removed concurrently - ignoring", e);
         }
+        checkObservationException();
     }
 
     private void rememberNode(String path) {
@@ -384,6 +385,24 @@ public class GarbageCollector implements DataStoreGarbageCollector {
         }
     }
 
+    private void checkObservationException() throws RepositoryException {
+        RepositoryException e = observationException;
+        if (e != null) {
+            observationException = null;
+            String message = "Exception while processing concurrent events";
+            LOG.warn(message, e);
+            e = new RepositoryException(message, e);
+        }
+    }
+
+    void onObservationException(Exception e) {
+        if (e instanceof RepositoryException) {
+            observationException = (RepositoryException) e;
+        } else {
+            observationException = new RepositoryException(e);
+        }
+    }
+
     /**
      * Auto-close in case the application didn't call it explicitly.
      */
@@ -398,27 +417,24 @@ public class GarbageCollector implements DataStoreGarbageCollector {
      */
     class Listener implements SynchronousEventListener {
 
+        private final GarbageCollector gc;
         private final Session session;
-
         private final ObservationManager manager;
 
-        private Exception lastException;
-
-        Listener(Session session)
+        Listener(GarbageCollector gc, Session session)
                 throws UnsupportedRepositoryOperationException,
                 RepositoryException {
+            this.gc = gc;
             this.session = session;
             Workspace ws = session.getWorkspace();
             manager = ws.getObservationManager();
-            manager.addEventListener(this, Event.NODE_ADDED, "/", true, null,
+            manager.addEventListener(this, Event.NODE_MOVED, "/", true, null,
                     null, false);
         }
 
-        void stop() throws Exception {
-            if (lastException != null) {
-                throw lastException;
-            }
+        void stop() throws RepositoryException {
             manager.removeEventListener(this);
+            session.logout();
         }
 
         public void onEvent(EventIterator events) {
@@ -443,7 +459,12 @@ public class GarbageCollector implements DataStoreGarbageCollector {
                         // ignore
                     }
                 } catch (Exception e) {
-                    lastException = e;
+                    gc.onObservationException(e);
+                    try {
+                        stop();
+                    } catch (RepositoryException e2) {
+                        LOG.warn("Exception removing the observation listener - ignored", e2);
+                    }
                 }
             }
         }

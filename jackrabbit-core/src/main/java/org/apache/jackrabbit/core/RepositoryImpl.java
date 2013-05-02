@@ -607,7 +607,7 @@ public class RepositoryImpl extends AbstractRepository
      * Returns the system search manager or <code>null</code> if none is
      * configured.
      */
-    private SearchManager getSystemSearchManager(String wspName)
+    protected SearchManager getSystemSearchManager(String wspName)
             throws RepositoryException {
         if (systemSearchMgr == null) {
             if (repConfig.isSearchEnabled()) {
@@ -1406,7 +1406,7 @@ public class RepositoryImpl extends AbstractRepository
         PersistenceManager pm = vm.getPersistenceManager();
         pmList.add(pm);
         String[] wspNames = getWorkspaceNames();
-        Session[] sessions = new Session[wspNames.length];
+        SessionImpl[] sessions = new SessionImpl[wspNames.length];
         for (int i = 0; i < wspNames.length; i++) {
             String wspName = wspNames[i];
             WorkspaceInfo wspInfo = getWorkspaceInfo(wspName);
