@@ -39,14 +39,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Bundle serializer.
+ * Bundle slow but "careful" serializer. Careful specially for boolean properties.
  *
  * @see BundleReader
  */
-class BundleWriter {
+class BundleWriterSlower {
 
     /** Logger instance */
-    private static Logger log = LoggerFactory.getLogger(BundleWriter.class);
+    private static Logger log = LoggerFactory.getLogger(BundleWriterSlower.class);
 
     private final BundleBinding binding;
 
@@ -68,7 +68,7 @@ class BundleWriter {
      * @param stream stream to which the bundle will be written
      * @throws IOException if an I/O error occurs.
      */
-    public BundleWriter(BundleBinding binding, OutputStream stream)
+    public BundleWriterSlower(BundleBinding binding, OutputStream stream)
             throws IOException {
         assert namespaces.length == 7;
         this.binding = binding;
@@ -179,15 +179,16 @@ class BundleWriter {
      */
     private void writeState(NodePropBundle.PropertyEntry state)
             throws IOException {
+        log.info("writing state for property " + state.getName());
         writeName(state.getName());
 
         InternalValue[] values = state.getValues();
 
         int type = state.getType();
-        if (type < 0 || type > 0xf) {
-            throw new IOException("Illegal property type " + type);
-        }
+        log.info("writing type " + type);
+        assert 0 <= type && type <= 0x0f;
         if (state.isMultiValued()) {
+            log.info("writing multi-valued");
             int len = values.length + 1;
             if (len < 0x0f) {
                 out.writeByte(len << 4 | type);
@@ -196,11 +197,7 @@ class BundleWriter {
                 writeVarInt(len - 0x0f);
             }
         } else {
-            if (values.length != 1) {
-                throw new IOException(
-                        "Single values property with " + values.length + " values: " + 
-                        state.getName());
-            }
+            assert values.length == 1;
             out.writeByte(type);
         }
 
@@ -209,7 +206,7 @@ class BundleWriter {
         // values
         for (int i = 0; i < values.length; i++) {
             InternalValue val = values[i];
-            switch (type) {
+            switch (state.getType()) {
                 case PropertyType.BINARY:
                     try {
                         long size = val.getLength();
@@ -303,8 +300,13 @@ class BundleWriter {
                     }
                     break;
                 case PropertyType.BOOLEAN:
+                    log.info("Writing boolean");
                     try {
-                        out.writeBoolean(val.getBoolean());
+                        boolean value = val.getBoolean();
+                        out.flush();
+                        out.writeBoolean(value);
+                        log.info("Wrote boolean " + value);
+                        out.flush();
                     } catch (RepositoryException e) {
                         // should never occur
                         throw new IOException("Unexpected error while writing BOOLEAN value.");
@@ -330,13 +332,9 @@ class BundleWriter {
                         throw new IOException("Unexpected error while writing DATE value.");
                     }
                     break;
-                case PropertyType.STRING:
-                case PropertyType.PATH:
-                case PropertyType.URI:
+                default:
                     writeString(val.toString());
                     break;
-                default:
-                    throw new IOException("Inknown property type: " + type);
             }
         }
     }
@@ -459,9 +457,6 @@ class BundleWriter {
             }
 
             String local = name.getLocalName();
-            if (local.length() == 0) {
-                throw new IOException("Attempt to write an empty local name: " + name);
-            }
             byte[] bytes = local.getBytes("UTF-8");
             int len = Math.min(bytes.length - 1, 0x0f);
 

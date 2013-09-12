@@ -71,6 +71,7 @@ import javax.jcr.Node;
 import javax.jcr.NodeIterator;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
+import javax.jcr.UnsupportedRepositoryOperationException;
 import javax.jcr.Workspace;
 import javax.jcr.lock.Lock;
 import java.io.IOException;
@@ -653,6 +654,11 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
                     Lock jcrLock = node.getLock();
                     if (jcrLock != null && jcrLock.isLive()) {
                         lock = new JcrActiveLock(jcrLock);
+                        String lockroot = locator
+                                .getFactory()
+                                .createResourceLocator(locator.getPrefix(), locator.getWorkspacePath(),
+                                        jcrLock.getNode().getPath(), false).getHref(false);
+                        lock.setLockroot(lockroot);
                     }
                 }
             } catch (RepositoryException e) {
@@ -862,6 +868,8 @@ public class DavResourceImpl implements DavResource, BindableResource, JcrConsta
                 }
                 return ps;
             }
+        } catch (UnsupportedRepositoryOperationException e) {
+            log.debug("unable to calculate parent set", e);
         } catch (RepositoryException e) {
             log.warn("unable to calculate parent set", e);
         }
