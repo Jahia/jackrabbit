@@ -810,8 +810,6 @@ public class SharedItemStateManager
                     }
                 }
 
-                /* dispatch the events */
-                events.dispatch();
             } finally {
                 // Let listener know about finished operation. This needs
                 // to happen in the finally block so that the cluster lock
@@ -826,8 +824,16 @@ public class SharedItemStateManager
                     writeLock.release();
                     writeLock = null;
                 } else if (readLock != null) {
-                    readLock.release();
+                    try {
+                        if (succeeded) {
+                            /* dispatch the events */
+                            events.dispatch();
+                        }
+                    } finally {
+                        readLock.release();
+                    }
                 }
+
             }
         }
 
