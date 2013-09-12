@@ -177,24 +177,41 @@ public abstract class AbstractJournal implements Journal {
         return minimalRevision;
     }
 
+    
     /**
      * {@inheritDoc}
      */
-    public void sync() throws JournalException {
-        if (internalVersionManager != null) {
-            VersioningLock.ReadLock lock =
-                internalVersionManager.acquireReadLock();
-            try {
-                internalSync();
-            } finally {
-                lock.release();
+    public void sync(boolean startup) throws JournalException {
+        for (;;) {
+            if (internalVersionManager != null) {
+                VersioningLock.ReadLock lock =
+                        internalVersionManager.acquireReadLock();
+                try {
+                    internalSync(startup);
+                } finally {
+                    lock.release();
+                }
+            } else {
+                internalSync(startup);
             }
-        } else {
-            internalSync();
+            // startup sync already done, don't do it again
+            startup = false;
+            if (syncAgainOnNewRecords()) {
+                // sync again if there are more records available
+                RecordIterator it = getRecords(getMinimalRevision());
+                try {
+                    if (it.hasNext()) {
+                        continue;
+                    }
+                } finally {
+                    it.close();
+                }
+            }
+            break;
         }
     }
 
-    private void internalSync() throws JournalException {
+    private void internalSync(boolean startup) throws JournalException {
         try {
             rwLock.readLock().acquire();
         } catch (InterruptedException e) {
@@ -202,59 +219,55 @@ public abstract class AbstractJournal implements Journal {
             throw new JournalException(msg, e);
         }
         try {
-            doSync(getMinimalRevision());
+            doSync(getMinimalRevision(), startup);
         } finally {
             rwLock.readLock().release();
         }
     }
 
+
+    protected void doSync(long startRevision, boolean startup) throws JournalException {
+        // by default ignore startup parameter for backwards compatibility
+        // only needed for persistence backend that need special treatment on startup.
+        doSync(startRevision);
+    }
+    
     /**
+     * 
      * Synchronize contents from journal. May be overridden by subclasses.
      *
      * @param startRevision start point (exclusive)
      * @throws JournalException if an error occurs
      */
     protected void doSync(long startRevision) throws JournalException {
-        for (;;) {
-            RecordIterator iterator = getRecords(startRevision);
-            long stopRevision = Long.MIN_VALUE;
-    
-            try {
-                while (iterator.hasNext()) {
-                    Record record = iterator.nextRecord();
-                    if (record.getJournalId().equals(id)) {
-                        log.info("Record with revision '" + record.getRevision()
-                                + "' created by this journal, skipped.");
-                    } else {
-                        RecordConsumer consumer = getConsumer(record.getProducerId());
-                        if (consumer != null) {
-                            try {
-                                consumer.consume(record);
-                            } catch (IllegalStateException e) {
-                                log.error("Could not synchronize to revision: " + record.getRevision() + " due illegal state of RecordConsumer.");
-                                return;
-                            }
-                        }
-                    }
-                    stopRevision = record.getRevision();
-                }
-            } finally {
-                iterator.close();
-            }
-    
-            if (stopRevision > 0) {
-                for (RecordConsumer consumer : consumers.values()) {
-                    consumer.setRevision(stopRevision);
-                }
-                log.info("Synchronized to revision: " + stopRevision);
+        RecordIterator iterator = getRecords(startRevision);
+        long stopRevision = Long.MIN_VALUE;
 
-                if (syncAgainOnNewRecords()) {
-                    // changes detected, sync again
-                    startRevision = stopRevision;
-                    continue;
+        try {
+            while (iterator.hasNext()) {
+                Record record = iterator.nextRecord();
+                if (record.getJournalId().equals(id)) {
+                    log.info("Record with revision '" + record.getRevision()
+                            + "' created by this journal, skipped.");
+                } else {
+                    RecordConsumer consumer = getConsumer(record.getProducerId());
+                    if (consumer != null) {
+                        consumer.consume(record);
+                    }
                 }
+                stopRevision = record.getRevision();
             }
-            break;
+        } catch (IllegalStateException e) {
+            log.error("Could not synchronize to revision: " + (stopRevision + 1) + " due illegal state of RecordConsumer.");
+        } finally {
+            iterator.close();
+        }
+
+        if (stopRevision > 0) {
+            for (RecordConsumer consumer : consumers.values()) {
+                consumer.setRevision(stopRevision);
+            }
+            log.info("Synchronized from revision " + startRevision + " to revision: " + stopRevision);
         }
     }
     
@@ -271,7 +284,7 @@ public abstract class AbstractJournal implements Journal {
 
     /**
      * Lock the journal revision, disallowing changes from other sources until
-     * {@link #unlock has been called, and synchronizes to the latest change.
+     * {@link #unlock} has been called, and synchronizes to the latest change.
      *
      * @throws JournalException if an error occurs
      */
