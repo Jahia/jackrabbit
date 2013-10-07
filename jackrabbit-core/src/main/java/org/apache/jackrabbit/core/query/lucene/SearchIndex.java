@@ -980,7 +980,7 @@ public class SearchIndex extends AbstractQueryHandler {
         return parser;
     }
 
-    private Parser createParser() {
+    protected Parser createParser() {
         URL url = null;
         if (tikaConfigPath != null) {
             File file = new File(tikaConfigPath);
