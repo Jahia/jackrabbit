@@ -16,6 +16,21 @@
  */
 package org.apache.jackrabbit.core.query.lucene;
 
+import org.apache.jackrabbit.api.lucene.AnalyzerRegistry;
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
+import org.apache.lucene.analysis.tokenattributes.TermAttribute;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.Fieldable;
+import org.apache.lucene.index.*;
+import org.apache.lucene.search.Similarity;
+import org.apache.lucene.store.Directory;
+import org.apache.tika.io.IOExceptionWithCause;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -24,24 +39,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-
-import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
-import org.apache.lucene.analysis.tokenattributes.TermAttribute;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.document.Fieldable;
-import org.apache.lucene.index.IndexDeletionPolicy;
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.Payload;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.search.Similarity;
-import org.apache.lucene.store.Directory;
-import org.apache.tika.io.IOExceptionWithCause;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Implements common functionality for a lucene index.
@@ -117,6 +114,12 @@ abstract class AbstractIndex {
     private boolean isExisting;
 
     /**
+     * Records available Analyzers which are able to process a specific document. This allows to switch which
+     * Analyzer to use depending on documents.
+     */
+    private final AnalyzerRegistry analyzerRegistry = AnalyzerRegistryLoader.getInstance();
+
+    /**
      * Constructs an index with an <code>analyzer</code> and a
      * <code>directory</code>.
      *
@@ -189,13 +192,21 @@ abstract class AbstractIndex {
                     try {
                         // check if text extractor completed its work
                         Document document = getFinishedDocument(doc);
+
+                        // retrieves the Analyzer (if any) to use to process this particular document
+                        Analyzer specificAnalyzer = analyzerRegistry.getAnalyzerFor(doc);
+                        if(specificAnalyzer == null) {
+                            // if we didn't find a specific analyzer, use the default one
+                            specificAnalyzer = analyzer;
+                        }
+
                         if (log.isDebugEnabled()) {
                             long start = System.nanoTime();
-                            writer.addDocument(document);
+                            writer.addDocument(document, specificAnalyzer);
                             log.debug("Inverted a document in {}us",
                                     (System.nanoTime() - start) / 1000);
                         } else {
-                            writer.addDocument(document);
+                            writer.addDocument(document, specificAnalyzer);
                         }
                     } catch (IOException e) {
                         log.warn("Exception while inverting a document", e);
