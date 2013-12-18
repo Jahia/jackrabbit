@@ -118,6 +118,12 @@ abstract class AbstractIndex {
     private boolean isExisting;
 
     /**
+     * Records available Analyzers which are able to process a specific document. This allows to switch which
+     * Analyzer to use depending on documents.
+     */
+    private final AnalyzerRegistry analyzerRegistry = AnalyzerRegistryLoader.getInstance();
+
+    /**
      * Constructs an index with an <code>analyzer</code> and a
      * <code>directory</code>.
      *
@@ -189,13 +195,21 @@ abstract class AbstractIndex {
                     try {
                         // check if text extractor completed its work
                         Document document = getFinishedDocument(doc);
+
+                        // retrieves the Analyzer (if any) to use to process this particular document
+                        Analyzer specificAnalyzer = analyzerRegistry.getAnalyzerFor(doc);
+                        if(specificAnalyzer == null) {
+                            // if we didn't find a specific analyzer, use the default one
+                            specificAnalyzer = analyzer;
+                        }
+
                         if (log.isDebugEnabled()) {
                             long start = System.nanoTime();
-                            writer.addDocument(document);
+                            writer.addDocument(document, specificAnalyzer);
                             log.debug("Inverted a document in {}us",
                                     (System.nanoTime() - start) / 1000);
                         } else {
-                            writer.addDocument(document);
+                            writer.addDocument(document, specificAnalyzer);
                         }
                     } catch (IOException e) {
                         log.warn("Exception while inverting a document", e);
