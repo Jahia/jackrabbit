@@ -524,6 +524,10 @@ public class SearchIndex extends AbstractQueryHandler {
      */
     private boolean closed = false;
 
+    protected AnalyzerRegistry getAnalyzerRegistry() {
+        return AnalyzerRegistry.empty;
+    }
+
     /**
      * Initializes this <code>QueryHandler</code>. This implementation requires
      * that a path parameter is set in the configuration. If this condition

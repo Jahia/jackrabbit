@@ -88,4 +88,22 @@ public interface AnalyzerRegistry<T> {
      * @return the Analyzer instance associated with the specified key or <code>null</code> otherwise.
      */
     Analyzer getAnalyzer(T key);
+
+    AnalyzerRegistry empty = new AnalyzerRegistry() {
+        public Analyzer getAnalyzerFor(Document document) {
+            return null;
+        }
+
+        public Object getKeyFor(Document document) {
+            return null;
+        }
+
+        public boolean acceptKey(Object key) {
+            return false;
+        }
+
+        public Analyzer getAnalyzer(Object key) {
+            return null;
+        }
+    };
 }
