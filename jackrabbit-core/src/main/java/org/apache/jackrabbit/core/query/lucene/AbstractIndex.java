@@ -121,7 +121,7 @@ abstract class AbstractIndex {
      * Records available Analyzers which are able to process a specific document. This allows to switch which
      * Analyzer to use depending on documents.
      */
-    private final AnalyzerRegistry analyzerRegistry = AnalyzerRegistryLoader.getInstance();
+    private AnalyzerRegistry analyzerRegistry = AnalyzerRegistry.empty;
 
     /**
      * Constructs an index with an <code>analyzer</code> and a
@@ -485,6 +485,12 @@ abstract class AbstractIndex {
         if (sharedReader != null) {
             sharedReader.release();
             sharedReader = null;
+        }
+    }
+
+    protected void setAnalyzerRegistry(AnalyzerRegistry registry) {
+        if(registry != null) {
+            this.analyzerRegistry = registry;
         }
     }
 
