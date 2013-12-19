@@ -16,32 +16,9 @@
  */
 package org.apache.jackrabbit.core.query.lucene;
 
-import java.io.IOException;
-import java.text.DateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-
-import javax.jcr.RepositoryException;
-
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.query.lucene.directory.DirectoryManager;
-import org.apache.jackrabbit.core.state.ChildNodeEntry;
-import org.apache.jackrabbit.core.state.ItemStateException;
-import org.apache.jackrabbit.core.state.ItemStateManager;
-import org.apache.jackrabbit.core.state.NoSuchItemStateException;
-import org.apache.jackrabbit.core.state.NodeState;
+import org.apache.jackrabbit.core.state.*;
 import org.apache.jackrabbit.spi.Path;
 import org.apache.jackrabbit.spi.PathFactory;
 import org.apache.jackrabbit.spi.commons.conversion.DefaultNamePathResolver;
@@ -53,6 +30,14 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.store.Directory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.jcr.RepositoryException;
+import java.io.IOException;
+import java.text.DateFormat;
+import java.util.*;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A <code>MultiIndex</code> consists of a {@link VolatileIndex} and multiple
@@ -289,6 +274,7 @@ public class MultiIndex {
                     handler.getMaxHistoryAge());
             index.setUseCompoundFile(handler.getUseCompoundFile());
             index.setTermInfosIndexDivisor(handler.getTermInfosIndexDivisor());
+            index.setAnalyzerRegistry(handler.getAnalyzerRegistry());
             indexes.add(index);
             merger.indexAdded(index.getName(), index.getNumDocuments());
         }
@@ -599,6 +585,7 @@ public class MultiIndex {
                     handler.getTextAnalyzer(), handler.getSimilarity(),
                     cache, indexingQueue, directoryManager,
                     handler.getMaxHistoryAge());
+            index.setAnalyzerRegistry(handler.getAnalyzerRegistry());
         } catch (IOException e) {
             // do some clean up
             if (!directoryManager.delete(indexName)) {
@@ -1112,6 +1099,7 @@ public class MultiIndex {
                 handler.getSimilarity(), indexingQueue);
         volatileIndex.setUseCompoundFile(handler.getUseCompoundFile());
         volatileIndex.setBufferSize(handler.getBufferSize());
+        volatileIndex.setAnalyzerRegistry(handler.getAnalyzerRegistry());
     }
 
     /**

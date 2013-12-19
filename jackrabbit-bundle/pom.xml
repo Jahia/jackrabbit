@@ -65,10 +65,6 @@
             <Bundle-Activator>
               org.apache.jackrabbit.bundle.Activator
             </Bundle-Activator>
-              <Require-Capability>osgi.serviceloader;
-                  filter:="(osgi.serviceloader=org.apache.jackrabbit.api.lucene.AnalyzerRegistry";cardinality:=multiple,osgi.extender;
-                  filter:="(osgi.extender=osgi.serviceloader.processor)"
-              </Require-Capability>
           </instructions>
         </configuration>
         <executions>
