@@ -35,6 +35,7 @@ import org.apache.jackrabbit.spi.commons.query.QueryNodeFactory;
 import org.apache.jackrabbit.spi.commons.query.QueryParser;
 import org.apache.jackrabbit.spi.commons.query.QueryRootNode;
 import org.apache.jackrabbit.spi.commons.query.qom.ColumnImpl;
+import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.search.Query;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -109,7 +110,7 @@ public class QueryImpl extends AbstractQueryImpl {
         Query query = LuceneQueryBuilder.createQuery(
                 root, sessionContext.getSessionImpl(),
                 index.getContext().getItemStateManager(),
-                index.getNamespaceMappings(), index.getTextAnalyzer(),
+                index.getNamespaceMappings(), getTextAnalyzer(),
                 propReg, index.getSynonymProvider(),
                 index.getIndexFormatVersion(),
                 cache);
@@ -137,6 +138,10 @@ public class QueryImpl extends AbstractQueryImpl {
                 getColumns(), orderProperties, ascSpecs, orderFuncs,
                 orderProperties.length == 0 && getRespectDocumentOrder(),
                 offset, limit);
+    }
+
+    protected Analyzer getTextAnalyzer() {
+        return index.getTextAnalyzer();
     }
 
     /**

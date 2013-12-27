@@ -100,6 +100,7 @@ import org.apache.jackrabbit.spi.commons.conversion.IllegalNameException;
 import org.apache.jackrabbit.spi.commons.conversion.NamePathResolver;
 import org.apache.jackrabbit.spi.commons.query.qom.FullTextSearchImpl;
 import org.apache.jackrabbit.spi.commons.query.qom.PropertyExistenceImpl;
+import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queryParser.ParseException;
@@ -325,7 +326,7 @@ public class LuceneQueryFactory {
             fieldname = tmp.toString();
         }
         QueryParser parser = new JackrabbitQueryParser(
-                fieldname, index.getTextAnalyzer(),
+                fieldname, getTextAnalyzer(),
                 index.getSynonymProvider(), cache);
         try {
             StaticOperand expr = fts.getFullTextSearchExpression();
@@ -333,6 +334,10 @@ public class LuceneQueryFactory {
         } catch (ParseException e) {
             throw new RepositoryException(e);
         }
+    }
+
+    protected Analyzer getTextAnalyzer() {
+        return index.getTextAnalyzer();
     }
 
     /**
@@ -502,7 +507,7 @@ public class LuceneQueryFactory {
         String query = evaluator.getValue(expression).getString();
         try {
             QueryParser parser = new JackrabbitQueryParser(
-                    field, index.getTextAnalyzer(),
+                    field, getTextAnalyzer(),
                     index.getSynonymProvider(), cache);
             return parser.parse(query);
         } catch (ParseException e) {
