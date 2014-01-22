@@ -22,9 +22,12 @@ import javax.jcr.Value;
 import javax.jcr.query.qom.Ordering;
 
 import org.apache.jackrabbit.commons.query.qom.OperandEvaluator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class DynamicOperandFieldComparator extends
         AbstractFieldComparator {
+    private static final Logger log = LoggerFactory.getLogger(DynamicOperandFieldComparator.class);
 
     private final Session session;
     private final OperandEvaluator evaluator;
@@ -47,7 +50,7 @@ public final class DynamicOperandFieldComparator extends
             final Value[] v = evaluator.getValues(ordering.getOperand(), n);
             return new ValueComparableWrapper(v);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.debug(e.getMessage());
         }
         return null;
     }
