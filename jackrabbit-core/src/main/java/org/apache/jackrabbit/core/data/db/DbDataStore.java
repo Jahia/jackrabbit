@@ -537,7 +537,7 @@ public class DbDataStore implements DataStore, DatabaseAware {
             }
             long length = rs.getLong(1);
             long lastModified = rs.getLong(2);
-            touch(identifier, lastModified);
+            lastModified = touch(identifier, lastModified);
             return new DbDataRecord(this, identifier, length, lastModified);
         } catch (Exception e) {
             throw convert("Can not read identifier " + identifier, e);
