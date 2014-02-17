@@ -16,23 +16,19 @@
  */
 package org.apache.jackrabbit.core.version;
 
-import org.apache.jackrabbit.core.ItemManager;
 import org.apache.jackrabbit.core.AbstractNodeData;
+import org.apache.jackrabbit.core.ItemManager;
+import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.session.SessionContext;
-import org.apache.jackrabbit.core.NodeImpl;
-import javax.jcr.version.Version;
-import javax.jcr.version.VersionHistory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.jcr.InvalidItemStateException;
-import javax.jcr.Item;
-import javax.jcr.NodeIterator;
-import javax.jcr.RepositoryException;
-import javax.jcr.Node;
+import javax.jcr.*;
 import javax.jcr.nodetype.ConstraintViolationException;
+import javax.jcr.version.Version;
+import javax.jcr.version.VersionHistory;
 import java.util.Calendar;
 import java.util.List;
 
@@ -127,7 +123,7 @@ public class VersionImpl extends NodeImpl implements Version {
      */
     public javax.jcr.version.Version getLinearPredecessor() throws RepositoryException {
         InternalVersion pred = getInternalVersion().getLinearPredecessor();
-        return (Version) sessionContext.getSessionImpl().getNodeById(pred.getId());
+        return pred == null ? null : (Version) sessionContext.getSessionImpl().getNodeById(pred.getId());
     }
 
     /**
