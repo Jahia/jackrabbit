@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.io.IOException;
 
+import javax.jcr.ItemNotFoundException;
 import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.query.InvalidQueryException;
@@ -165,7 +166,11 @@ public class QueryManagerImpl implements QueryManager {
                 try {
                     NodeId nodeId = new NodeId(node.getIdentifier());
                     for (NodeId id : searchMgr.getWeaklyReferringNodes(nodeId)) {
-                        nodes.add(sessionContext.getSessionImpl().getNodeById(id));
+                        try {
+                            nodes.add(sessionContext.getSessionImpl().getNodeById(id));
+                        } catch (ItemNotFoundException e) {
+                            // Item cannot be read by session, skip
+                        }
                     }
                 } catch (IOException e) {
                     throw new RepositoryException(e);
