@@ -287,7 +287,7 @@ public class SearchManager implements SynchronousEventListener {
      * @return <code>true</code> if the event should be excluded,
      *         <code>false</code> otherwise
      */
-    private boolean isExcluded(EventImpl event) {
+    protected boolean isExcluded(EventImpl event) {
         try {
             return excludePath != null
                 && excludePath.isAncestorOf(event.getQPath());
