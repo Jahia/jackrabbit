@@ -91,7 +91,7 @@ public class FileDataStore implements DataStore {
      * The minimum modified date. If a file is accessed (read or write) with a modified date
      * older than this value, the modified date is updated to the current time.
      */
-    private long minModifiedDate;
+    private volatile long minModifiedDate;
 
     /**
      * The directory that contains all the data record files. The structure
@@ -146,19 +146,20 @@ public class FileDataStore implements DataStore {
      */
     private DataRecord getRecord(DataIdentifier identifier, boolean verify) throws DataStoreException {
         File file = getFile(identifier);
-        synchronized (this) {
-            if (verify && !file.exists()) {
-                return null;
-            }
-            if (minModifiedDate != 0) {
-                // only check when running garbage collection
+        
+        if (verify && !file.exists()) {
+            return null;
+        }
+        if (minModifiedDate != 0) {
+            // only check when running garbage collection
+            synchronized (this) {
                 if (getLastModified(file) < minModifiedDate) {
                     setLastModified(file, System.currentTimeMillis() + ACCESS_TIME_RESOLUTION);
                 }
             }
-            usesIdentifier(identifier);
-            return new FileDataRecord(identifier, file);
         }
+        usesIdentifier(identifier);
+        return new FileDataRecord(identifier, file);
     }
 
     /**
