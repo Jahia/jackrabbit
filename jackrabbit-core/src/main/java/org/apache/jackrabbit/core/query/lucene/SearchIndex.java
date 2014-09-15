@@ -686,7 +686,7 @@ public class SearchIndex extends AbstractQueryHandler {
                             index.getIndexFormatVersion()));
                 } catch (RepositoryException e) {
                     log.warn("Exception while creating document for node: "
-                            + state.getNodeId() + ": " + e.toString());
+                            + state.getNodeId(), e);
                 }
             }
         }
