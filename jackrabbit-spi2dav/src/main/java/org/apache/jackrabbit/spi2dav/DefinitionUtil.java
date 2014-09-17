@@ -160,7 +160,7 @@ class DefinitionUtil implements NodeTypeConstants {
                 // in case of name and path constraint, the value must be
                 // converted to SPI values
                 // TODO: tobefixed. path-constraint may contain trailing *
-                builder.addValueConstraint(ValueConstraint.create(requiredType, qValue, resolver));
+                builder.addValueConstraint(ValueConstraint.create(requiredType, (qValue == null ? "" : qValue), resolver));
             }
         }
 
