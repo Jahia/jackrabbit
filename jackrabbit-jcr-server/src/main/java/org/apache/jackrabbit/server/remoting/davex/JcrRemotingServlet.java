@@ -40,6 +40,7 @@ import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.server.util.RequestData;
 import org.apache.jackrabbit.util.Text;
@@ -254,7 +255,8 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
         super.init();
 
         brConfig = new BatchReadConfig();
-        String brConfigParam = getServletConfig().getInitParameter(INIT_PARAM_BATCHREAD_CONFIG);
+        String brConfigParam = System.getProperty("org.apache.jackrabbit.server.remoting.davex."
+                + INIT_PARAM_BATCHREAD_CONFIG, getServletConfig().getInitParameter(INIT_PARAM_BATCHREAD_CONFIG));
         if (brConfigParam == null) {
             // TODO: define default values.
             log.debug("batchread-config missing -> initialize defaults.");
@@ -262,9 +264,16 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
             brConfig.setDefaultDepth(5);
         } else {
             try {
-                InputStream in = getServletContext().getResourceAsStream(brConfigParam);
+                InputStream in = getClass().getResourceAsStream(brConfigParam);
+                if (in == null) {
+                    in = getServletContext().getResourceAsStream(brConfigParam);
+                }
                 if (in != null) {
-                    brConfig.load(in);
+                    try {
+                        brConfig.load(in);
+                    } finally {
+                        IOUtils.closeQuietly(in);
+                    }
                 }
             } catch (IOException e) {
                 log.debug("Unable to build BatchReadConfig from " + brConfigParam + ".");
