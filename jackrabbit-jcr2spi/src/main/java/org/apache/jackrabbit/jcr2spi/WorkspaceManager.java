@@ -1214,12 +1214,18 @@ public class WorkspaceManager
         private final int pollTimeout;
 
         /**
+         * The polling interval in milliseconds.
+         */
+        private final long pollInterval;
+
+        /**
          * Creates a new change polling with a given polling timeout.
          *
          * @param pollTimeout the timeout in milliseconds.
          */
         private ChangePolling(int pollTimeout) {
             this.pollTimeout = pollTimeout;
+            this.pollInterval = Long.getLong("org.apache.jackrabbit.jcr2spi.PollInterval", 0);
         }
 
         public void run() {
@@ -1247,6 +1253,9 @@ public class WorkspaceManager
                     }
                     if (bundles.length > 0) {
                         onEventReceived(bundles, iel);
+                    }
+                    if (pollInterval > 0) {
+                        Thread.sleep(pollInterval);
                     }
                 } catch (UnsupportedRepositoryOperationException e) {
                     log.error("SPI implementation does not support observation: " + e);
