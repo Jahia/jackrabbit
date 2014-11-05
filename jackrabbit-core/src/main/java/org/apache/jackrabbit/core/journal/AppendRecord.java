@@ -297,7 +297,7 @@ public class AppendRecord extends AbstractRecord {
     private InputStream openInput() throws JournalException {
         if (file != null) {
             try {
-                return new TempFileInputStream(file, false);
+                return new TempFileInputStream(file, true);
             } catch (IOException e) {
                 String msg = "Unable to open file input on: " + file.getPath();
                 throw new JournalException(msg, e);
