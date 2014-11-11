@@ -21,8 +21,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 
 import javax.jcr.Item;
@@ -242,6 +245,8 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
     private static final String PARAM_INCLUDE = ":include";
 
     private BatchReadConfig brConfig;
+    
+    private Map<String, Integer> enforcedBatchReadConfig;
 
     @Override
     public void init() throws ServletException {
@@ -263,7 +268,30 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
                 }
                 if (in != null) {
                     try {
-                        brConfig.load(in);
+                        Properties p = new Properties();
+                        p.load(in);
+                        enforcedBatchReadConfig = new HashMap<String, Integer>();
+                        for (Iterator<Object> iterator = p.keySet().iterator(); iterator.hasNext();) {
+                            String key = String.valueOf(iterator.next());
+                            if (key.endsWith(".enforce") && p.getProperty(key).equals("true")) {
+                                iterator.remove();
+                                String targetKey = key.substring(0, key.indexOf(".enforce"));
+                                String enforced = p.getProperty(targetKey);
+                                if (enforced != null) {
+                                    try {
+                                        enforcedBatchReadConfig.put(targetKey, Integer.parseInt(enforced));
+                                    } catch (NumberFormatException e) {
+                                        // invalid entry in the properties file -> ignore
+                                        log.warn("Invalid depth value for name " + targetKey + ". " + enforced
+                                                + " cannot be parsed into an integer.");
+                                    }
+                                }
+                            }
+                        }
+                        if (enforcedBatchReadConfig.isEmpty()) {
+                            enforcedBatchReadConfig = null;
+                        }
+                        brConfig.add(p);
                     } finally {
                         IOUtils.closeQuietly(in);
                     }
@@ -334,7 +362,7 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
 
                 webdavResponse.setContentType("text/plain;charset=utf-8");
                 webdavResponse.setStatus(DavServletResponse.SC_OK);
-                JsonWriter writer = new JsonWriter(webdavResponse.getWriter());
+                JsonWriter writer = new JsonWriter(webdavResponse.getWriter(), enforcedBatchReadConfig);
 
                 String[] includes = webdavRequest.getParameterValues(PARAM_INCLUDE);
                 if (includes == null) {

@@ -19,6 +19,8 @@ package org.apache.jackrabbit.server.remoting.davex;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.Collection;
+import java.util.Map;
+
 import javax.jcr.Node;
 import javax.jcr.NodeIterator;
 import javax.jcr.Property;
@@ -47,6 +49,8 @@ import org.apache.jackrabbit.commons.json.JsonUtil;
  */
 class JsonWriter {
 
+    private Map<String, Integer> enforcedBatchReadConfig;
+    
     private final Writer writer;
 
     /**
@@ -55,9 +59,20 @@ class JsonWriter {
      * @param writer Writer to which the generated JSON string is written.
      */
     JsonWriter(Writer writer) {
-        this.writer = writer;
+        this(writer, null);
     }
 
+    /**
+     * Create a new JsonItemWriter
+     *
+     * @param writer Writer to which the generated JSON string is written.
+     * @param cfg enforced batch read configuration
+     */
+    JsonWriter(Writer writer, Map<String, Integer> cfg) {
+        this.writer = writer;
+        enforcedBatchReadConfig = cfg;
+    }
+    
     /**
      * 
      * @param node
@@ -110,6 +125,15 @@ class JsonWriter {
             // no child present at all -> add special property.
             writeKeyValue("::NodeIteratorSize", 0);
         } else {
+            boolean maxLevelsReached = maxLevels >= 0 && currentLevel > maxLevels;
+            int enforced = 0;
+            if (maxLevelsReached) {
+                // we've reached the maxLevels; check if there is no special enforcement depth for this node type
+                if (enforcedBatchReadConfig != null) {
+                    Integer depth = enforcedBatchReadConfig.get(node.getPrimaryNodeType().getName());
+                    enforced = depth != null ? depth : 0;
+                }
+            }
             // the child nodes
             while (children.hasNext()) {
                 final Node n = children.nextNode();
@@ -120,19 +144,24 @@ class JsonWriter {
                 } else {
                     writeKey(name);
                 }
-                if (maxLevels < 0 || currentLevel < maxLevels) {
+                if (!maxLevelsReached) {
                     write(n, currentLevel + 1, maxLevels);
                 } else {
-                    /**
-                     * In order to be able to compute the set of child-node entries
-                     * upon Node creation -> add incomplete "node info" JSON
-                     * object for the child node omitting properties and child
-                     * information except for the jcr:uuid property (if present
-                     * at all).
-                     * the latter is required in order to build the correct SPI
-                     * ChildInfo for Node n.
-                     */
-                    writeChildInfo(n);
+                    if (enforced != 0) {
+                        // special depth enforcement for this node type
+                        write(n, enforced);
+                    } else {
+                        /**
+                         * In order to be able to compute the set of child-node entries
+                         * upon Node creation -> add incomplete "node info" JSON
+                         * object for the child node omitting properties and child
+                         * information except for the jcr:uuid property (if present
+                         * at all).
+                         * the latter is required in order to build the correct SPI
+                         * ChildInfo for Node n.
+                         */
+                        writeChildInfo(n);
+                    }
                 }
                 if (children.hasNext()) {
                     writer.write(',');
