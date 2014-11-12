@@ -50,9 +50,8 @@ public class GetInfoTest extends AbstractObservationTest {
                 testRootNode.save();
             }
         }, Event.NODE_REMOVED);
-        for (int i = 0; i < events.length; i++) {
-            assertEquals("info map must be empty", 0, events[i].getInfo().size());
-        }
+        assertEquals("there should be only one event", 1, events.length);
+        assertTrue("info map must not be empty", events[0].getInfo().size() > 0);
     }
 
     public void testPropertyAdded() throws RepositoryException {
