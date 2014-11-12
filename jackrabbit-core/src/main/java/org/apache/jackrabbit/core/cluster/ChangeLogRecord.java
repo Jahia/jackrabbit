@@ -285,7 +285,7 @@ public class ChangeLogRecord extends ClusterRecord {
         String userId = record.readString();
 
         Map<String, InternalValue> info = null;
-        if (type == Event.NODE_MOVED) {
+        if (type == Event.NODE_MOVED || type == Event.NODE_REMOVED) {
             info = new HashMap<String, InternalValue>();
             // read info map
             int infoSize = record.readInt();
@@ -473,7 +473,7 @@ public class ChangeLogRecord extends ClusterRecord {
         }
         record.writeString(event.getUserId());
 
-        if (event.getType() == Event.NODE_MOVED) {
+        if (event.getType() == Event.NODE_MOVED || event.getType() == Event.NODE_REMOVED) {
             // write info map
             Map<String, InternalValue> info = event.getInfo();
             record.writeInt(info.size());
