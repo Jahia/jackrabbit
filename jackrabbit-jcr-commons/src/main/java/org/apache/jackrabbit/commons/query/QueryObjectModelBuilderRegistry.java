@@ -22,7 +22,6 @@ import java.util.Set;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Arrays;
-import java.util.Collections;
 
 import javax.imageio.spi.ServiceRegistry;
 import javax.jcr.query.InvalidQueryException;
@@ -40,7 +39,9 @@ public class QueryObjectModelBuilderRegistry {
     /**
      * Set of languages known to the registered builders.
      */
-    private static final Set<String> LANGUAGES;
+    private static final String[] LANGUAGES;
+    
+    private static final List<String> LANGUAGE_LIST;
 
     static {
         Set<String> languages = new HashSet<String>();
@@ -51,7 +52,8 @@ public class QueryObjectModelBuilderRegistry {
             BUILDERS.add(builder);
             languages.addAll(Arrays.asList(builder.getSupportedLanguages()));
         }
-        LANGUAGES = Collections.unmodifiableSet(languages);
+        LANGUAGES = languages.toArray(new String[languages.size()]);
+        LANGUAGE_LIST = new ArrayList<String>(languages);
     }
 
     /**
@@ -81,6 +83,16 @@ public class QueryObjectModelBuilderRegistry {
      * @return String array containing the names of the supported languages.
      */
     public static String[] getSupportedLanguages() {
-        return LANGUAGES.toArray(new String[LANGUAGES.size()]);
+        return LANGUAGES;
+    }
+
+    /**
+     * Returns the list of query languages supported by all registered
+     * {@link QueryObjectModelBuilder} implementations.
+     *
+     * @return list containing the names of the supported languages
+     */
+    public static List<String> getSupportedLanguageList() {
+        return LANGUAGE_LIST;
     }
 }
