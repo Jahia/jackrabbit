@@ -17,7 +17,6 @@
 package org.apache.jackrabbit.core.query;
 
 import java.util.List;
-import java.util.Arrays;
 
 import javax.jcr.query.Query;
 import javax.jcr.query.InvalidQueryException;
@@ -58,7 +57,7 @@ public class QOMQueryFactory implements QueryFactory {
      * {@inheritDoc}
      */
     public List<String> getSupportedLanguages() {
-        return Arrays.asList(QueryObjectModelBuilderRegistry.getSupportedLanguages());
+        return QueryObjectModelBuilderRegistry.getSupportedLanguageList();
     }
 
     /**
