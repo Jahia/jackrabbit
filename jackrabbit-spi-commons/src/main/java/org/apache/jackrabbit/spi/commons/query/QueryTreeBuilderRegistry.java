@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 import javax.jcr.query.InvalidQueryException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.ServiceLoader;
@@ -42,27 +41,30 @@ public class QueryTreeBuilderRegistry {
     /**
      * List of <code>QueryTreeBuilder</code> instances known to the classloader.
      */
-    private static final List BUILDERS = new ArrayList();
+    private static final List<QueryTreeBuilder> BUILDERS = new ArrayList<QueryTreeBuilder>();
 
     /**
      * Set of languages known to the registered builders.
      */
-    private static final Set LANGUAGES;
+    private static final String[] LANGUAGES;
+
+    private static final List<String> LANGUAGE_LIST;
 
     static {
-        Set languages = new HashSet();
+        Set<String> languages = new HashSet<String>();
         try {
-            Iterator it = ServiceLoader.load(QueryTreeBuilder.class,
+            Iterator<QueryTreeBuilder> it = ServiceLoader.load(QueryTreeBuilder.class,
                     QueryTreeBuilderRegistry.class.getClassLoader()).iterator();
             while (it.hasNext()) {
-                QueryTreeBuilder qtb = (QueryTreeBuilder) it.next();
+                QueryTreeBuilder qtb = it.next();
                 BUILDERS.add(qtb);
                 languages.addAll(Arrays.asList(qtb.getSupportedLanguages()));
             }
         } catch (Error e) {
             log.warn("Unable to load providers for QueryTreeBuilder: " + e);
         }
-        LANGUAGES = Collections.unmodifiableSet(languages);
+        LANGUAGES = languages.toArray(new String[languages.size()]);
+        LANGUAGE_LIST = new ArrayList<String>(languages);
     }
 
     /**
@@ -91,6 +93,16 @@ public class QueryTreeBuilderRegistry {
      * @return String array containing the names of the supported languages.
      */
     public static String[] getSupportedLanguages() {
-        return (String[]) LANGUAGES.toArray(new String[LANGUAGES.size()]);
+        return LANGUAGES;
+    }
+
+    /**
+     * Returns the list of query languages supported by all registered
+     * {@link QueryTreeBuilder} implementations.
+     *
+     * @return list containing the names of the supported languages
+     */
+    public static List<String> getSupportedLanguageList() {
+        return LANGUAGE_LIST;
     }
 }

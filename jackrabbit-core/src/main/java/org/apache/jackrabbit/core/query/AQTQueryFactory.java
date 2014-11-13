@@ -17,7 +17,6 @@
 package org.apache.jackrabbit.core.query;
 
 import java.util.List;
-import java.util.Arrays;
 
 import org.apache.jackrabbit.spi.commons.query.QueryTreeBuilderRegistry;
 
@@ -31,6 +30,6 @@ public abstract class AQTQueryFactory implements QueryFactory {
      * {@inheritDoc}
      */
     public List<String> getSupportedLanguages() {
-        return Arrays.asList(QueryTreeBuilderRegistry.getSupportedLanguages());
+        return QueryTreeBuilderRegistry.getSupportedLanguageList();
     }
 }

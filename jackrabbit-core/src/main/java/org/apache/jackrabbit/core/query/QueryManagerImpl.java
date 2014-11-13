@@ -21,8 +21,10 @@ import static org.apache.jackrabbit.spi.commons.name.NameConstants.JCR_STATEMENT
 import static org.apache.jackrabbit.spi.commons.name.NameConstants.NT_QUERY;
 
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Set;
 import java.io.IOException;
 
 import javax.jcr.ItemNotFoundException;
@@ -34,10 +36,12 @@ import javax.jcr.query.QueryManager;
 import javax.jcr.query.qom.QueryObjectModel;
 import javax.jcr.query.qom.QueryObjectModelFactory;
 
+import org.apache.jackrabbit.commons.query.QueryObjectModelBuilderRegistry;
 import org.apache.jackrabbit.core.SearchManager;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.core.session.SessionOperation;
+import org.apache.jackrabbit.spi.commons.query.QueryTreeBuilderRegistry;
 import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelFactoryImpl;
 import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelTree;
 
@@ -45,7 +49,20 @@ import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelTree;
  * This class implements the {@link QueryManager} interface.
  */
 public class QueryManagerImpl implements QueryManager {
-
+    
+    private static final String[] LANGUAGES;
+    
+    private static final List<String> LANGUAGE_LIST;
+    
+    static {
+        Set<String> langs = new LinkedHashSet<String>();
+        langs.addAll(QueryObjectModelBuilderRegistry.getSupportedLanguageList());
+        langs.addAll(QueryTreeBuilderRegistry.getSupportedLanguageList());
+        
+        LANGUAGE_LIST = new ArrayList<String>(langs);
+        LANGUAGES = langs.toArray(new String[langs.size()]);
+    }
+    
     /**
      * Component context of the current session.
      */
@@ -130,8 +147,7 @@ public class QueryManagerImpl implements QueryManager {
      * {@inheritDoc}
      */
     public String[] getSupportedQueryLanguages() throws RepositoryException {
-        List<String> languages = new QueryFactoryImpl(Query.JCR_JQOM).getSupportedLanguages();
-        return languages.toArray(new String[languages.size()]);
+        return LANGUAGES;
     }
 
     //---------------------------< JSR 283 >------------------------------------
@@ -228,6 +244,11 @@ public class QueryManagerImpl implements QueryManager {
                                 sessionContext, statement, language, node);
                     }
                 }));
+        }
+        
+        @Override
+        public List<String> getSupportedLanguages() {
+            return LANGUAGE_LIST;
         }
     }
 }
