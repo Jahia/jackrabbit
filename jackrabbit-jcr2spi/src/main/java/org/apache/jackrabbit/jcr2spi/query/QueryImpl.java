@@ -19,7 +19,6 @@ package org.apache.jackrabbit.jcr2spi.query;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Arrays;
 import java.util.Collection;
 
 import javax.jcr.ItemExistsException;
@@ -104,13 +103,13 @@ public class QueryImpl implements Query {
      */
     private final Map<String, QValue> boundValues = new HashMap<String, QValue>();
 
-    private final String[] varNameArray;
+    private final String[] varNameArray = new String[0];
     
     /**
      * The names of the bind variables as returned by the SPI implementation
      * after checking the query statement.
      */
-    private final Collection<String> varNames;
+    private final Collection<String> varNames = Collections.emptyList();
 
     /**
      * Creates a new query.
@@ -140,8 +139,6 @@ public class QueryImpl implements Query {
         this.statement = statement;
         this.language = language;
         this.wspManager = wspManager;
-        this.varNameArray = this.wspManager.checkQueryStatement(statement, language, getNamespaceMappings());
-        this.varNames = varNameArray.length > 0 ? Arrays.asList(varNameArray) : Collections.<String>emptyList();
         this.node = node;
     }
 
@@ -227,7 +224,7 @@ public class QueryImpl implements Query {
      * @see Query#getBindVariableNames()
      */
     public String[] getBindVariableNames() throws RepositoryException {
-        return varNames.toArray(new String[varNames.size()]);
+        return varNameArray;
     }
 
     /**
