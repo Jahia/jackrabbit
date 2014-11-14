@@ -50,7 +50,7 @@ import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelTree;
  */
 public class QueryManagerImpl implements QueryManager {
     
-    private static final String[] LANGUAGES;
+    public static final String[] LANGUAGES;
     
     private static final List<String> LANGUAGE_LIST;
     
