@@ -211,6 +211,8 @@ import org.xml.sax.SAXException;
 // TODO: TO-BE-FIXED. caches don't get adjusted upon removal/move of items
 public class RepositoryServiceImpl implements RepositoryService, DavConstants {
 
+    private static final String[] EMPTY_STRING_ARRAY = new String[0];
+
     private static Logger log = LoggerFactory.getLogger(RepositoryServiceImpl.class);
 
     private static final SubscriptionInfo S_INFO = new SubscriptionInfo(DefaultEventType.create(EventUtil.EVENT_ALL, ItemResourceConstants.NAMESPACE), true, INFINITE_TIMEOUT);
@@ -1969,8 +1971,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
                                     String language,
                                     Map<String, String> namespaces)
             throws InvalidQueryException, RepositoryException {
-        // TODO implement
-        return new String[0];
+        return EMPTY_STRING_ARRAY;
     }
 
     /**
