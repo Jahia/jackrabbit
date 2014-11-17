@@ -66,6 +66,11 @@ public class Spi2davexRepositoryServiceFactory implements RepositoryServiceFacto
      */
     public static final String PARAM_MAX_CONNECTIONS = "org.apache.jackrabbit.spi2davex.MaxConnections";
 
+    /**
+     * If set to true the PROPFIND request to validate the workspace is skipped on obtaining the session.
+     */
+    private static final Object PARAM_SKIP_PROPFIND_ON_OBTAIN = "org.apache.jackrabbit.spi2davex.SkipPropfindOnObtain";
+
     public RepositoryService createRepositoryService(Map<?, ?> parameters) throws RepositoryException {
         // retrieve the repository uri
         String uri;
@@ -112,11 +117,19 @@ public class Spi2davexRepositoryServiceFactory implements RepositoryServiceFacto
             }
         }
 
+        RepositoryServiceImpl repo;
         if (maximumHttpConnections > 0) {
-            return new RepositoryServiceImpl(uri, null, brc, itemInfoCacheSize, maximumHttpConnections);
+            repo = new RepositoryServiceImpl(uri, null, brc, itemInfoCacheSize, maximumHttpConnections);
         } else {
-            return new RepositoryServiceImpl(uri, null, brc, itemInfoCacheSize);
+            repo = new RepositoryServiceImpl(uri, null, brc, itemInfoCacheSize);
         }
+        
+        Object param = parameters.get(PARAM_SKIP_PROPFIND_ON_OBTAIN);
+        if (param != null && Boolean.valueOf(String.valueOf(param))) {
+            repo.setSkipPropfindOnObtain(true);
+        }
+        
+        return repo;
     }
 
 }

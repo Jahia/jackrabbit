@@ -255,6 +255,8 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
 
     /* DAV conformance levels */
     private Set<String> remoteDavComplianceClasses = null;
+    
+    private boolean skipPropfindOnObtain;
 
     /**
      * Same as {@link #RepositoryServiceImpl(String, IdFactory, NameFactory, PathFactory, QValueFactory, int, int)}
@@ -765,48 +767,50 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         // check if the workspace with the given name is accessible
         PropFindMethod method = null;
         SessionInfoImpl sessionInfo = new SessionInfoImpl(credentials, workspaceName);
-        try {
-            DavPropertyNameSet nameSet = new DavPropertyNameSet();
-            // for backwards compat. -> retrieve DAV:workspace if the newly
-            // added property (workspaceName) is not supported by the server.
-            nameSet.add(DeltaVConstants.WORKSPACE);
-            nameSet.add(JcrRemotingConstants.JCR_WORKSPACE_NAME_LN, ItemResourceConstants.NAMESPACE);
-
-            method = new PropFindMethod(uriResolver.getWorkspaceUri(workspaceName), nameSet, DEPTH_0);
-            getClient(sessionInfo).executeMethod(method);
-
-            MultiStatusResponse[] responses = method.getResponseBodyAsMultiStatus().getResponses();
-            if (responses.length != 1) {
-                throw new LoginException("Login failed: Unknown workspace '" + workspaceName+ "'.");
-            }
-
-            DavPropertySet props = responses[0].getProperties(DavServletResponse.SC_OK);
-            DavProperty<?> prop = props.get(JcrRemotingConstants.JCR_WORKSPACE_NAME_LN, ItemResourceConstants.NAMESPACE);
-            if (prop != null) {
-                String wspName = prop.getValue().toString();
-                if (workspaceName == null) {
-                    // login with 'null' workspace name -> retrieve the effective
-                    // workspace name from the property and recreate the SessionInfo.
-                    sessionInfo = new SessionInfoImpl(credentials, wspName);
-                } else if (!wspName.equals(workspaceName)) {
-                    throw new LoginException("Login failed: Invalid workspace name '" + workspaceName + "'.");
+        if (!skipPropfindOnObtain || workspaceName == null) {
+            try {
+                DavPropertyNameSet nameSet = new DavPropertyNameSet();
+                // for backwards compat. -> retrieve DAV:workspace if the newly
+                // added property (workspaceName) is not supported by the server.
+                nameSet.add(DeltaVConstants.WORKSPACE);
+                nameSet.add(JcrRemotingConstants.JCR_WORKSPACE_NAME_LN, ItemResourceConstants.NAMESPACE);
+    
+                method = new PropFindMethod(uriResolver.getWorkspaceUri(workspaceName), nameSet, DEPTH_0);
+                getClient(sessionInfo).executeMethod(method);
+    
+                MultiStatusResponse[] responses = method.getResponseBodyAsMultiStatus().getResponses();
+                if (responses.length != 1) {
+                    throw new LoginException("Login failed: Unknown workspace '" + workspaceName+ "'.");
                 }
-            } else if (props.contains(DeltaVConstants.WORKSPACE)) {
-                String wspHref = new HrefProperty(props.get(DeltaVConstants.WORKSPACE)).getHrefs().get(0);
-                String wspName = Text.unescape(Text.getName(wspHref, true));
-                if (!wspName.equals(workspaceName)) {
-                    throw new LoginException("Login failed: Invalid workspace name " + workspaceName);
+    
+                DavPropertySet props = responses[0].getProperties(DavServletResponse.SC_OK);
+                DavProperty<?> prop = props.get(JcrRemotingConstants.JCR_WORKSPACE_NAME_LN, ItemResourceConstants.NAMESPACE);
+                if (prop != null) {
+                    String wspName = prop.getValue().toString();
+                    if (workspaceName == null) {
+                        // login with 'null' workspace name -> retrieve the effective
+                        // workspace name from the property and recreate the SessionInfo.
+                        sessionInfo = new SessionInfoImpl(credentials, wspName);
+                    } else if (!wspName.equals(workspaceName)) {
+                        throw new LoginException("Login failed: Invalid workspace name '" + workspaceName + "'.");
+                    }
+                } else if (props.contains(DeltaVConstants.WORKSPACE)) {
+                    String wspHref = new HrefProperty(props.get(DeltaVConstants.WORKSPACE)).getHrefs().get(0);
+                    String wspName = Text.unescape(Text.getName(wspHref, true));
+                    if (!wspName.equals(workspaceName)) {
+                        throw new LoginException("Login failed: Invalid workspace name " + workspaceName);
+                    }
+                } else {
+                    throw new LoginException("Login failed: Unknown workspace '" + workspaceName+ "'.");
                 }
-            } else {
-                throw new LoginException("Login failed: Unknown workspace '" + workspaceName+ "'.");
-            }
-        } catch (IOException e) {
-            throw new RepositoryException(e.getMessage());
-        } catch (DavException e) {
-            throw ExceptionConverter.generate(e);
-        } finally {
-            if (method != null) {
-                method.releaseConnection();
+            } catch (IOException e) {
+                throw new RepositoryException(e.getMessage());
+            } catch (DavException e) {
+                throw ExceptionConverter.generate(e);
+            } finally {
+                if (method != null) {
+                    method.releaseConnection();
+                }
             }
         }
 
@@ -3428,5 +3432,9 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
                 throw new NamespaceException(uri + ": is not a registered namespace uri.");
             }
         }
+    }
+
+    public void setSkipPropfindOnObtain(boolean skipPropfindOnObtain) {
+        this.skipPropfindOnObtain = skipPropfindOnObtain;
     }
 }
