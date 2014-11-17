@@ -65,14 +65,19 @@ public class Spi2davexRepositoryServiceFactory implements RepositoryServiceFacto
      */
     public static final String PARAM_MAX_CONNECTIONS = "org.apache.jackrabbit.spi2davex.MaxConnections";
 
-    /** 
-     * For connecting to JCR servers older than version 1.5, the default workspace needs to be passed 
+    /**
+     * For connecting to JCR servers older than version 1.5, the default workspace needs to be passed
      * (if not explicitly given in each {@link Repository#login()} call)
      *
      * @see <a href="https://issues.apache.org/jira/browse/JCR-4120">JCR-4120</a>
      * @see <a href="https://issues.apache.org/jira/browse/JCR-1842">JCR-1842</a>
      */
     public static final String PARAM_WORKSPACE_NAME_DEFAULT =  "org.apache.jackrabbit.spi2davex.WorkspaceNameDefault";
+
+    /**
+     * If set to true the PROPFIND request to validate the workspace is skipped on obtaining the session.
+     */
+    private static final Object PARAM_SKIP_PROPFIND_ON_OBTAIN = "org.apache.jackrabbit.spi2davex.SkipPropfindOnObtain";
 
     public RepositoryService createRepositoryService(Map<?, ?> parameters) throws RepositoryException {
         // retrieve the repository uri
@@ -129,11 +134,19 @@ public class Spi2davexRepositoryServiceFactory implements RepositoryServiceFacto
             }
         }
 
+        RepositoryServiceImpl repo;
         if (maximumHttpConnections > 0) {
-            return new RepositoryServiceImpl(uri, workspaceNameDefault, brc, itemInfoCacheSize, maximumHttpConnections);
+            repo = new RepositoryServiceImpl(uri, workspaceNameDefault, brc, itemInfoCacheSize, maximumHttpConnections);
         } else {
-            return new RepositoryServiceImpl(uri, workspaceNameDefault, brc, itemInfoCacheSize);
+            repo = new RepositoryServiceImpl(uri, workspaceNameDefault, brc, itemInfoCacheSize);
         }
+
+        Object param = parameters.get(PARAM_SKIP_PROPFIND_ON_OBTAIN);
+        if (param != null && Boolean.valueOf(String.valueOf(param))) {
+            repo.setSkipPropfindOnObtain(true);
+        }
+
+        return repo;
     }
 
 }
