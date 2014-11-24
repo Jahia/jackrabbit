@@ -16,7 +16,6 @@
  */
 package org.apache.jackrabbit.core.observation;
 
-import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.core.HierarchyManager;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
@@ -378,7 +377,7 @@ public final class EventStateCollection {
                         session);
                 
                 Map<String, InternalValue> info = new HashMap<String, InternalValue>(2);
-                info.put(JcrConstants.JCR_PRIMARYTYPE, InternalValue.create(n.getNodeTypeName().toString()));
+                info.put("primaryType", InternalValue.create(n.getNodeTypeName().toString()));
                 Set<Name> mixinTypeNames = n.getMixinTypeNames();
                 if (mixinTypeNames != null) {
                     String v = null;
@@ -394,7 +393,7 @@ public final class EventStateCollection {
                         }
                         v = b.toString();
                     }
-                    info.put(JcrConstants.JCR_MIXINTYPES, InternalValue.create(v));
+                    info.put("mixinTypes", InternalValue.create(v));
                 }
                 es.setInfo(info);
                 
