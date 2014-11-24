@@ -110,7 +110,9 @@ public class EventImpl
                 Name n = N_FACTORY.create(uri, localName);
                 QValue qv = null;
                 if (value != null) {
-                    qv = ValueFormat.getQValue(value, PropertyType.PATH, resolver, qvFactory);
+                    qv = ValueFormat.getQValue(value,
+                            "primaryType".equals(localName) || "mixinTypes".equals(localName) ? PropertyType.STRING
+                                    : PropertyType.PATH, resolver, qvFactory);
                 }
                 info.put(n, qv);
             } catch (RepositoryException e) {
