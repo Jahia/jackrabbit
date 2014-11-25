@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.core.util.db;
 
+import java.lang.reflect.Field;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
@@ -237,6 +238,9 @@ public class ConnectionHelper {
         Connection batchConnection = null;
         try {
             batchConnection = getConnection(false);
+            if (log.isDebugEnabled()) {
+                log.debug(batchConnection + ".setAutoCommit(false) on Oracle SID=" + getOracleSID(batchConnection));
+            }
             batchConnection.setAutoCommit(false);
             setTransactionAwareBatchConnection(batchConnection);
         } catch (SQLException e) {
@@ -261,11 +265,24 @@ public class ConnectionHelper {
             throw new SQLException("not in batch mode");
         }
         Connection batchConnection = getTransactionAwareBatchConnection(); 
+        boolean debugEnabled = log.isDebugEnabled();
         try {
             if (commit) {
+                if (debugEnabled) {
+    			    log.debug(this + ".endBatch batchConnection about to commit for connection " + batchConnection + " oracle SID=" + getOracleSID(batchConnection));
+                }
             	batchConnection.commit();
+                if (debugEnabled) {
+    				log.debug(this + ".endBatch batchConnection committed for connection " + batchConnection + " oracle SID=" + getOracleSID(batchConnection));
+                }
             } else {
+                if (debugEnabled) {
+    			    log.debug(this + ".endBatch batchConnection about to rollback");
+                }
             	batchConnection.rollback();
+                if (debugEnabled) {
+    				log.debug(this + ".endBatch batchConnection rolled back");
+                }
             }
         } finally {
             removeTransactionAwareBatchConnection();
@@ -274,7 +291,7 @@ public class ConnectionHelper {
                     // QA-6444 : we reset the auto-commit to true as this is not always implicit for example with WebSphere + Oracle
                     batchConnection.setAutoCommit(true);
                 } catch (SQLException e) {
-                    if (log.isDebugEnabled()) {
+                    if (debugEnabled) {
                         log.warn("Unable to set auto-commit to true", e);
                     } else {
                         log.warn("Unable to set auto-commit to true. Cause: " + e.getMessage());
@@ -307,6 +324,28 @@ public class ConnectionHelper {
         }.doTry();
     }
 
+    private int getOracleSID(Connection connection) {
+        if ("com.ibm.ws.rsadapter.jdbc.WSJdbcConnection".equals(connection.getClass().getName())) {
+            try {
+                Field connImplField = connection.getClass().getDeclaredField("connImpl");
+                connImplField.setAccessible(true);
+                Object connImpl = connImplField.get(connection);
+                Field internalConnectionField = connImpl.getClass().getDeclaredField("internalConnection");
+                internalConnectionField.setAccessible(true);
+                Object internalConnection = internalConnectionField.get(connImpl);
+                Field sessionIdField = internalConnection.getClass().getDeclaredField("sessionId");
+                sessionIdField.setAccessible(true);
+                int sessionId = sessionIdField.getInt(internalConnection);
+                return sessionId;
+            } catch (NoSuchFieldException e) {
+                log.debug("Couldn't retrieve Oracle SID", e);
+            } catch (IllegalAccessException e) {
+                log.debug("Couldn't retrieve Oracle SID", e);
+            }
+        }
+        return -1;
+    }
+
     void reallyExec(String sql, Object... params) throws SQLException {
         Connection con = null;
         Statement stmt = null;
@@ -314,6 +353,14 @@ public class ConnectionHelper {
         long start = System.currentTimeMillis();
         try {
             con = getConnection(inBatchMode);
+            if (log.isDebugEnabled()) {
+                log.debug(this + ".reallyExec: using Oracle session ID " + getOracleSID(con) + " for SQL " + sql + " autocommit=" + con.getAutoCommit());
+                if (sql.startsWith("update") && sql.contains("LOCAL_REVISIONS")) {
+                    if (inBatchMode()) {
+                        log.debug(this + ".reallyExec: Local revision lock is done inside JDBC transaction. This is expected at startup but otherwise shouldn't happen.");
+                    }
+                }
+            }
             if (params == null || params.length == 0) {
                 stmt = con.createStatement();
                 stmt.execute(sql);
@@ -458,6 +505,9 @@ public class ConnectionHelper {
             Connection con = dataSource.getConnection();
             // JCR-1013: Setter may fail unnecessarily on a managed connection
             if (!con.getAutoCommit()) {
+                if (log.isDebugEnabled()) {
+                    log.debug(con + ".setAutoCommit(true) on Oracle SID=" + getOracleSID(con));
+                }
                 con.setAutoCommit(true);
             }
             return con;
@@ -483,7 +533,15 @@ public class ConnectionHelper {
      */
 	private void setTransactionAwareBatchConnection(Connection batchConnection) {
     	Object threadId = TransactionContext.getCurrentThreadId();
-    	batchConnectionMap.put(threadId, batchConnection);
+        if (log.isDebugEnabled()) {
+    		log.debug(this + ".setTransactionAwareBatchConnection for threadId: " + threadId);
+        }
+       	Connection existingConnection = batchConnectionMap.put(threadId, batchConnection);
+        if (log.isDebugEnabled()) {
+            if (existingConnection != null) {
+                log.warn("Batch connection was added for threadId " + threadId + " although one existed already: " + existingConnection);
+            }
+        }
 	}
 
     /**
@@ -491,7 +549,14 @@ public class ConnectionHelper {
      */
 	private void removeTransactionAwareBatchConnection() {
     	Object threadId = TransactionContext.getCurrentThreadId();
-    	batchConnectionMap.remove(threadId);
+        if (log.isDebugEnabled()) {
+    		log.debug(this + ".removeTransactionAwareBatchConnection for threadId: " + threadId);
+        }
+    	if (batchConnectionMap.remove(threadId) == null) {
+            if (log.isDebugEnabled()) {
+    		    log.debug("There was no connection for that threadId");
+	    	}
+        }
 	}
 	
 	/**
