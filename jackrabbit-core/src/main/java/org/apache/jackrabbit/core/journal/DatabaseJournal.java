@@ -485,11 +485,17 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
 
         try {
             conHelper.exec(updateGlobalStmtSQL);
+            if (log.isDebugEnabled()) {
+			    log.debug(this + ".doLock : About to lock global revision table.");
+            }
             rs = conHelper.exec(selectGlobalStmtSQL, null, false, 0);
             if (!rs.next()) {
                  throw new JournalException("No revision available.");
             }
             lockedRevision = rs.getLong(1);
+            if (log.isDebugEnabled()) {
+    			log.debug(this + ".doLock : Global revision table locked: " + lockedRevision);
+            }
             succeeded = true;
         } catch (SQLException e) {
             throw new JournalException("Unable to lock global revision table.", e);
@@ -511,17 +517,31 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     private void startBatch() throws SQLException {
         if (lockLevel++ == 0) {
             conHelper.startBatch();
-        }
+            if (log.isDebugEnabled()) {
+    			log.debug(this + ".startBatch : DatabaseJournal batch started.");
+            }
+        } else {
+            if (log.isDebugEnabled()) {
+    		    log.debug(this + ".startBatch : incremented lockLevel: " + (lockLevel-1));
+            }
+		}
     }
 
     private void endBatch(boolean successful) {
         if (--lockLevel == 0) {
             try {
-                conHelper.endBatch(successful);;
+                conHelper.endBatch(successful);
+                if (log.isDebugEnabled()) {
+    				log.debug(this + ".endBatch : DatabaseJournal batch ended. Successful? " + successful);
+                }
             } catch (SQLException e) {
                 log.error("failed to end batch", e);
             }
-        }
+        } else {
+            if (log.isDebugEnabled()) {
+    		    log.debug(this + ".endBatch : startBatch decremented lockLevel: " + lockLevel + " Successful? " + successful);
+            }
+		}
     }
 
     /**
@@ -838,8 +858,14 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
 
             // Update the cached value and the table with local revisions.
             try {
+                if (log.isDebugEnabled()) {
+                    log.debug(this + ".set : Attempting to update local revision table with revision " + localRevision + " and journal ID " + getId() + " with connection helper " + conHelper);
+                }
                 conHelper.exec(updateLocalRevisionStmtSQL, localRevision, getId());
                 this.localRevision = localRevision;
+                if (log.isDebugEnabled()) {
+                    log.debug(this + ".set : Local revision table updated with revision " + localRevision + " and journal ID " + getId() + " with connection helper " + conHelper);
+                }
             } catch (SQLException e) {
                 log.warn("Failed to update local revision.", e);
                 throw new JournalException("Failed to update local revision.", e);
