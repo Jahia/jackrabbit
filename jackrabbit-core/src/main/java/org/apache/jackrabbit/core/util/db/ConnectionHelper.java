@@ -269,6 +269,8 @@ public class ConnectionHelper {
         } finally {
             removeTransactionAwareBatchConnection();
             if (batchConnection != null) {
+                // QA-6444 : we reset the auto-commit to true as this is not always implicit for example with WebSphere + Oracle
+                batchConnection.setAutoCommit(true);
             	DbUtility.close(batchConnection, null, null);
             }
         }
