@@ -46,6 +46,19 @@
     <plugins>
       <plugin>
         <artifactId>maven-antrun-plugin</artifactId>
+        <dependencies>
+          <!-- runtime dependency for the antrun plugin. It brings tools.jar
+          into the plugins execution space so the 'rmic' compiler can be called from
+          Ant's <rmic/> task. This is ALL you have to do!
+          -->
+          <dependency>
+            <groupId>sun</groupId>
+            <artifactId>tools</artifactId>
+            <version>1.0</version>
+            <scope>system</scope>
+            <systemPath>${java.home}/../lib/tools.jar</systemPath>
+          </dependency>
+        </dependencies>
         <executions>
           <execution>
             <id>rmic</id>
