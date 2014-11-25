@@ -269,8 +269,16 @@ public class ConnectionHelper {
         } finally {
             removeTransactionAwareBatchConnection();
             if (batchConnection != null) {
-                // QA-6444 : we reset the auto-commit to true as this is not always implicit for example with WebSphere + Oracle
-                batchConnection.setAutoCommit(true);
+                try {
+                    // QA-6444 : we reset the auto-commit to true as this is not always implicit for example with WebSphere + Oracle
+                    batchConnection.setAutoCommit(true);
+                } catch (SQLException e) {
+                    if (log.isDebugEnabled()) {
+                        log.warn("Unable to set auto-commit to true", e);
+                    } else {
+                        log.warn("Unable to set auto-commit to true. Cause: " + e.getMessage());
+                    }
+                }
             	DbUtility.close(batchConnection, null, null);
             }
         }
