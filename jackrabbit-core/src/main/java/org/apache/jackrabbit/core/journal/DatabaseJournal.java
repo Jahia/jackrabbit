@@ -829,6 +829,13 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
                 throw new IllegalStateException("instance has not yet been initialized");
             }
 
+            if (this.localRevision == localRevision) {
+                if (log.isDebugEnabled()) {
+                    log.debug(this + ".set : Local revision already has value " + localRevision + ", will do nothing");
+                }
+                return;
+            }
+
             // Update the cached value and the table with local revisions.
             try {
                 conHelper.exec(updateLocalRevisionStmtSQL, localRevision, getId());
