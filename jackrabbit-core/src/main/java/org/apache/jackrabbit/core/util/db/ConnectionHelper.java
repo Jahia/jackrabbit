@@ -354,8 +354,7 @@ public class ConnectionHelper {
                 log.debug(this + ".reallyExec: using Oracle session ID " + getOracleSID(con) + " for SQL " + sql + " autocommit=" + con.getAutoCommit());
                 if (sql.startsWith("update") && sql.contains("LOCAL_REVISIONS")) {
                     if (inBatchMode()) {
-                        log.debug(this + ".reallyExec: Local revision lock is done inside JDBC transaction!!");
-                        org.apache.jackrabbit.core.util.ThreadMonitor.getInstance().dumpThreadInfo(true, false);
+                        log.debug(this + ".reallyExec: Local revision lock is done inside JDBC transaction. This is expected at startup but otherwise shouldn't happen.");
                     }
                 }
             }
@@ -617,9 +616,6 @@ public class ConnectionHelper {
                         }
                         log.error("Failed to execute SQL (stacktrace on DEBUG log level): " + lastException);
                         log.debug("Failed to execute SQL", lastException);
-                        if (log.isDebugEnabled()) {
-						    org.apache.jackrabbit.core.util.ThreadMonitor.getInstance().dumpThreadInfo(true, false);
-                        }
                         failures++;
                         if (!resetParamResources()) {
                             break;
