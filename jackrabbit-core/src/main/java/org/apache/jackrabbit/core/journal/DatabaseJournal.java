@@ -814,13 +814,23 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
                 // Check whether there is an entry in the database.
                 rs = conHelper.exec(getLocalRevisionStmtSQL, new Object[]{getId()}, false, 0);
                 boolean exists = rs.next();
+                boolean needUpdate = false; 
                 if (exists) {
-                    revision = rs.getLong(1);
+                    long dbRevision = rs.getLong(1);
+                    if (dbRevision < revision) {
+                        // supplied revision is higher; will update the database value
+                        needUpdate = true;
+                    } else {
+                        revision = dbRevision;
+                    }
                 }
 
                 // Insert the given revision in the database
                 if (!exists) {
                     conHelper.exec(insertLocalRevisionStmtSQL, revision, getId());
+                } else if (needUpdate) {
+                    // update the revision in the database
+                    conHelper.exec(updateLocalRevisionStmtSQL, revision, getId());
                 }
 
                 // Set the cached local revision and return
