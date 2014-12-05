@@ -616,7 +616,7 @@ public class RepositoryImpl extends AbstractRepository
                         repConfig,
                         getWorkspaceInfo(wspName).itemStateMgr,
                         context.getInternalVersionManager().getPersistenceManager(),
-                        SYSTEM_ROOT_NODE_ID, null, null);
+                        SYSTEM_ROOT_NODE_ID, null, getSystemExcludedNodeId());
 
                 SystemSession defSysSession = getSystemSession(wspName);
                 ObservationManager obsMgr = defSysSession.getWorkspace().getObservationManager();
@@ -628,6 +628,16 @@ public class RepositoryImpl extends AbstractRepository
             }
         }
         return systemSearchMgr;
+    }
+
+    /**
+     * Returns the id of the node that should be excluded from indexing by system search manager. Any descendant of that node will also be
+     * excluded from indexing. If nothing should be excluded, returns <code>null</code>.
+     * 
+     * @return the id of the node that should be excluded from indexing by system search manager
+     */
+    protected NodeId getSystemExcludedNodeId() {
+        return null;
     }
 
     /**
