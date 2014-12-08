@@ -65,6 +65,7 @@
               </value>
             </property>
           </systemProperties>
+          <runOrder>reversealphabetical</runOrder>
         </configuration>
       </plugin>
       <plugin>
