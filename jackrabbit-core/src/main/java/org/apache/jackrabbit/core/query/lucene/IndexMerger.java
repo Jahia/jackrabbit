@@ -558,6 +558,8 @@ class IndexMerger implements IndexListener {
 
                     } finally {
                         if (!success) {
+                            // close index first
+                            index.close();
                             // delete index
                             log.debug("deleting index " + index.getName());
                             multiIndex.deleteIndex(index);
