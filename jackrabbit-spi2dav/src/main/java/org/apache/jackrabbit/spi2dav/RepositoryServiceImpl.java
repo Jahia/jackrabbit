@@ -2361,8 +2361,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
                                             eventPath.getAncestor(1)),
                                     eventPath.getName());
                         } catch (RepositoryException e1) {
-                            log.warn("Unable to build event itemId: ",
-                                    e.getMessage());
+                            log.warn("Unable to build event itemId for {}. Cause: {}", eventPath, e.getMessage());
                         }
                     }
                 }
@@ -2371,7 +2370,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
                 try {
                     parentId = uriResolver.getNodeId(parentHref, sessionInfo);
                 } catch (RepositoryException e) {
-                    log.warn("Unable to build event parentId: ", e.getMessage());
+                    log.warn("Unable to build event parentId for {}. Cause: {}", parentHref, e.getMessage());
                 }
                 
             }
