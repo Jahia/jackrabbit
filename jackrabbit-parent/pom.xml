@@ -42,6 +42,21 @@
     <url>http://issues.apache.org/jira/browse/JCR</url>
   </issueManagement>
 
+    <repositories>
+        <repository>
+            <id>jahia-public</id>
+            <name>Jahia Public Repository</name>
+            <url>https://devtools.jahia.com/nexus/content/groups/public</url>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>never</updatePolicy>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
   <properties>
     <slf4j.version>1.6.4</slf4j.version>
     <logback.version>1.0.0</logback.version>
@@ -52,14 +67,18 @@
   </properties>
 
   <distributionManagement>
-    <repository>
-      <id>jahiaRepository</id>
-      <url>scpexe://maven.jahia.org/var/www/vhosts/maven.jahia.org/html/maven2</url>
-    </repository>
-    <site>
-      <id>jahia.website</id>
-      <url>file://${jahia.site.path}</url>
-    </site>
+        <repository>
+            <id>jahia-releases</id>
+            <url>https://devtools.jahia.com/nexus/content/repositories/jahia-releases</url>
+        </repository>
+        <snapshotRepository>
+            <id>jahia-snapshots</id>
+            <url>https://devtools.jahia.com/nexus/content/repositories/jahia-snapshots</url>
+        </snapshotRepository>
+        <site>
+            <id>jahia.website</id>
+            <url>file://${jahia.site.path}</url>
+        </site>
   </distributionManagement>
 
   <url>http://jackrabbit.apache.org/</url>
