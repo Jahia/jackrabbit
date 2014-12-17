@@ -198,8 +198,8 @@ public class HierarchyEventListener implements InternalEventListener {
                     break;
                 case Event.NODE_MOVED:
                     // TODO: implementation missing
-                    throw new UnsupportedOperationException("Implementation missing");
-                    //break;
+                    //throw new UnsupportedOperationException("Implementation missing");
+                    break;
                 case Event.PERSIST:
                     // TODO: implementation missing
                     throw new UnsupportedOperationException("Implementation missing");
