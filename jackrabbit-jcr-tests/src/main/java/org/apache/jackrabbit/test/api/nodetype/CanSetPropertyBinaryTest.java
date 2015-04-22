@@ -212,7 +212,7 @@ public class CanSetPropertyBinaryTest extends AbstractJCRTest {
         NodeType nodeType = propDef.getDeclaringNodeType();
 
         assertFalse("canSetProperty(String propertyName, Value value) must " +
-                "return false if value does not match the value constraints.",
+                "return false if value does not match the value constraints. (nodetype/property: " + nodeType.getName() + "/" + propDef.getName() + ")",
                 nodeType.canSetProperty(propDef.getName(), value));
     }
 
@@ -241,7 +241,7 @@ public class CanSetPropertyBinaryTest extends AbstractJCRTest {
         Value values[] = new Value[] {value};
 
         assertFalse("canSetProperty(String propertyName, Value[] values) must " +
-                "return false if values do not match the value constraints.",
+                "return false if values do not match the value constraints. (nodetype/property: " + nodeType.getName() + "/" + propDef.getName() + ")",
                 nodeType.canSetProperty(propDef.getName(), values));
     }
 
