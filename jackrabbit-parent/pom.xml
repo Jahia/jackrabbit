@@ -969,8 +969,8 @@
 
   <scm>
     <connection>scm:svn:http://svn.apache.org/repos/asf/jackrabbit/parent/tags/2.4.5-jahia7-SNAPSHOT</connection>
-    <developerConnection>scm:svn:https://svn.apache.org/repos/asf/jackrabbit/parent/tags/2.4.5-jahia7-SNAPSHOT/developerConnection>
-    <url>http://svn.apache.org/viewvc/jackrabbit/parent/tags/2.4.5-jahia7-SNAPSHOT/url>
+    <developerConnection>scm:svn:https://svn.apache.org/repos/asf/jackrabbit/parent/tags/2.4.5-jahia7-SNAPSHOT</developerConnection>
+    <url>http://svn.apache.org/viewvc/jackrabbit/parent/tags/2.4.5-jahia7-SNAPSHOT</url>
   </scm>
 
 </project>
