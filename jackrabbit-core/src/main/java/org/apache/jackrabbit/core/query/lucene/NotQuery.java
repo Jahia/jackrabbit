@@ -139,6 +139,12 @@ class NotQuery extends Query {
         public Scorer scorer(IndexReader reader, boolean scoreDocsInOrder,
                 boolean topScorer) throws IOException {
             contextScorer = context.weight(searcher).scorer(reader, scoreDocsInOrder, topScorer);
+            if (contextScorer == null) {
+                // context query does not match any node
+                // the inverse is to match all nodes
+                return new MatchAllDocsQuery().createWeight(searcher).scorer(
+                        reader, scoreDocsInOrder, topScorer);
+            }			
             return new NotQueryScorer(reader);
         }
 
