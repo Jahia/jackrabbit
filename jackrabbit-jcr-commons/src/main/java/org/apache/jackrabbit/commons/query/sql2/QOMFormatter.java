@@ -17,6 +17,7 @@
 package org.apache.jackrabbit.commons.query.sql2;
 
 import java.util.BitSet;
+import java.util.regex.Pattern;
 import java.util.Arrays;
 
 import javax.jcr.query.qom.QueryObjectModel;
@@ -71,6 +72,8 @@ public class QOMFormatter implements QueryObjectModelConstants {
      * BitSet of valid SQL identifier body characters.
      */
     private static final BitSet IDENTIFIER_PART_OR_UNDERSCORE = new BitSet();
+    
+    private static final Pattern SINGLE_QUOTE = Pattern.compile("'", Pattern.LITERAL);
 
     static {
         for (char c = 'a'; c <= 'z'; c++) {
@@ -273,7 +276,7 @@ public class QOMFormatter implements QueryObjectModelConstants {
 
     private void appendStringLiteral(String value) {
         append("'");
-        append(value.replaceAll("'", "''"));
+        append(SINGLE_QUOTE.matcher(value).replaceAll("''"));
         append("'");
     }
 
@@ -508,15 +511,8 @@ public class QOMFormatter implements QueryObjectModelConstants {
         if (isSimpleName(path)) {
             append(path);
         } else {
-            boolean needQuotes = path.contains(" ");
             append("[");
-            if (needQuotes) {
-                append("'");
-            }
-            append(path);
-            if (needQuotes) {
-                append("'");
-            }
+            appendStringLiteral(path);
             append("]");
         }
     }
