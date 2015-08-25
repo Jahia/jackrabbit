@@ -34,7 +34,7 @@
   <groupId>org.apache.jackrabbit</groupId>
   <artifactId>jackrabbit-parent</artifactId>
   <name>Jackrabbit Parent POM</name>
-  <version>2.4.5-jahia8-SNAPSHOT</version>
+  <version>2.4.5-jahia8</version>
   <packaging>pom</packaging>
 
   <issueManagement>
@@ -968,9 +968,9 @@
   </developers>
 
   <scm>
-    <connection>scm:svn:http://svn.apache.org/repos/asf/jackrabbit/parent/tags/2.4.5-jahia8-SNAPSHOT</connection>
-    <developerConnection>scm:svn:https://svn.apache.org/repos/asf/jackrabbit/parent/tags/2.4.5-jahia8-SNAPSHOT</developerConnection>
-    <url>http://svn.apache.org/viewvc/jackrabbit/parent/tags/2.4.5-jahia8-SNAPSHOT</url>
+    <connection>scm:svn:http://svn.apache.org/repos/asf/jackrabbit/parent/tags/2.4.5-jahia8</connection>
+    <developerConnection>scm:svn:https://svn.apache.org/repos/asf/jackrabbit/parent/tags/2.4.5-jahia8</developerConnection>
+    <url>http://svn.apache.org/viewvc/jackrabbit/parent/tags/2.4.5-jahia8</url>
   </scm>
 
 </project>
