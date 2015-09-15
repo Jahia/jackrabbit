@@ -1366,12 +1366,11 @@ public class SessionImpl extends AbstractSession
     }
 
     /**
-     * Finalize the session. If the application doesn't call Session.logout(),
+     * Cleanup the session. If the application doesn't call Session.logout(),
      * the session is closed automatically; however a warning is written to the log file,
      * together with the stack trace of where the session was opened.
      */
-    @Override
-    public void finalize() {
+    void cleanup() {
         if (isLive()) {
             if (openStackTrace != null) {
                 // Log a warning if and only if openStackTrace is not null
