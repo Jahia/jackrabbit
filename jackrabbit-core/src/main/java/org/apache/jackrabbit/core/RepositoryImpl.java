@@ -1035,8 +1035,8 @@ public class RepositoryImpl extends AbstractRepository
         synchronized (activeSessions) {
             session.addListener(this);
             activeSessions.put(session, session);
+            phantomList.add(new SessionGhostReference(session, phantomSessionQueue));
         }
-        phantomList.add(new SessionGhostReference(session, phantomSessionQueue));
     }
 
     /**
@@ -2557,7 +2557,9 @@ public class RepositoryImpl extends AbstractRepository
 		SessionGhostReference ref = (SessionGhostReference) phantomSessionQueue.poll();
 		while (ref != null) {
 			ref.cleanUp();
-            phantomList.remove(ref);
+            synchronized (activeSessions) {
+                phantomList.remove(ref);
+            }
             ref = (SessionGhostReference) phantomSessionQueue.poll();
         }
 	}
