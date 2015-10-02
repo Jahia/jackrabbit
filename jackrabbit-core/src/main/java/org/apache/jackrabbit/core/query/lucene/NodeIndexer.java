@@ -781,7 +781,6 @@ public class NodeIndexer {
                 // also create fulltext index of this value
                 boolean store = supportHighlighting && useInExcerpt;
                 f = createFulltextField(internalValue, store, supportHighlighting, hasNorms);
-                f.setBoost(boost);
                 if (useInExcerpt) {
                     doc.add(f);
                 } else {
