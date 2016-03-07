@@ -30,6 +30,7 @@ import java.util.Properties;
 
 import org.apache.jackrabbit.core.util.db.ConnectionFactory;
 import org.apache.jackrabbit.core.util.db.DatabaseAware;
+import org.apache.jackrabbit.util.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -115,6 +116,9 @@ public class BeanConfig {
      * @param properties initial properties of the bean
      */
     public BeanConfig(String className, Properties properties) {
+        if (className != null && className.indexOf("${") != -1) {
+            className = Text.replaceVariables(System.getProperties(), className, true);
+        }
         if (DEPRECATIONS.containsKey(className)) {
             String replacement = DEPRECATIONS.get(className);
             log.info("{} is deprecated. Please use {} instead", className, replacement);
