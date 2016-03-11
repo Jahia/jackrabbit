@@ -14,6 +14,17 @@ import java.lang.reflect.Field;
  *
  */
 public class SessionGhostReference extends PhantomReference<SessionImpl> {
+    
+    private static final Field reqField;
+    
+    static {
+        try {
+            reqField = Reference.class.getDeclaredField("referent");
+            reqField.setAccessible(true);
+        } catch (Exception e) {
+            throw new RuntimeException("Field referent not found", e);
+        }
+    }
 
 	/**
 	 * {@inheritDoc}
@@ -39,15 +50,11 @@ public class SessionGhostReference extends PhantomReference<SessionImpl> {
 	 * @return session
 	 */
 	public SessionImpl getReferent() {
-		try {
-			Field reqField = Reference.class.getDeclaredField("referent");
-			reqField.setAccessible(true);
-			return (SessionImpl) reqField.get(this);
-		}
-		catch (Exception e) {
-			e.printStackTrace();
-		}
-		return null;
+        try {
+            return (SessionImpl) reqField.get(this);
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to get referenced session object", e);
+        }
 	}
 
 }
