@@ -128,8 +128,10 @@ public class RepositoryImpl extends AbstractRepository
 
     private static Logger log = LoggerFactory.getLogger(RepositoryImpl.class);
     
-    private ReferenceQueue<Session> phantomSessionQueue = new ReferenceQueue<Session>();
-    private List<SessionGhostReference> phantomList = Collections.synchronizedList(new ArrayList<SessionGhostReference>());
+    /** reference queue to check for sessions that are garbage collected */
+    private ReferenceQueue<Session> ghostSessionQueue = new ReferenceQueue<Session>();
+    /** maps session name to ghost reference (this is needed only to avoid that ghost references are garbage collected themselves) */
+    private Map<String, SessionGhostReference> ghostMap = Collections.synchronizedMap(new HashMap<String, SessionGhostReference>());
 
     /**
      * hardcoded id of the repository root node
@@ -1007,7 +1009,7 @@ public class RepositoryImpl extends AbstractRepository
         synchronized (activeSessions) {
             session.addListener(this);
             activeSessions.put(session, session);
-            phantomList.add(new SessionGhostReference(session, phantomSessionQueue));
+            ghostMap.put(session.toString(), new SessionGhostReference(session, ghostSessionQueue));
         }
     }
 
@@ -1187,6 +1189,12 @@ public class RepositoryImpl extends AbstractRepository
         }
 
         repConfig.getConnectionFactory().close();
+
+        // cleanup ghost references
+        for (SessionGhostReference ref : ghostMap.values()) {
+            ref.clear();
+        }
+        ghostMap.clear();
 
         // finally release repository lock
         if (repLock != null) {
@@ -1594,16 +1602,7 @@ public class RepositoryImpl extends AbstractRepository
         synchronized (activeSessions) {
             // remove session from active sessions
             activeSessions.remove(session);
-            SessionGhostReference remPhantom = null;
-            for (SessionGhostReference s : phantomList) {
-            	if (session == s.getReferent()) {
-            		remPhantom = s;
-            		break;
-            	}
-            }
-            if (remPhantom != null) {
-            	phantomList.remove(remPhantom);
-            }
+            ghostMap.remove(session.toString());
         }
     }
 
@@ -2513,16 +2512,19 @@ public class RepositoryImpl extends AbstractRepository
 
     /**
      * Cleans up phantom references to old sessions.
-     * If the session was not cleanly unclosed then it is closed here.
+     * If the session was not cleanly closed then it is closed here.
      */
-	public void cleanupPhantomSessions() {
-		SessionGhostReference ref = (SessionGhostReference) phantomSessionQueue.poll();
-		while (ref != null) {
-			ref.cleanUp();
-            synchronized (activeSessions) {
-                phantomList.remove(ref);
+    public void cleanupPhantomSessions() {
+        SessionGhostReference ref = (SessionGhostReference) ghostSessionQueue.poll();
+        while (ref != null) {
+            ref.cleanUp();
+            SessionImpl session = ref.getReferent();
+            if (session != null) {
+                ghostMap.remove(session.toString());
+            } else {
+                ghostMap.values().remove(ref);
             }
-            ref = (SessionGhostReference) phantomSessionQueue.poll();
+            ref = (SessionGhostReference) ghostSessionQueue.poll();
         }
-	}
+    }
 }
