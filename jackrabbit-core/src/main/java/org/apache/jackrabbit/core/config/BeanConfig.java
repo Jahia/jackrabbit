@@ -112,7 +112,7 @@ public class BeanConfig {
      */
     public BeanConfig(String className, Properties properties) {
         if (className != null && className.indexOf("${") != -1) {
-            className = Text.replaceVariables(System.getProperties(), className, true);
+            className = Text.replaceVariables(System.getProperties(), className, false);
         }
         if (DEPRECATIONS.containsKey(className)) {
             String replacement = DEPRECATIONS.get(className);
