@@ -19,6 +19,7 @@ package org.apache.jackrabbit.util;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Properties;
 
 import junit.framework.TestCase;
 
@@ -194,5 +195,27 @@ public class TextTest extends TestCase {
         assertEquals("local'name", Text.escapeIllegalJcrChars("local'name"));
         assertEquals("local\"name", Text.escapeIllegalJcrChars("local\"name"));
     }
-
+    
+    public void testReplaceVariables() throws Exception {
+        Properties p = new Properties();
+        p.setProperty("my.key1", "my.value1");
+        p.setProperty("my.key2", "my.value2");
+        
+        assertEquals("aaa", Text.replaceVariables(p, "aaa", true));
+        assertEquals("my.value1", Text.replaceVariables(p, "${my.key1}", true));
+        assertEquals("my.value1-aaa-my.value2", Text.replaceVariables(p, "${my.key1}-aaa-${my.key2}", true));
+        assertEquals("", Text.replaceVariables(p, "${my.keyNotFound}", true));
+        
+        try {
+            Text.replaceVariables(p, "${my.key3}", false);
+        } catch (Exception e) {
+            assertTrue(e instanceof IllegalArgumentException);
+        }
+        
+        assertEquals("my.value1", Text.replaceVariables(p, "${my.key1:}", false));
+        assertEquals("my.value1", Text.replaceVariables(p, "${my.key1:default}", false));
+        assertEquals("default", Text.replaceVariables(p, "${my.keyNotFound:default}", false));
+        assertEquals("", Text.replaceVariables(p, "${my.keyNotFound:}", false));
+    }
+    
 }

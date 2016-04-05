@@ -771,9 +771,17 @@ public class Text {
             q = value.indexOf("}", q + 2);                 // Find }
             if (q != -1) {
                 String variable = value.substring(p + 2, q);
+                String defValue = null;
+                int separatorPosition = variable.indexOf(':');
+                if (separatorPosition != -1) {
+                    defValue = variable.substring(separatorPosition + 1, variable.length());
+                    variable = variable.substring(0, separatorPosition);
+                }
                 String replacement = variables.getProperty(variable);
                 if (replacement == null) {
-                    if (ignoreMissing) {
+                    if (defValue != null) {
+                        replacement = defValue;
+                    } else if (ignoreMissing) {
                         replacement = "";
                     } else {
                         throw new IllegalArgumentException(
