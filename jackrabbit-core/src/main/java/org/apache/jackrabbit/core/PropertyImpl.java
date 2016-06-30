@@ -59,6 +59,7 @@ import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.core.state.ItemState;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.PropertyState;
+import org.apache.jackrabbit.core.state.PropertyStateMerger;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
@@ -153,7 +154,12 @@ public class PropertyImpl extends ItemImpl implements Property {
 
         synchronized (persistentState) {
             // check staleness of transient state first
-            if (transientState.isStale()) {
+            if (transientState.isStale() && !PropertyStateMerger.merge(transientState, new PropertyStateMerger.MergeContext() {
+                public PropertyState getPropertyState(PropertyId id)
+                        throws ItemStateException {
+                    return (PropertyState) stateMgr.getItemState(id);
+                }
+            })) {
                 String msg =
                     this + ": the property cannot be saved because it has"
                     + " been modified externally.";
