@@ -16,17 +16,6 @@
  */
 package org.apache.jackrabbit.core.state;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
-
-import javax.jcr.PropertyType;
-import javax.jcr.ReferentialIntegrityException;
-import javax.jcr.RepositoryException;
-import javax.jcr.nodetype.NoSuchNodeTypeException;
-
 import org.apache.jackrabbit.core.RepositoryImpl;
 import org.apache.jackrabbit.core.cluster.ClusterException;
 import org.apache.jackrabbit.core.cluster.UpdateEventChannel;
@@ -49,6 +38,12 @@ import org.apache.jackrabbit.spi.QNodeDefinition;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.jcr.PropertyType;
+import javax.jcr.ReferentialIntegrityException;
+import javax.jcr.RepositoryException;
+import javax.jcr.nodetype.NoSuchNodeTypeException;
+import java.util.*;
 
 /**
  * Shared <code>ItemStateManager</code> (SISM). Caches objects returned from a
@@ -676,6 +671,19 @@ public class SharedItemStateManager
                                     };
 
                             merged = NodeStateMerger.merge((NodeState) state, context);
+                        } else {
+                            PropertyStateMerger.MergeContext context =
+                                    new PropertyStateMerger.MergeContext() {
+                                        public PropertyState getPropertyState(PropertyId id)
+                                                throws ItemStateException {
+                                            if (local.has(id)) {
+                                                return (PropertyState) local.get(id);
+                                            } else {
+                                                return (PropertyState) getItemState(id);
+                                            }
+                                        }
+                                    };
+                            merged = PropertyStateMerger.merge((PropertyState) state, context);
                         }
                         if (!merged) {
                             String msg = state.getId() + " has been modified externally";
