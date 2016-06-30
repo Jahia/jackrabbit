@@ -16,17 +16,6 @@
  */
 package org.apache.jackrabbit.core.state;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
-
-import javax.jcr.PropertyType;
-import javax.jcr.ReferentialIntegrityException;
-import javax.jcr.RepositoryException;
-import javax.jcr.nodetype.NoSuchNodeTypeException;
-
 import org.apache.jackrabbit.core.RepositoryImpl;
 import org.apache.jackrabbit.core.cluster.ClusterException;
 import org.apache.jackrabbit.core.cluster.UpdateEventChannel;
@@ -50,6 +39,12 @@ import org.apache.jackrabbit.spi.commons.name.NameConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.jcr.PropertyType;
+import javax.jcr.ReferentialIntegrityException;
+import javax.jcr.RepositoryException;
+import javax.jcr.nodetype.NoSuchNodeTypeException;
+import java.util.*;
+
 /**
  * Shared <code>ItemStateManager</code> (SISM). Caches objects returned from a
  * <code>PersistenceManager</code>. Objects returned by this item state
@@ -72,22 +67,22 @@ import org.slf4j.LoggerFactory;
  * there are 5 types of referential relations to be distinguished:
  * <ol>
  * <li> normal --> normal (references from 'normal' states to 'normal' states)
- *      this is the normal case and will be handled by the SISM.
+ * this is the normal case and will be handled by the SISM.
  *
  * <li> normal --> virtual (references from 'normal' states to 'virtual' states)
- *      those references should be handled by the VISP rather by the SISM.
+ * those references should be handled by the VISP rather by the SISM.
  *
  * <li> virtual --> normal (references from 'virtual' states to 'normal' states)
- *      such references are not supported. eg. references of versioned nodes do
- *      not impose any constraints on the referenced nodes.
+ * such references are not supported. eg. references of versioned nodes do
+ * not impose any constraints on the referenced nodes.
  *
  * <li> virtual --> virtual (references from 'virtual' states to 'virtual'
- *      states of the same VISP).
- *      intra-virtual references are handled by the item state manager of the VISP.
+ * states of the same VISP).
+ * intra-virtual references are handled by the item state manager of the VISP.
  *
  * <li> virtual --> virtual' (references from 'virtual' states to 'virtual'
- *      states of different VISP).
- *      those do currently not occur and are therefore not supported.
+ * states of different VISP).
+ * those do currently not occur and are therefore not supported.
  * </ol>
  * <p/>
  * if VISP are not dynamic, there is not risk that NV-type references can dangle
@@ -124,7 +119,7 @@ public class SharedItemStateManager
      * @see <a href="https://issues.apache.org/jira/browse/JCR-2598">JCR-2598</a>
      */
     private static final boolean VALIDATE_HIERARCHY =
-        Boolean.getBoolean("org.apache.jackrabbit.core.state.validatehierarchy");
+            Boolean.getBoolean("org.apache.jackrabbit.core.state.validatehierarchy");
 
     /**
      * cache of weak references to ItemState objects issued by this
@@ -455,7 +450,7 @@ public class SharedItemStateManager
      */
     public String toString() {
         return "SharedItemStateManager (" + super.toString() + ")\n"
-            + "[referenceCache]\n" + cache;
+                + "[referenceCache]\n" + cache;
     }
 
     //-------------------------------------------------< misc. public methods >
@@ -670,6 +665,19 @@ public class SharedItemStateManager
                                     };
 
                             merged = NodeStateMerger.merge((NodeState) state, context);
+                        } else {
+                            PropertyStateMerger.MergeContext context =
+                                    new PropertyStateMerger.MergeContext() {
+                                        public PropertyState getPropertyState(PropertyId id)
+                                                throws ItemStateException {
+                                            if (local.has(id)) {
+                                                return (PropertyState) local.get(id);
+                                            } else {
+                                                return (PropertyState) getItemState(id);
+                                            }
+                                        }
+                                    };
+                            merged = PropertyStateMerger.merge((PropertyState) state, context);
                         }
                         if (!merged) {
                             String msg = state.getId() + " has been modified externally";
@@ -1093,8 +1101,8 @@ public class SharedItemStateManager
                         // same UUID, i.e. the node is still referenceable.
                         if (refs.hasReferences() && !local.has(targetId)) {
                             String msg =
-                                node.getNodeId() + " cannot be removed"
-                                + " because it is still being referenced";
+                                    node.getNodeId() + " cannot be removed"
+                                            + " because it is still being referenced";
                             log.debug("{} from {}", msg, refs.getReferences());
                             throw new ReferentialIntegrityException(msg);
                         }
@@ -1482,7 +1490,7 @@ public class SharedItemStateManager
     public Update beginUpdate(ChangeLog local, EventStateCollectionFactory factory,
                               VirtualItemStateProvider virtualProvider)
             throws ReferentialIntegrityException, StaleItemStateException,
-                   ItemStateException {
+            ItemStateException {
 
         Update update = new Update(local, factory, virtualProvider);
         update.begin();
@@ -1513,7 +1521,7 @@ public class SharedItemStateManager
      */
     public void update(ChangeLog local, EventStateCollectionFactory factory)
             throws ReferentialIntegrityException, StaleItemStateException,
-                   ItemStateException {
+            ItemStateException {
 
         beginUpdate(local, factory, null).end();
     }
@@ -1626,9 +1634,9 @@ public class SharedItemStateManager
     /**
      * Create a new node state instance
      *
-     * @param id         uuid
+     * @param id           uuid
      * @param nodeTypeName node type name
-     * @param parentId   parent UUID
+     * @param parentId     parent UUID
      * @return new node state instance
      */
     private NodeState createInstance(NodeId id, Name nodeTypeName,
@@ -1647,7 +1655,7 @@ public class SharedItemStateManager
      * Create root node state
      *
      * @param rootNodeId root node id
-     * @param ntReg        node type registry
+     * @param ntReg      node type registry
      * @return root node state
      * @throws ItemStateException if an error occurs
      */
@@ -1824,7 +1832,7 @@ public class SharedItemStateManager
     /**
      * Create a new property state instance
      *
-     * @param propName   property name
+     * @param propName property name
      * @param parentId parent Id
      * @return new property state instance
      */
