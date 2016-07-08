@@ -27,10 +27,9 @@ public class PropertyStateMerger {
     }
 
     public static boolean merge(PropertyState propertyState, MergeContext context) {
-    	
+
         PropertyState overlayedState = (PropertyState) propertyState.getOverlayedState();
-        if (overlayedState == null
-                || propertyState.getModCount() == overlayedState.getModCount()) {
+        if (overlayedState == null || propertyState.getModCount() == overlayedState.getModCount()) {
             return false;
         }
         
@@ -57,9 +56,9 @@ public class PropertyStateMerger {
      */
     public static class OverrideValueMergerAlgorithm implements PropertyStateMergerAlgorithm {
         public boolean merge(PropertyState propertyState, MergeContext context) {
-        	if (log.isDebugEnabled()) {
+            if (log.isDebugEnabled()) {
                 log.debug("{} : ignore persisted change, keep : {}", propertyState.getName(), Arrays.asList(propertyState.getValues()));
-        	}
+            }
             propertyState.setModCount(propertyState.getOverlayedState().getModCount());
             return true;
         }
@@ -87,14 +86,17 @@ public class PropertyStateMerger {
                         PropertyState overlayedState = (PropertyState) propertyState.getOverlayedState();
 
                         if (!dateOverlayedState.getValues()[0].getDate().before(datePropertyState.getValues()[0].getDate())) {
-                        	if (log.isDebugEnabled()) {
-                                log.debug("Persisted values for " + propertyState.getName() + " is more recent, copy value from there : " + Arrays.asList(propertyState.getValues()) + " / " + Arrays.asList(overlayedState.getValues()));
-                        	}
+                            if (log.isDebugEnabled()) {
+                                log.debug("Persisted values for " + propertyState.getName() + " is more recent, copy value from there : "
+                                        + Arrays.asList(propertyState.getValues()) + " / " + Arrays.asList(overlayedState.getValues()));
+                            }
                             propertyState.setValues(overlayedState.getValues());                        	
                         } else {
-                        	if (log.isDebugEnabled()) {
-                                log.debug(propertyState.getName() + " value seems to be more recent than persisted value, skip conflict and override : " + Arrays.asList(propertyState.getValues()) + " / " + Arrays.asList(overlayedState.getValues()));
-                        	}
+                            if (log.isDebugEnabled()) {
+                                log.debug(propertyState.getName()
+                                        + " value seems to be more recent than persisted value, skip conflict and override : "
+                                        + Arrays.asList(propertyState.getValues()) + " / " + Arrays.asList(overlayedState.getValues()));
+                            }
                         }
                         propertyState.setModCount(overlayedState.getModCount());
                         return true;
