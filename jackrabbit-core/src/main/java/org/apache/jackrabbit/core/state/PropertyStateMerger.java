@@ -27,6 +27,13 @@ public class PropertyStateMerger {
     }
 
     public static boolean merge(PropertyState propertyState, MergeContext context) {
+    	
+        PropertyState overlayedState = (PropertyState) propertyState.getOverlayedState();
+        if (overlayedState == null
+                || propertyState.getModCount() == overlayedState.getModCount()) {
+            return false;
+        }
+        
         boolean merged = false;
 
         PropertyStateMergerAlgorithm merger = mergers.get(propertyState.getName());
@@ -50,7 +57,9 @@ public class PropertyStateMerger {
      */
     public static class OverrideValueMergerAlgorithm implements PropertyStateMergerAlgorithm {
         public boolean merge(PropertyState propertyState, MergeContext context) {
-            log.debug(propertyState.getName() + " : ignore persisted change, keep : "+Arrays.asList(propertyState.getValues()));
+        	if (log.isDebugEnabled()) {
+                log.debug("{} : ignore persisted change, keep : {}", propertyState.getName(), Arrays.asList(propertyState.getValues()));
+        	}
             propertyState.setModCount(propertyState.getOverlayedState().getModCount());
             return true;
         }
@@ -77,16 +86,20 @@ public class PropertyStateMerger {
                     try {
                         PropertyState overlayedState = (PropertyState) propertyState.getOverlayedState();
 
-                        if (dateOverlayedState.getValues()[0].getDate().before(datePropertyState.getValues()[0].getDate())) {
-                            log.debug(propertyState.getName() + " value is more recent than persisted value, skip conflict and override : " + Arrays.asList(propertyState.getValues()) + " / " + Arrays.asList(overlayedState.getValues()));
+                        if (!dateOverlayedState.getValues()[0].getDate().before(datePropertyState.getValues()[0].getDate())) {
+                        	if (log.isDebugEnabled()) {
+                                log.debug("Persisted values for " + propertyState.getName() + " is more recent, copy value from there : " + Arrays.asList(propertyState.getValues()) + " / " + Arrays.asList(overlayedState.getValues()));
+                        	}
+                            propertyState.setValues(overlayedState.getValues());                        	
                         } else {
-                            log.debug("Persisted values for " + propertyState.getName() +" is more recent, copy value from there : " + Arrays.asList(propertyState.getValues()) + " / " + Arrays.asList(overlayedState.getValues()));
-                            propertyState.setValues(overlayedState.getValues());
+                        	if (log.isDebugEnabled()) {
+                                log.debug(propertyState.getName() + " value seems to be more recent than persisted value, skip conflict and override : " + Arrays.asList(propertyState.getValues()) + " / " + Arrays.asList(overlayedState.getValues()));
+                        	}
                         }
                         propertyState.setModCount(overlayedState.getModCount());
                         return true;
                     } catch (RepositoryException e) {
-                        log.error("Cannot get date values",e);
+                        log.error("Cannot get date values", e);
                     }
                 } else if (dateOverlayedState == null) {
                     // Date already merged or not changed, ignore
