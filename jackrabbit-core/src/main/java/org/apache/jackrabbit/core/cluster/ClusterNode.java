@@ -187,7 +187,7 @@ public class ClusterNode implements Runnable,
      * Record deserializer.
      */
     private ClusterRecordDeserializer deserializer = new ClusterRecordDeserializer();
-    
+
     /**
      * Flag indicating whether sync is manual.
      */
@@ -249,7 +249,7 @@ public class ClusterNode implements Runnable,
     public long getStopDelay() {
         return stopDelay;
     }
-    
+
     /**
      * Disable periodic background synchronization. Used for testing purposes, only.
      */
@@ -305,10 +305,10 @@ public class ClusterNode implements Runnable,
         }
     }
 
-    /** 
+    /**
      * Synchronize contents from journal.
-     * 
-     * @param startup indicates if the cluster node is syncing on startup 
+     *
+     * @param startup indicates if the cluster node is syncing on startup
      *        or does a normal sync.
      * @throws ClusterException if an error occurs
      */
@@ -871,7 +871,7 @@ public class ClusterNode implements Runnable,
                 } catch (RepositoryException e) {
                     String msg = "Error making update listener for workspace " +
                             workspace + " online: " + e.getMessage();
-                    log.warn(msg);
+                    log.warn(msg, e);
                 }
                 listener = wspUpdateListeners.get(workspace);
                 if (listener ==  null) {
