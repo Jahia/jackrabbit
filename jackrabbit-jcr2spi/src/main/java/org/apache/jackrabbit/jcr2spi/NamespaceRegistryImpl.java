@@ -86,8 +86,11 @@ public class NamespaceRegistryImpl implements NamespaceRegistry {
         try {
             return storage.getURI(prefix);
         } catch (RepositoryException ex) {
+            if (ex instanceof NamespaceException) {
+                throw (NamespaceException) ex;
+            }
             log.debug("Internal error while loading registered namespaces.");
-            throw new NamespaceException(prefix + ": is not a registered namespace prefix.");
+            throw new NamespaceException("Error retrieving URI by namespace prefix: '" + prefix + "'", ex);
         }
     }
 
