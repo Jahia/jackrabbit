@@ -533,7 +533,9 @@ public class ConsistencyCheck {
                 NodeState n = (NodeState) stateMgr.getItemState(ancestorId);
                 log.info("Repairing missing node " + getPath(n) + " (" + ancestorId + ")");
                 Document d = index.createDocument(n);
-                index.addDocument(d);
+                if (d != null) {
+                    index.addDocument(d);
+                }
                 nodeIds.put(n.getNodeId(), Boolean.TRUE);
                 ancestorId = n.getParentId();
             }
@@ -683,7 +685,9 @@ public class ConsistencyCheck {
                 NodeState node = (NodeState) stateMgr.getItemState(id);
                 log.info("Re-indexing duplicate node occurrences in index: " + getPath(node));
                 Document d = index.createDocument(node);
-                index.addDocument(d);
+                if (d != null) {
+                    index.addDocument(d);
+                }
                 nodeIds.put(node.getNodeId(), Boolean.TRUE);
             } catch (NoSuchItemStateException e) {
                 log.info("Not re-indexing node with multiple occurrences because node no longer exists");
