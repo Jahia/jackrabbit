@@ -281,7 +281,9 @@ public class ConsistencyCheck {
                     NodeState n = (NodeState) stateMgr.getItemState(ancestorId);
                     log.info("Reparing missing node " + getPath(n));
                     Document d = index.createDocument(n);
-                    index.addDocument(d);
+                    if (d != null) {
+                        index.addDocument(d);
+                    }
                     documentIds.add(n.getNodeId());
                     ancestorId = n.getParentId();
                 } catch (ItemStateException e) {
@@ -348,7 +350,9 @@ public class ConsistencyCheck {
                 NodeState node = (NodeState) stateMgr.getItemState(id);
                 log.info("Re-indexing duplicate node occurrences in index: " + getPath(node));
                 Document d = index.createDocument(node);
-                index.addDocument(d);
+                if (d != null) {
+                    index.addDocument(d);
+                }
                 documentIds.add(node.getNodeId());
             } catch (ItemStateException e) {
                 throw new IOException(e.toString());
