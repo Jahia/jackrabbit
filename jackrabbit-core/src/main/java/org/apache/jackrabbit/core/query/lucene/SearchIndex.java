@@ -666,9 +666,10 @@ public class SearchIndex extends AbstractQueryHandler {
                 retrieveAggregateRoot(state, aggregateRoots);
 
                 try {
-                    addCollection.add(createDocument(
-                            state, getNamespaceMappings(),
-                            index.getIndexFormatVersion()));
+                    Document document = createDocument(state, getNamespaceMappings(), index.getIndexFormatVersion());
+                    if (document != null) {
+                        addCollection.add(document);
+                    }
                 } catch (RepositoryException e) {
                     log.warn("Exception while creating document for node: "
                             + state.getNodeId(), e);
@@ -692,9 +693,10 @@ public class SearchIndex extends AbstractQueryHandler {
 
             for (NodeState state : aggregateRoots.values()) {
                 try {
-                    modified.add(createDocument(
-                            state, getNamespaceMappings(),
-                            index.getIndexFormatVersion()));
+                    Document document = createDocument(state, getNamespaceMappings(), index.getIndexFormatVersion());
+                    if (document != null) {
+                        modified.add(document);
+                    }
                 } catch (RepositoryException e) {
                     log.warn("Exception while creating document for node: "
                             + state.getNodeId(), e);
@@ -1502,17 +1504,19 @@ public class SearchIndex extends AbstractQueryHandler {
                         for (NodeState aggregate : aggregates) {
                             Document aDoc = createDocument(aggregate, getNamespaceMappings(), ifv);
                             // transfer fields to doc if there are any
-                            Fieldable[] fulltextFields = aDoc.getFieldables(FieldNames.FULLTEXT);
-                            if (fulltextFields != null) {
-                                for (Fieldable fulltextField : fulltextFields) {
-                                    doc.add(fulltextField);
+                            if (aDoc != null) {
+                                Fieldable[] fulltextFields = aDoc.getFieldables(FieldNames.FULLTEXT);
+                                if (fulltextFields != null) {
+                                    for (Fieldable fulltextField : fulltextFields) {
+                                        doc.add(fulltextField);
+                                    }
+                                    doc.add(new Field(
+                                            FieldNames.AGGREGATED_NODE_UUID, false,
+                                            aggregate.getNodeId().toString(),
+                                            Field.Store.NO,
+                                            Field.Index.NOT_ANALYZED_NO_NORMS,
+                                            Field.TermVector.NO));
                                 }
-                                doc.add(new Field(
-                                        FieldNames.AGGREGATED_NODE_UUID, false,
-                                        aggregate.getNodeId().toString(),
-                                        Field.Store.NO,
-                                        Field.Index.NOT_ANALYZED_NO_NORMS,
-                                        Field.TermVector.NO));
                             }
                         }
                         // make sure that fulltext fields are aligned properly
@@ -1533,41 +1537,43 @@ public class SearchIndex extends AbstractQueryHandler {
                             String namePrefix = FieldNames.createNamedValue(getNamespaceMappings().translateName(propState.getName()), "");
                             NodeState parent = (NodeState) ism.getItemState(propState.getParentId());
                             Document aDoc = createDocument(parent, getNamespaceMappings(), ifv);
-                            try {
-                                // find the right fields to transfer
-                                Fieldable[] fields = aDoc.getFieldables(FieldNames.PROPERTIES);
-                                for (Fieldable field : fields) {
+                            if (aDoc != null) {
+                                try {
+                                    // find the right fields to transfer
+                                    Fieldable[] fields = aDoc.getFieldables(FieldNames.PROPERTIES);
+                                    for (Fieldable field : fields) {
 
-                                    // assume properties fields use SingleTokenStream
-                                    TokenStream tokenStream = field.tokenStreamValue();
-                                    TermAttribute termAttribute = tokenStream.addAttribute(TermAttribute.class);
-                                    PayloadAttribute payloadAttribute = tokenStream.addAttribute(PayloadAttribute.class);
-                                    tokenStream.incrementToken();
-                                    tokenStream.end();
-                                    tokenStream.close();
+                                        // assume properties fields use SingleTokenStream
+                                        TokenStream tokenStream = field.tokenStreamValue();
+                                        TermAttribute termAttribute = tokenStream.addAttribute(TermAttribute.class);
+                                        PayloadAttribute payloadAttribute = tokenStream.addAttribute(PayloadAttribute.class);
+                                        tokenStream.incrementToken();
+                                        tokenStream.end();
+                                        tokenStream.close();
 
-                                    String value = new String(termAttribute.termBuffer(), 0, termAttribute.termLength());
-                                    if (value.startsWith(namePrefix)) {
-                                        // extract value
-                                        value = value.substring(namePrefix.length());
-                                        // create new named value
-                                        Path p = getRelativePath(state, propState);
-                                        String path = getNamespaceMappings().translatePath(p);
-                                        value = FieldNames.createNamedValue(path, value);
-                                        termAttribute.setTermBuffer(value);
-                                        doc.add(new Field(field.name(),
-                                                new SingletonTokenStream(value, (Payload) payloadAttribute.getPayload().clone())));
-                                        doc.add(new Field(
-                                                FieldNames.AGGREGATED_NODE_UUID,
-                                                false,
-                                                parent.getNodeId().toString(),
-                                                Field.Store.NO,
-                                                Field.Index.NOT_ANALYZED_NO_NORMS,
-                                                Field.TermVector.NO));
+                                        String value = new String(termAttribute.termBuffer(), 0, termAttribute.termLength());
+                                        if (value.startsWith(namePrefix)) {
+                                            // extract value
+                                            value = value.substring(namePrefix.length());
+                                            // create new named value
+                                            Path p = getRelativePath(state, propState);
+                                            String path = getNamespaceMappings().translatePath(p);
+                                            value = FieldNames.createNamedValue(path, value);
+                                            termAttribute.setTermBuffer(value);
+                                            doc.add(new Field(field.name(),
+                                                    new SingletonTokenStream(value, (Payload) payloadAttribute.getPayload().clone())));
+                                            doc.add(new Field(
+                                                    FieldNames.AGGREGATED_NODE_UUID,
+                                                    false,
+                                                    parent.getNodeId().toString(),
+                                                    Field.Store.NO,
+                                                    Field.Index.NOT_ANALYZED_NO_NORMS,
+                                                    Field.TermVector.NO));
+                                        }
                                     }
+                                } finally {
+                                    Util.disposeDocument(aDoc);
                                 }
-                            } finally {
-                                Util.disposeDocument(aDoc);
                             }
                         }
                     }
