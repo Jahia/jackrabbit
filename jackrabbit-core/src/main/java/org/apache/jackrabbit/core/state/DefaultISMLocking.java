@@ -113,7 +113,7 @@ public class DefaultISMLocking implements ISMLocking {
             throws InterruptedException {
         Object currentId = getCurrentThreadId();
         while (writerId != null
-                ? ((writerCount > 0 || writerPreference && writersWaiting > 0) && !isSameThreadId(writerId, currentId))
+                ? (writerCount > 0 && !isSameThreadId(writerId, currentId))
                 : (writerPreference && writersWaiting > 0)) {
             wait();
         }
