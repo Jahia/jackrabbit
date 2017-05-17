@@ -119,7 +119,7 @@ public abstract class QueryResultImpl implements JackrabbitQueryResult {
      * The maximum size of this result if limit >= 0
      */
     private final long limit;
-    
+
     private final boolean sizeEstimate;
 
     /**
@@ -260,7 +260,7 @@ public abstract class QueryResultImpl implements JackrabbitQueryResult {
         if (log.isDebugEnabled()) {
             log.debug("getResults({}) limit={}", size, limit);
         }
-        
+
         if (!sizeEstimate) {
             // quick check
             // if numResults is set, all relevant results have been fetched
@@ -297,7 +297,7 @@ public abstract class QueryResultImpl implements JackrabbitQueryResult {
             if (resultNodes.isEmpty() && offset > 0) {
                 // collect result offset into dummy list
                 if (sizeEstimate) {
-                    collectScoreNodes(result, new ArrayList<ScoreNode[]>(), offset);                    
+                    collectScoreNodes(result, new ArrayList<ScoreNode[]>(), offset);
                 } else {
                     collectScoreNodes(result, offsetNodes, offset);
                 }
@@ -314,9 +314,9 @@ public abstract class QueryResultImpl implements JackrabbitQueryResult {
 
             if (sizeEstimate) {
                 // update numResults
-                numResults = result.getSize();                
+                numResults = result.getSize();
             } else {
-                // update numResults if all results have been fetched 
+                // update numResults if all results have been fetched
                 // if resultNodes.getSize() is strictly smaller than maxResultSize, it means that all results have been fetched
                 int resultSize = resultNodes.size();
                 if (resultSize < maxResultSize) {
@@ -370,7 +370,7 @@ public abstract class QueryResultImpl implements JackrabbitQueryResult {
                 break;
             }
             // check access
-            if (isAccessGranted(sn)) {
+            if (isAccessGranted(sn, hits)) {
                 collector.add(sn);
             } else {
                 invalid++;
@@ -382,12 +382,13 @@ public abstract class QueryResultImpl implements JackrabbitQueryResult {
      * Checks if access is granted to all <code>nodes</code>.
      *
      * @param nodes the nodes to check.
+     * @param hits the raw hits.
      * @return <code>true</code> if read access is granted to all
      *         <code>nodes</code>.
      * @throws RepositoryException if an error occurs while checking access
      *                             rights.
      */
-    protected boolean isAccessGranted(ScoreNode[] nodes)
+    protected boolean isAccessGranted(ScoreNode[] nodes, MultiColumnQueryHits hits)
             throws RepositoryException {
         for (ScoreNode node : nodes) {
             try {
@@ -490,7 +491,7 @@ public abstract class QueryResultImpl implements JackrabbitQueryResult {
                     return limit;
                 } else {
                     return size;
-                }                
+                }
             } else {
                 return numResults;
             }
