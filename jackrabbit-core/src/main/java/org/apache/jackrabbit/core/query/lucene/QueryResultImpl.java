@@ -330,7 +330,7 @@ public abstract class QueryResultImpl implements QueryResult {
                 break;
             }
             // check access
-            if (isAccessGranted(sn)) {
+            if (isAccessGranted(sn, hits)) {
                 collector.add(sn);
             } else {
                 invalid++;
@@ -342,12 +342,13 @@ public abstract class QueryResultImpl implements QueryResult {
      * Checks if access is granted to all <code>nodes</code>.
      *
      * @param nodes the nodes to check.
+     * @param hits the raw hits.
      * @return <code>true</code> if read access is granted to all
      *         <code>nodes</code>.
      * @throws RepositoryException if an error occurs while checking access
      *                             rights.
      */
-    private boolean isAccessGranted(ScoreNode[] nodes)
+    protected boolean isAccessGranted(ScoreNode[] nodes, MultiColumnQueryHits hits)
             throws RepositoryException {
         for (ScoreNode node : nodes) {
             try {
