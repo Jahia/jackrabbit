@@ -132,6 +132,11 @@ public class QueryImpl extends AbstractQueryImpl {
             orderFuncs[i] = orderSpecs[i].getFunction();
         }
 
+        return createQueryResult(offset, limit, query, orderProperties, ascSpecs, orderFuncs);
+    }
+
+    protected QueryResult createQueryResult(long offset, long limit, Query query, Path[] orderProperties,
+            boolean[] ascSpecs, String[] orderFuncs) throws RepositoryException {
         return new SingleColumnQueryResult(
                 index, sessionContext, this, query,
                 new SpellSuggestion(index.getSpellChecker(), root),
