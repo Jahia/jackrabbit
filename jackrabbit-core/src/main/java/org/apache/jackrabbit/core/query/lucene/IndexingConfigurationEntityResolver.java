@@ -48,6 +48,9 @@ public class IndexingConfigurationEntityResolver implements EntityResolver {
         systemIds.put(
                 "http://jackrabbit.apache.org/dtd/indexing-configuration-1.2.dtd",
                 "indexing-configuration-1.2.dtd");
+        systemIds.put(
+                "https://devtools.jahia.com/nexus/content/sites/jahia-site/dtd/indexing-configuration-1.2.1-jahia.dtd",
+                "indexing-configuration-1.2.1-jahia.dtd");
         SYSTEM_IDS = Collections.unmodifiableMap(systemIds);
     }
 
