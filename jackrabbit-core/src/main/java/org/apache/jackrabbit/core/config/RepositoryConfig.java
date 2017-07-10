@@ -19,7 +19,7 @@ package org.apache.jackrabbit.core.config;
 import static org.apache.jackrabbit.core.config.RepositoryConfigurationParser.REPOSITORY_CONF_VARIABLE;
 import static org.apache.jackrabbit.core.config.RepositoryConfigurationParser.REPOSITORY_HOME_VARIABLE;
 
-import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.IOUtils; 
 import org.apache.jackrabbit.core.RepositoryFactoryImpl;
 import org.apache.jackrabbit.core.RepositoryImpl;
 import org.apache.jackrabbit.core.data.DataStore;
@@ -113,7 +113,7 @@ public class RepositoryConfig
     /**
      * Returns the configuration of a repository with the home directory,
      * configuration file, and other options as specified in the given
-     * configuration parser variables.
+     * configuration parser variables. 
      * <p>
      * The directory is created if it does not exist. If the repository
      * configuration file does not exist, then it is created using the
@@ -220,7 +220,7 @@ public class RepositoryConfig
      * file inside the repository directory.
      * <p>
      * An exception is thrown if the directory does not exist or if
-     * the repository configuration file can not be read.
+     * the repository configuration file can not be read. 
      *
      * @since Apache Jackrabbit 1.6
      * @param dir repository home directory
@@ -237,7 +237,7 @@ public class RepositoryConfig
      * file and repository home directory.
      * <p>
      * An exception is thrown if the directory does not exist or if
-     * the repository configuration file can not be read.
+     * the repository configuration file can not be read. 
      *
      * @param xml The configuration file.
      * @param dir repository home directory
@@ -450,7 +450,7 @@ public class RepositoryConfig
      * The data store factory.
      */
     private final DataStoreFactory dsf;
-
+    
     /**
      * The repository lock mechanism factory.
      */
@@ -524,7 +524,7 @@ public class RepositoryConfig
      *                               been initialized
      */
     public void init() throws ConfigurationException, IllegalStateException {
-
+        
         // This needs to be done here and not by clients (e.g., RepositoryImpl ctor) because
         // fsf is used below and this might be a DatabaseAware FileSystem
         try {
@@ -618,8 +618,8 @@ public class RepositoryConfig
      */
     private WorkspaceConfig loadWorkspaceConfig(File directory)
             throws ConfigurationException {
-        File file = new File(directory, WORKSPACE_XML);
         try {
+            File file = new File(directory, WORKSPACE_XML);
             InputSource xml = new InputSource(new FileInputStream(file));
             xml.setSystemId(file.toURI().toString());
 
@@ -631,7 +631,6 @@ public class RepositoryConfig
                 parser.createSubParser(variables);
             return localParser.parseWorkspaceConfig(xml);
         } catch (FileNotFoundException e) {
-            log.warn("Workspace configuration file {} is unaccessible", file.getAbsolutePath());
             return null;
         }
     }
@@ -660,7 +659,6 @@ public class RepositoryConfig
             String configPath = configDir + FileSystem.SEPARATOR + WORKSPACE_XML;
             if (!fs.exists(configPath)) {
                 // no configuration file in this directory
-                log.warn("Workspace configuration file {} does not exist", configPath);
                 return null;
             }
 
@@ -1078,7 +1076,7 @@ public class RepositoryConfig
      * Creates and returns the configured repository lock mechanism. This method
      * returns the default repository lock mechanism if no other mechanism is
      * configured.
-     *
+     * 
      * @return the repository lock mechanism (never <code>null</code>)
      * @throws RepositoryException if the repository lock mechanism can not be created
      */
