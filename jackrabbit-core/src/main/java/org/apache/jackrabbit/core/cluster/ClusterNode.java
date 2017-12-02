@@ -122,7 +122,7 @@ public class ClusterNode implements Runnable,
     /**
      * Latch used to communicate a stop request to the synchronization thread.
      */
-    private volatile Latch stopLatch;
+    private final Latch stopLatch = new Latch();
 
     /**
      * Sync counter, used to avoid repeated sync() calls from piling up.
@@ -263,15 +263,9 @@ public class ClusterNode implements Runnable,
      * @throws ClusterException if an error occurs
      */
     public synchronized void start() throws ClusterException {
-        if (status != STARTED) {
-
-            if (status == STOPPED) {
-                init();
-            }
-
+        if (status == NONE) {
             syncOnStartup();
 
-            stopLatch = new Latch();
             if (!disableAutoSync) {
                 Thread t = new Thread(this, "ClusterNode-" + clusterNodeId);
                 t.setDaemon(true);
