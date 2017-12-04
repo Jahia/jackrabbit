@@ -312,7 +312,7 @@ public class ClusterNode implements Runnable,
      *        or does a normal sync.
      * @throws ClusterException if an error occurs
      */
-    protected void internalSync(boolean startup) throws ClusterException {
+    private void internalSync(boolean startup) throws ClusterException {
         int count = syncCount.get();
 
         try {
