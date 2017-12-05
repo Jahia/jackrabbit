@@ -117,7 +117,7 @@ public class ClusterNode implements Runnable,
     /**
      * Mutex used when syncing.
      */
-    private final Mutex syncLock = new Mutex();
+    protected final Mutex syncLock = new Mutex();
 
     /**
      * Latch used to communicate a stop request to the synchronization thread.
@@ -131,7 +131,7 @@ public class ClusterNode implements Runnable,
      * @since Apache Jackrabbit 1.6
      * @see <a href="https://issues.apache.org/jira/browse/JCR-1753">JCR-1753</a>
      */
-    private AtomicInteger syncCount = new AtomicInteger();
+    protected AtomicInteger syncCount = new AtomicInteger();
 
     /**
      * Status flag, one of {@link #NONE}, {@link #STARTED} or {@link #STOPPED}.
@@ -318,7 +318,7 @@ public class ClusterNode implements Runnable,
      *        or does a normal sync.
      * @throws ClusterException if an error occurs
      */
-    private void internalSync(boolean startup) throws ClusterException {
+    protected void internalSync(boolean startup) throws ClusterException {
         int count = syncCount.get();
 
         try {
