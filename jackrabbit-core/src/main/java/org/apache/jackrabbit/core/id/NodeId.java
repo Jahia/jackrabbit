@@ -39,10 +39,14 @@ public class NodeId implements ItemId, Comparable<NodeId> {
      */
     public static final int UUID_BYTE_LENGTH = 16;
 
-    /** the precalculated hash code */
+    /**
+     * The pre-calculated hashCode value
+     */
     private final int hashCode;
 
-    /** the precalculated toString */
+    /**
+     * The pre-calculated toString value
+     */
     private final String toString;
 
     /**
@@ -82,10 +86,6 @@ public class NodeId implements ItemId, Comparable<NodeId> {
         this.lsb = lsb;
         this.hashCode = calculateHashCode(msb, lsb);
         this.toString = calculateToString(msb, lsb);
-    }
-
-    private static int calculateHashCode(long msb, long lsb) {
-        return (int) ((msb >>> 32) ^ msb ^ (lsb >>> 32) ^ lsb);
     }
 
     /**
@@ -312,6 +312,10 @@ public class NodeId implements ItemId, Comparable<NodeId> {
      */
     public int hashCode() {
         return hashCode;
+    }
+
+    private static int calculateHashCode(long msb, long lsb) {
+        return (int) ((msb >>> 32) ^ msb ^ (lsb >>> 32) ^ lsb);
     }
 
 }
