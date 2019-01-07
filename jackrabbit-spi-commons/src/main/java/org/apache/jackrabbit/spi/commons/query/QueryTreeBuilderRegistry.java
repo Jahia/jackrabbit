@@ -19,13 +19,13 @@ package org.apache.jackrabbit.spi.commons.query;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.imageio.spi.ServiceRegistry;
 import javax.jcr.query.InvalidQueryException;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.Iterator;
 import java.util.Set;
 
@@ -54,8 +54,8 @@ public class QueryTreeBuilderRegistry {
     static {
         Set<String> languages = new HashSet<String>();
         try {
-            Iterator<QueryTreeBuilder> it = ServiceRegistry.lookupProviders(QueryTreeBuilder.class,
-                    QueryTreeBuilderRegistry.class.getClassLoader());
+            Iterator<QueryTreeBuilder> it = ServiceLoader.load(QueryTreeBuilder.class,
+                    QueryTreeBuilderRegistry.class.getClassLoader()).iterator();
             while (it.hasNext()) {
                 QueryTreeBuilder qtb = it.next();
                 BUILDERS.add(qtb);

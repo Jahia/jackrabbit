@@ -17,13 +17,13 @@
 package org.apache.jackrabbit.commons.query;
 
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Arrays;
 
-import javax.imageio.spi.ServiceRegistry;
 import javax.jcr.query.InvalidQueryException;
 
 /**
@@ -45,8 +45,8 @@ public class QueryObjectModelBuilderRegistry {
 
     static {
         Set<String> languages = new HashSet<String>();
-        Iterator<QueryObjectModelBuilder> it = ServiceRegistry.lookupProviders(QueryObjectModelBuilder.class,
-                QueryObjectModelBuilder.class.getClassLoader());
+        Iterator<QueryObjectModelBuilder> it = ServiceLoader.load(QueryObjectModelBuilder.class,
+                QueryObjectModelBuilder.class.getClassLoader()).iterator();
         while (it.hasNext()) {
             QueryObjectModelBuilder builder = it.next();
             BUILDERS.add(builder);
