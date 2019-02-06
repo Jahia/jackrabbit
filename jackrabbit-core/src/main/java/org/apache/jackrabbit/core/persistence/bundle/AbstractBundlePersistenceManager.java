@@ -881,4 +881,13 @@ public abstract class AbstractBundlePersistenceManager implements
     public void disposeCache(Cache cache) {
         // NOOP
     }
+
+    public Map<NodeId, NodeInfo> getAllNodeInfos(NodeId after, int maxCount)
+            throws ItemStateException, RepositoryException {
+        Map<NodeId, NodeInfo> infos = new LinkedHashMap<NodeId, NodeInfo>();
+        for (NodeId nodeId : getAllNodeIds(after, maxCount)) {
+            infos.put(nodeId, new NodeInfo(loadBundle(nodeId)));
+        }
+        return infos;
+    }
 }
