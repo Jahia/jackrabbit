@@ -931,7 +931,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
     protected void checkForConflictingContent(QNodeTypeDefinition ntd, final NodeTypeDefDiff diff)
             throws RepositoryException {
 
-        if (!diff.isTrivial()) {
+        if (!diff.isTrivial() && !diff.isMajor()) {
             /**
              * collect names of node types that have dependencies on the given
              * node type
