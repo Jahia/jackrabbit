@@ -27,6 +27,8 @@ import javax.jcr.RepositoryException;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.jackrabbit.core.DefaultNodeTypeInstanceHandlerFactory;
+import org.apache.jackrabbit.core.NodeTypeInstanceHandlerFactory;
 import org.apache.jackrabbit.core.cluster.ClusterNode;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreFactory;
@@ -152,6 +154,9 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
 
     /** Name of the ism locking configuration element. */
     public static final String ISM_LOCKING_ELEMENT = "ISMLocking";
+
+    /** Name of the nodetype instance handler configuration element. */
+    public static final String NODETYPE_INSTANCE_HANDLER_ELEMENT = "NodeTypeInstanceHandler";
 
     /** Name of the application name configuration attribute. */
     public static final String APP_NAME_ATTRIBUTE = "appName";
@@ -606,6 +611,9 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
         ISMLockingFactory ismLockingFactory =
             tmpParser.getISMLockingFactory(root);
 
+        NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory =
+            tmpParser.getNodetypeInstanceHandlerFactory(root);
+
         // workspace specific security configuration
         WorkspaceSecurityConfig workspaceSecurityConfig = tmpParser.parseWorkspaceSecurityConfig(root);
 
@@ -624,7 +632,7 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
 
         return new WorkspaceConfig(
                 home, name, clustered, fsf, pmc, qhf,
-                ismLockingFactory, workspaceSecurityConfig, importConfig, defaultLockTimeout);
+                ismLockingFactory, nodeTypeInstanceHandlerFactory, workspaceSecurityConfig, importConfig, defaultLockTimeout);
     }
 
     /**
@@ -795,6 +803,28 @@ public class RepositoryConfigurationParser extends ConfigurationParser {
                 }
             }
         };
+    }
+
+
+    /**
+     * Read the optional NodeTypeInstanceHandler Element of Workspace's configuration.
+     * It uses the following format:
+     * <pre>
+     *   &lt;NodeTypeInstanceHandler class="..."&gt;
+     *   &lt;/NodeTypeInstanceHandler&gt;
+     * </pre>
+     *
+     * @param parent Workspace-Root-Element
+     * @return a new <code>NodeTypeInstanceHandler</code>
+     * @throws ConfigurationException
+     */
+    protected NodeTypeInstanceHandlerFactory getNodetypeInstanceHandlerFactory(final Element parent) throws ConfigurationException {
+        final Element element = getElement(parent, NODETYPE_INSTANCE_HANDLER_ELEMENT, false);
+        if (element != null) {
+            return parseBeanConfig(element).newInstance(NodeTypeInstanceHandlerFactory.class);
+        } else {
+            return new DefaultNodeTypeInstanceHandlerFactory();
+        }
     }
 
     /**
