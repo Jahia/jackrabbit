@@ -17,8 +17,10 @@
 package org.apache.jackrabbit.core.persistence;
 
 import java.util.List;
+import java.util.Map;
 
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.persistence.util.NodeInfo;
 import org.apache.jackrabbit.core.state.ItemStateException;
 
 import javax.jcr.RepositoryException;
@@ -44,6 +46,22 @@ public interface IterablePersistenceManager extends PersistenceManager {
      * @throws RepositoryException if a repository exception occurs
      */
     List<NodeId> getAllNodeIds(NodeId after, int maxCount)
+            throws ItemStateException, RepositoryException;
+
+    /**
+     * Get all {@link NodeInfo}s.
+     * A typical application will call this method multiple time, where 'after'
+     * is the last row read previously. The maxCount parameter defines the maximum number of
+     * node ids returned, 0 meaning no limit. The order of the node ids is specific for the
+     * given persistence manager. Items that are added concurrently may not be included.
+     *
+     * @param after the lower limit, or null for no limit.
+     * @param maxCount the maximum number of node infos to return, or 0 for no limit.
+     * @return a list of all node infos.
+     * @throws ItemStateException if an error while loading occurs.
+     * @throws RepositoryException if a repository exception occurs.
+     */
+    Map<NodeId, NodeInfo> getAllNodeInfos(NodeId after, int maxCount)
             throws ItemStateException, RepositoryException;
 
 }
