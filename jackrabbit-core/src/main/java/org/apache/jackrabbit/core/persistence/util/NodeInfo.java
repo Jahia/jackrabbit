@@ -21,8 +21,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import javax.jcr.PropertyType;
 
@@ -34,13 +32,6 @@ import org.apache.jackrabbit.spi.Name;
  * Holds structural information about a node. Used by the consistency checker and garbage collector.
  */
 public final class NodeInfo {
-
-    /**
-     * The same node id in a NodeInfo graph typically occurs three times: as a the id of the current
-     * NodeInfo, as the parent to another NodeInfo, and as a child of another NodeInfo. In order to
-     * minimize the memory footprint use an NodeId object pool.
-     */
-    private static final ConcurrentMap<NodeId,NodeId> nodeIdPool = new ConcurrentHashMap<NodeId, NodeId>(1000);
 
     /**
      * The node id
@@ -78,14 +69,14 @@ public final class NodeInfo {
      * @param bundle the node bundle
      */
     public NodeInfo(final NodePropBundle bundle) {
-        nodeId = getNodeId(bundle.getId());
-        parentId = getNodeId(bundle.getParentId());
+        nodeId = bundle.getId();
+        parentId = bundle.getParentId();
 
         List<NodePropBundle.ChildNodeEntry> childNodeEntries = bundle.getChildNodeEntries();
         if (!childNodeEntries.isEmpty()) {
             children = new ArrayList<NodeId>(childNodeEntries.size());
             for (NodePropBundle.ChildNodeEntry entry : bundle.getChildNodeEntries()) {
-                children.add(getNodeId(entry.getId()));
+                children.add(entry.getId());
             }
         } else {
             children = Collections.emptyList();
@@ -98,7 +89,7 @@ public final class NodeInfo {
                 }
                 List<NodeId> values = new ArrayList<NodeId>(entry.getValues().length);
                 for (InternalValue value : entry.getValues()) {
-                    values.add(getNodeId(value.getNodeId()));
+                    values.add(value.getNodeId());
                 }
                 references.put(entry.getName(), values);
             }
@@ -159,31 +150,5 @@ public final class NodeInfo {
      */
     public boolean hasBlobsInDataStore() {
         return hasBlobsInDataStore;
-    }
-
-    /**
-     * Simple pool implementation to minimize memory overhead from node id objects
-     * @param nodeId  node id to cache
-     * @return  the cached node id
-     */
-    private static NodeId getNodeId(NodeId nodeId) {
-        if (nodeId == null) {
-            return null;
-        }
-        NodeId cached = nodeIdPool.get(nodeId);
-        if (cached == null) {
-            cached = nodeIdPool.putIfAbsent(nodeId, nodeId);
-            if (cached == null) {
-                cached = nodeId;
-            }
-        }
-        return cached;
-    }
-
-    /**
-     * Clear the NodeId pool.
-     */
-    public static void clearPool() {
-        nodeIdPool.clear();
     }
 }
