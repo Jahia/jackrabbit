@@ -18,6 +18,7 @@ package org.apache.jackrabbit.core.config;
 
 import javax.jcr.RepositoryException;
 
+import org.apache.jackrabbit.core.NodeTypeInstanceHandlerFactory;
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.fs.FileSystemFactory;
 import org.apache.jackrabbit.core.query.QueryHandler;
@@ -74,6 +75,11 @@ public class WorkspaceConfig
     private ISMLockingFactory ismLockingFactory;
 
     /**
+     * The node type instance handler factory.
+     */
+    private NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory;
+
+    /**
      * Workspace security configuration. Can be <code>null</code>.
      */
     private final WorkspaceSecurityConfig workspaceSecurityConfig;
@@ -102,14 +108,16 @@ public class WorkspaceConfig
      * @param pmc persistence manager configuration
      * @param qhf query handler factory, or <code>null</code> if not configured
      * @param ismLockingFactory the item state manager locking factory
+     * @param nodeTypeInstanceHandlerFactory
      * @param workspaceSecurityConfig the workspace specific security configuration.
      */
     public WorkspaceConfig(String home, String name, boolean clustered,
                            FileSystemFactory fsf, PersistenceManagerConfig pmc,
                            QueryHandlerFactory qhf,
                            ISMLockingFactory ismLockingFactory,
+                           NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory,
                            WorkspaceSecurityConfig workspaceSecurityConfig) {
-        this(home, name, clustered, fsf, pmc, qhf, ismLockingFactory, workspaceSecurityConfig, null, Long.MAX_VALUE);
+        this(home, name, clustered, fsf, pmc, qhf, ismLockingFactory, nodeTypeInstanceHandlerFactory, workspaceSecurityConfig, null, Long.MAX_VALUE);
     }
 
     /**
@@ -122,15 +130,17 @@ public class WorkspaceConfig
      * @param pmc persistence manager configuration
      * @param qhf query handler factory, or <code>null</code> if not configured
      * @param ismLockingFactory the item state manager locking factory
+     * @param nodeTypeInstanceHandlerFactory
      * @param workspaceSecurityConfig the workspace specific security configuration.
      */
     public WorkspaceConfig(String home, String name, boolean clustered,
                            FileSystemFactory fsf, PersistenceManagerConfig pmc,
                            QueryHandlerFactory qhf,
                            ISMLockingFactory ismLockingFactory,
+                           NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory,
                            WorkspaceSecurityConfig workspaceSecurityConfig,
                            ImportConfig importConfig) {
-        this(home, name, clustered, fsf, pmc, qhf, ismLockingFactory, workspaceSecurityConfig, importConfig, Long.MAX_VALUE);
+        this(home, name, clustered, fsf, pmc, qhf, ismLockingFactory, nodeTypeInstanceHandlerFactory, workspaceSecurityConfig, importConfig, Long.MAX_VALUE);
     }
 
     /**
@@ -143,12 +153,13 @@ public class WorkspaceConfig
      * @param pmc persistence manager configuration
      * @param qhf query handler factory, or <code>null</code> if not configured
      * @param ismLockingFactory the item state manager locking factory
+     * @param nodeTypeInstanceHandlerFactory
      * @param workspaceSecurityConfig the workspace specific security configuration.
      * @param defaultLockTimeout default timeout for locks (in seconds)
      */
     public WorkspaceConfig(String home, String name, boolean clustered, FileSystemFactory fsf,
             PersistenceManagerConfig pmc, QueryHandlerFactory qhf, ISMLockingFactory ismLockingFactory,
-            WorkspaceSecurityConfig workspaceSecurityConfig, ImportConfig importConfig, long defaultLockTimeout) {
+            NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory, WorkspaceSecurityConfig workspaceSecurityConfig, ImportConfig importConfig, long defaultLockTimeout) {
         this.home = home;
         this.name = name;
         this.clustered = clustered;
@@ -156,6 +167,7 @@ public class WorkspaceConfig
         this.pmc = pmc;
         this.qhf = qhf;
         this.ismLockingFactory = ismLockingFactory;
+        this.nodeTypeInstanceHandlerFactory = nodeTypeInstanceHandlerFactory;
         this.workspaceSecurityConfig = workspaceSecurityConfig;
         this.importConfig = importConfig;
         this.defaultLockTimeout = defaultLockTimeout;
@@ -208,6 +220,16 @@ public class WorkspaceConfig
      */
     public ISMLocking getISMLocking() throws RepositoryException {
         return ismLockingFactory.getISMLocking();
+    }
+
+    /**
+     * Creates and returns the configured workspace NodeType instance handler factory
+     *
+     * @return the configured {@link NodeTypeInstanceHandlerFactory}
+     * @throws RepositoryException if the class can not be created
+     */
+    public NodeTypeInstanceHandlerFactory getNodeTypeInstanceHandlerFactory() throws RepositoryException {
+        return nodeTypeInstanceHandlerFactory;
     }
 
     /**
