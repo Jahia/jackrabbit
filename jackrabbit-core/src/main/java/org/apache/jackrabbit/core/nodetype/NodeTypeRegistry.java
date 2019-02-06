@@ -429,7 +429,7 @@ public class NodeTypeRegistry implements NodeTypeEventListener {
                 return getEffectiveNodeType(name);
             }
 
-            if (!diff.isTrivial()) {
+            if (!diff.isTrivial() && !diff.isMajor()) {
 
                 // TODO Implement checkForConflictingContent()
                 // make sure existing content would not conflict
