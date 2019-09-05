@@ -294,7 +294,6 @@ public class GarbageCollector implements DataStoreGarbageCollector {
                 batch = pm.getAllNodeInfos(lastId, NODESATONCE);
             }
         }
-        NodeInfo.clearPool();
     }
 
     private void scanPersistenceManagersByNodeIds() throws RepositoryException, ItemStateException {
