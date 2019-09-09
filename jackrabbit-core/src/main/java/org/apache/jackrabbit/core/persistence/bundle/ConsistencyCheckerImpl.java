@@ -256,8 +256,6 @@ public class ConsistencyCheckerImpl {
 
             } catch (ItemStateException e) {
                 throw new RepositoryException("Error loading nodes", e);
-            } finally {
-                NodeInfo.clearPool();
             }
         } else {
             // check only given uuids, handle recursive flag
