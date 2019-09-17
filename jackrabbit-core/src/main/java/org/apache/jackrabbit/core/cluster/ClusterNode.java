@@ -368,7 +368,10 @@ public class ClusterNode implements Runnable,
         if (status != STOPPED) {
             status = STOPPED;
 
-            stopLatch.release();
+            // added following check as stop() could be called without a previous start()
+            if (stopLatch != null) {
+                stopLatch.release();
+            }
 
             // Give synchronization thread some time to finish properly before
             // closing down the journal (see JCR-1553)
