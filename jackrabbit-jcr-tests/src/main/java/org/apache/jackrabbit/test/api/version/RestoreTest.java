@@ -1004,50 +1004,51 @@ public class RestoreTest extends AbstractVersionTest {
 //        assertEquals("Node.restore('foo') must not restore child node and keep version 1.0.", v1Child.getName(), child1.getBaseVersion().getName());
 //    }
 
-    /**
-     * Test the restore of the OPV=Version child nodes.
-     * @throws RepositoryException
-     */
-    public void testRestoreNameJcr2() throws RepositoryException,
-            NotExecutableException {
-        // V1.0 of versionableNode has no child
-        Node child1 = versionableNode.addNode(nodeName4);
-        ensureMixinType(child1, mixVersionable);
-        versionableNode.getSession().save();
-        // create v1.0 of child
-        Version v1Child = versionManager.checkin(child1.getPath());
-
-        // V1 of versionable node has child1
-        String v1 = versionManager.checkin(versionableNode.getPath()).getName();
-
-        // create V1.1 of child
-        versionManager.checkout(child1.getPath());
-        versionManager.checkin(child1.getPath());
-
-        // V2 of versionable node has child1
-        versionManager.checkout(versionableNode.getPath());
-        String v2 = versionManager.checkin(versionableNode.getPath()).getName();
-
-        // restore 1.0 of versionable node --> no child
-        versionManager.restore(version, true);
-        assertFalse("restore must remove child node.", versionableNode.hasNode(nodeName4));
-
-        // restore V1 via name. since child was checkin first, 1.0 should be restored
-        versionManager.restore(versionableNode.getPath(), v1, true);
-        assertTrue("restore must restore child node.", versionableNode.hasNode(nodeName4));
-        child1 = versionableNode.getNode(nodeName4);
-        assertEquals("restore must restore child node version 1.0.", v1Child.getName(), versionManager.getBaseVersion(child1.getPath()).getName());
-
-        // JSR283 is more clear about restoring versionable OPV=VERSION nodes
-        // and states that an existing one is not restored when the parent
-        // is restored (see 15.7.5 Chained Versions on Restore)
-
-        // New JSR283 version:
-        // restore V2 via name. child should still be be 1.0
-        versionManager.restore(versionableNode.getPath(), v2, true);
-        child1 = versionableNode.getNode(nodeName4);
-        assertEquals("Node.restore('foo') must not restore child node and keep version 1.0.", v1Child.getName(), versionManager.getBaseVersion(child1.getPath()).getName());
-    }
+ // Jahia patch - Do not restore childVersionHistory nodes
+//    /**
+//     * Test the restore of the OPV=Version child nodes.
+//     * @throws RepositoryException
+//     */
+//    public void testRestoreNameJcr2() throws RepositoryException,
+//            NotExecutableException {
+//        // V1.0 of versionableNode has no child
+//        Node child1 = versionableNode.addNode(nodeName4);
+//        ensureMixinType(child1, mixVersionable);
+//        versionableNode.getSession().save();
+//        // create v1.0 of child
+//        Version v1Child = versionManager.checkin(child1.getPath());
+//
+//        // V1 of versionable node has child1
+//        String v1 = versionManager.checkin(versionableNode.getPath()).getName();
+//
+//        // create V1.1 of child
+//        versionManager.checkout(child1.getPath());
+//        versionManager.checkin(child1.getPath());
+//
+//        // V2 of versionable node has child1
+//        versionManager.checkout(versionableNode.getPath());
+//        String v2 = versionManager.checkin(versionableNode.getPath()).getName();
+//
+//        // restore 1.0 of versionable node --> no child
+//        versionManager.restore(version, true);
+//        assertFalse("restore must remove child node.", versionableNode.hasNode(nodeName4));
+//
+//        // restore V1 via name. since child was checkin first, 1.0 should be restored
+//        versionManager.restore(versionableNode.getPath(), v1, true);
+//        assertTrue("restore must restore child node.", versionableNode.hasNode(nodeName4));
+//        child1 = versionableNode.getNode(nodeName4);
+//        assertEquals("restore must restore child node version 1.0.", v1Child.getName(), versionManager.getBaseVersion(child1.getPath()).getName());
+//
+//        // JSR283 is more clear about restoring versionable OPV=VERSION nodes
+//        // and states that an existing one is not restored when the parent
+//        // is restored (see 15.7.5 Chained Versions on Restore)
+//
+//        // New JSR283 version:
+//        // restore V2 via name. child should still be be 1.0
+//        versionManager.restore(versionableNode.getPath(), v2, true);
+//        child1 = versionableNode.getNode(nodeName4);
+//        assertEquals("Node.restore('foo') must not restore child node and keep version 1.0.", v1Child.getName(), versionManager.getBaseVersion(child1.getPath()).getName());
+//    }
 
 // Jahia patch - Do not restore childVersionHistory nodes
 //    /**
