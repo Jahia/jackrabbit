@@ -59,6 +59,9 @@
                 org.apache.jackrabbit.test.api.ShareableNodeTest
                 org.apache.jackrabbit.test.api.version.simple
                 org.apache.jackrabbit.test.api.LifecycleTest
+                <!-- Bypassed by Jahia due to unsupported functionality -->
+                org.apache.jackrabbit.test.api.query.qom.BindVariableValueTest
+                org.apache.jackrabbit.test.api.query.CreateQueryTest#testUnknownQueryLanguage
               </value>
             </property>
           </systemProperties>

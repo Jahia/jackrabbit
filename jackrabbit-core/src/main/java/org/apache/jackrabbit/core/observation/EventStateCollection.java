@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.core.observation;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.jackrabbit.core.HierarchyManager;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
@@ -379,7 +380,7 @@ public final class EventStateCollection {
                 Map<String, InternalValue> info = new HashMap<String, InternalValue>(2);
                 info.put("primaryType", InternalValue.create(n.getNodeTypeName().toString()));
                 Set<Name> mixinTypeNames = n.getMixinTypeNames();
-                if (mixinTypeNames != null) {
+                if (CollectionUtils.isNotEmpty(mixinTypeNames)) {
                     String v = null;
                     if (mixinTypeNames.size() == 1) {
                         v = mixinTypeNames.iterator().next().toString();
