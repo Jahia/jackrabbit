@@ -140,15 +140,15 @@
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <target>1.7</target>
-          <source>1.7</source>
+          <target>1.5</target>
+          <source>1.5</source>
         </configuration>
       </plugin>
       <!-- Generate aggregate Javadocs -->
       <plugin>
         <artifactId>maven-javadoc-plugin</artifactId>
         <configuration>
-          <source>1.7</source>
+          <source>1.5</source>
           <aggregate>true</aggregate>
           <links>
             <link>http://download.oracle.com/javase/1.5.0/docs/api/</link>
