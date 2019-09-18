@@ -110,6 +110,7 @@ org.apache.jackrabbit.test.api.lock.OpenScopedLockTest#testLockExpiration
 org.apache.jackrabbit.test.api.lock.SessionScopedLockTest#testLockExpiration
 org.apache.jackrabbit.core.data.ConcurrentGcTest#testDatabases
 org.apache.jackrabbit.core.data.GarbageCollectorTest#testCloseSessionWhileRunningGc
+org.apache.jackrabbit.core.query.IndexingRuleTest#testBoost
               </value>
             </property>
             <property>
