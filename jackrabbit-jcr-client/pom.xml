@@ -26,7 +26,7 @@
     <parent>
         <groupId>org.apache.jackrabbit</groupId>
         <artifactId>jackrabbit-parent</artifactId>
-        <version>2.18.4-jahia1-SNAPSHOT</version>
+        <version>2.18.4-jahia1</version>
         <relativePath>../jackrabbit-parent/pom.xml</relativePath>
     </parent>
     <artifactId>jackrabbit-jcr-client</artifactId>
@@ -68,7 +68,7 @@
                             <includes>
                                 <include>**/*Test.java</include>
                             </includes>
-                            <workingDirectory>target</workingDirectory> 
+                            <workingDirectory>target</workingDirectory>
                             <forkMode>once</forkMode>
                             <argLine>${test.opts}</argLine>
                         </configuration>
@@ -87,7 +87,7 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
-        
+
         <dependency>
             <groupId>org.apache.jackrabbit</groupId>
             <artifactId>jackrabbit-jcr2spi</artifactId>
