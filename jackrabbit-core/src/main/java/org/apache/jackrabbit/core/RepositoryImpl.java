@@ -22,12 +22,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.lang.ref.ReferenceQueue;
 import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -132,11 +130,6 @@ public class RepositoryImpl extends AbstractRepository
 
     private static Logger log = LoggerFactory.getLogger(RepositoryImpl.class);
     
-    /** reference queue to check for sessions that are garbage collected */
-    private ReferenceQueue<Session> ghostSessionQueue = new ReferenceQueue<Session>();
-    /** maps session name to ghost reference (this is needed only to avoid that ghost references are garbage collected themselves) */
-    private Map<String, SessionGhostReference> ghostMap = Collections.synchronizedMap(new HashMap<String, SessionGhostReference>());
-
     /**
      * hardcoded id of the repository root node
      */
@@ -373,7 +366,6 @@ public class RepositoryImpl extends AbstractRepository
                 wspJanitor.setDaemon(true);
                 wspJanitor.start();
             }
-            context.getExecutor().scheduleAtFixedRate(new RepositorySessionCleaner(this), PHANTOM_PERIOD, PHANTOM_PERIOD, TimeUnit.SECONDS);
 
             succeeded = true;
             log.info("Repository started (" + (System.currentTimeMillis() - t0) + "ms)");
@@ -1037,7 +1029,6 @@ public class RepositoryImpl extends AbstractRepository
         synchronized (activeSessions) {
             session.addListener(this);
             activeSessions.put(session, session);
-            ghostMap.put(session.toString(), new SessionGhostReference(session, ghostSessionQueue));
         }
     }
 
@@ -1217,12 +1208,6 @@ public class RepositoryImpl extends AbstractRepository
         }
 
         repConfig.getConnectionFactory().close();
-
-        // cleanup ghost references
-        for (SessionGhostReference ref : ghostMap.values()) {
-            ref.clear();
-        }
-        ghostMap.clear();
 
         // finally release repository lock
         if (repLock != null) {
@@ -1637,7 +1622,6 @@ public class RepositoryImpl extends AbstractRepository
         synchronized (activeSessions) {
             // remove session from active sessions
             activeSessions.remove(session);
-            ghostMap.remove(session.toString());
         }
     }
 
@@ -2548,21 +2532,4 @@ public class RepositoryImpl extends AbstractRepository
         }
     }
 
-    /**
-     * Cleans up phantom references to old sessions.
-     * If the session was not cleanly closed then it is closed here.
-     */
-    public void cleanupPhantomSessions() {
-        SessionGhostReference ref = (SessionGhostReference) ghostSessionQueue.poll();
-        while (ref != null) {
-            ref.cleanUp();
-            SessionImpl session = ref.getReferent();
-            if (session != null) {
-                ghostMap.remove(session.toString());
-            } else {
-                ghostMap.values().remove(ref);
-            }
-            ref = (SessionGhostReference) ghostSessionQueue.poll();
-        }
-    }
 }
