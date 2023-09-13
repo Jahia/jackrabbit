@@ -78,7 +78,7 @@ class PersistentIndex extends AbstractIndex {
         this.name = name;
         this.indexDelPolicy = new IndexDeletionPolicyImpl(this,
                 generationMaxAge * 1000);
-        if (isExisting()) {
+        if (isExisting() && Boolean.getBoolean("org.apache.jackrabbit.core.query.lucene.PersistentIndex.checkIndexVersion")) {
             IndexMigration.migrate(this, directoryManager, '\uFFFF');
         }
     }

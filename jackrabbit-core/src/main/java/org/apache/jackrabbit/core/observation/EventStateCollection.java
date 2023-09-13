@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.core.observation;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.jackrabbit.core.HierarchyManager;
 import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
@@ -28,6 +29,7 @@ import org.apache.jackrabbit.core.state.ItemStateManager;
 import org.apache.jackrabbit.core.state.NoSuchItemStateException;
 import org.apache.jackrabbit.core.state.NodeState;
 import org.apache.jackrabbit.core.state.ChildNodeEntry;
+import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.spi.Path;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.commons.name.PathFactoryImpl;
@@ -35,14 +37,15 @@ import org.apache.jackrabbit.spi.commons.name.PathBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.jcr.NamespaceException;
 import javax.jcr.RepositoryException;
 import javax.jcr.observation.ObservationManager;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Collections;
 
@@ -365,13 +368,36 @@ public final class EventStateCollection {
                 NodeTypeImpl nodeType = getNodeType(parent, session);
                 Set<Name> mixins = parent.getMixinTypeNames();
                 Path path = getZombiePath(state.getId(), hmgr);
-                events.add(EventState.childNodeRemoved(n.getParentId(),
+                EventState es = EventState.childNodeRemoved(n.getParentId(),
                         getParent(path),
                         n.getNodeId(),
                         path.getLastElement(),
                         nodeType.getQName(),
                         mixins,
-                        session));
+                        session);
+                
+                Map<String, InternalValue> info = new HashMap<String, InternalValue>(2);
+                info.put("primaryType", InternalValue.create(n.getNodeTypeName().toString()));
+                Set<Name> mixinTypeNames = n.getMixinTypeNames();
+                if (CollectionUtils.isNotEmpty(mixinTypeNames)) {
+                    String v = null;
+                    if (mixinTypeNames.size() == 1) {
+                        v = mixinTypeNames.iterator().next().toString();
+                    } else {
+                        StringBuilder b = new StringBuilder();
+                        for (Name mtn : mixinTypeNames) {
+                            if (b.length() > 0) {
+                                b.append(' ');
+                            }
+                            b.append(mtn);
+                        }
+                        v = b.toString();
+                    }
+                    info.put("mixinTypes", InternalValue.create(v));
+                }
+                es.setInfo(info);
+                
+                events.add(es);
 
                 // create events if n is shareable
                 createShareableNodeEvents(n, changes, hmgr, stateMgr);

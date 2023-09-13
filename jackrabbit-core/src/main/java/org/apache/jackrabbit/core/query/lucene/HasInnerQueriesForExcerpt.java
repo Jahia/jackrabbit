@@ -14,5 +14,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-@org.osgi.annotation.versioning.Version("1.0")
-package org.apache.jackrabbit.server;
+
+package org.apache.jackrabbit.core.query.lucene;
+
+import org.apache.lucene.search.Query;
+
+import java.util.Collections;
+import java.util.Set;
+
+/**
+ * <code>HasInnerQueriesForExcerpt</code> implements base functionality for a Lucene Query.
+ */
+interface HasInnerQueriesForExcerpt {
+
+    /**
+     * Gather all queries (wrapped or nested) within the current query object that need to be used for the excerpt.
+     * By default returns a the query itself.
+     * @return A set of queries
+     */
+     Set<Query> getAllInnerQueriesForExcerpt();
+}

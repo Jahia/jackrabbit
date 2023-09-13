@@ -516,7 +516,7 @@ public class CompactNodeTypeDefWriter {
                 sb.insert(i, '\\');
                 i++;
             } else if (sb.charAt(i) == '\'') {
-                sb.insert(i, '\'');
+                sb.insert(i, '\\');
                 i++;
             }
         }

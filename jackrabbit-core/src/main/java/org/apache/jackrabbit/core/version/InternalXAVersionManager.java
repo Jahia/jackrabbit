@@ -18,6 +18,7 @@ package org.apache.jackrabbit.core.version;
 
 import java.util.Calendar;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.jcr.RepositoryException;
@@ -30,6 +31,7 @@ import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
 import org.apache.jackrabbit.core.observation.EventStateCollection;
 import org.apache.jackrabbit.core.observation.EventStateCollectionFactory;
+import org.apache.jackrabbit.core.persistence.PersistenceManager;
 import org.apache.jackrabbit.core.state.ChangeLog;
 import org.apache.jackrabbit.core.state.ItemState;
 import org.apache.jackrabbit.core.state.ItemStateCacheFactory;
@@ -239,6 +241,44 @@ public class InternalXAVersionManager extends InternalVersionManagerBase
         }
     }
 
+    /**
+     * Performs clean up of the versions in the specified version histories. Clean up removes completely orphaned histories and in
+     * non-orphaned histories removes unused versions.
+     * 
+     * @param session
+     *            current JCR session
+     * @param histories
+     *            a list of version histories to process
+     * @return a two element array with the first element as a count of completely deleted version histories and the second element as a
+     *         count of deleted single version items
+     * @throws VersionException
+     *             in case of a version management operation error
+     * @throws RepositoryException
+     *             in case of a repository operation error
+     * @since Jahia 6.6.1.6
+     */
+    public int[] purgeVersions(final Session session, final List<InternalVersionHistory> histories)
+            throws VersionException, RepositoryException {
+        return isInXA() ? internalPurgeVersions(histories) : vMgr.purgeVersions(session, histories);
+    }
+    
+    /**
+     * Performs removal of the specified versions which are unused (the check is done before the call to this method).
+     * 
+     * @param session
+     *            current JCR session
+     * @param unusedVersions
+     *            a list of version items to process
+     * @return the number of version items effectively removed
+     * @throws RepositoryException
+     *             in case of a repository operation error
+     * @since Jahia 6.6.1.6
+     */
+    public int purgeUnusedVersions(SessionImpl session, List<NodeId> unusedVersions) throws RepositoryException {
+        return isInXA() ? internalPurgeUnusedVersions(unusedVersions) : vMgr.purgeUnusedVersions(session,
+                unusedVersions);
+    }
+    
     /**
      * {@inheritDoc}
      */
@@ -788,4 +828,14 @@ public class InternalXAVersionManager extends InternalVersionManagerBase
         }
         return false;
     }
+
+    /**
+     * Return the persistence manager.
+     *
+     * @return the persistence manager
+     */
+    public PersistenceManager getPersistenceManager() {
+        return vMgr.getPersistenceManager();
+    }
+
 }

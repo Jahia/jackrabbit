@@ -122,7 +122,7 @@ public class ClusterNode implements Runnable,
     /**
      * Mutex used when syncing.
      */
-    private final Mutex syncLock = new Mutex();
+    protected final Mutex syncLock = new Mutex();
 
     /**
      * Update counter, used in displaying the number of updates in audit log.
@@ -132,7 +132,7 @@ public class ClusterNode implements Runnable,
     /**
      * Latch used to communicate a stop request to the synchronization thread.
      */
-    private final Latch stopLatch = new Latch();
+    private volatile Latch stopLatch;
 
     /**
      * Sync counter, used to avoid repeated sync() calls from piling up.
@@ -141,7 +141,7 @@ public class ClusterNode implements Runnable,
      * @since Apache Jackrabbit 1.6
      * @see <a href="https://issues.apache.org/jira/browse/JCR-1753">JCR-1753</a>
      */
-    private AtomicInteger syncCount = new AtomicInteger();
+    protected AtomicInteger syncCount = new AtomicInteger();
 
     /**
      * Status flag, one of {@link #NONE}, {@link #STARTED} or {@link #STOPPED}.
@@ -197,7 +197,7 @@ public class ClusterNode implements Runnable,
      * Record deserializer.
      */
     private ClusterRecordDeserializer deserializer = new ClusterRecordDeserializer();
-    
+
     /**
      * Flag indicating whether sync is manual.
      */
@@ -259,7 +259,7 @@ public class ClusterNode implements Runnable,
     public long getStopDelay() {
         return stopDelay;
     }
-    
+
     /**
      * Disable periodic background synchronization. Used for testing purposes, only.
      */
@@ -273,9 +273,15 @@ public class ClusterNode implements Runnable,
      * @throws ClusterException if an error occurs
      */
     public synchronized void start() throws ClusterException {
-        if (status == NONE) {
+        if (status != STARTED) {
+
+            if (status == STOPPED) {
+                init();
+            }
+
             syncOnStartup();
 
+            stopLatch = new Latch();
             if (!disableAutoSync) {
                 Thread t = new Thread(this, "ClusterNode-" + clusterNodeId);
                 t.setDaemon(true);
@@ -315,14 +321,14 @@ public class ClusterNode implements Runnable,
         }
     }
 
-    /** 
+    /**
      * Synchronize contents from journal.
-     * 
-     * @param startup indicates if the cluster node is syncing on startup 
+     *
+     * @param startup indicates if the cluster node is syncing on startup
      *        or does a normal sync.
      * @throws ClusterException if an error occurs
      */
-    private void internalSync(boolean startup) throws ClusterException {
+    protected void internalSync(boolean startup) throws ClusterException {
         int count = syncCount.get();
 
         try {
@@ -372,7 +378,10 @@ public class ClusterNode implements Runnable,
         if (status != STOPPED) {
             status = STOPPED;
 
-            stopLatch.release();
+            // added following check as stop() could be called without a previous start()
+            if (stopLatch != null) {
+                stopLatch.release();
+            }
 
             // Give synchronization thread some time to finish properly before
             // closing down the journal (see JCR-1553)
@@ -893,7 +902,7 @@ public class ClusterNode implements Runnable,
                 } catch (RepositoryException e) {
                     String msg = "Error making update listener for workspace " +
                             workspace + " online: " + e.getMessage();
-                    log.warn(msg);
+                    log.warn(msg, e);
                 }
                 listener = wspUpdateListeners.get(workspace);
                 if (listener ==  null) {
@@ -964,7 +973,7 @@ public class ClusterNode implements Runnable,
             }
         } catch (RepositoryException e) {
             String msg = "Unable to deliver lock event: " + e.getMessage();
-            log.error(msg);
+            log.info(msg);
             if (e.getCause() instanceof IllegalStateException) {
                 throw (IllegalStateException) e.getCause();
             }

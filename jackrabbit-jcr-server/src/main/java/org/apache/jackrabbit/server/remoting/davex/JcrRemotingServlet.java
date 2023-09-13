@@ -22,8 +22,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.Properties;
 import java.util.Locale;
 import java.util.Set;
 
@@ -41,6 +44,7 @@ import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.server.util.RequestData;
 import org.apache.jackrabbit.util.Text;
@@ -241,7 +245,7 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
      * configuration file for protected item remove handlers.
      */
     public static final String INIT_PARAM_PROTECTED_HANDLERS_CONFIG = "protectedhandlers-config";
-    
+
     private static final String PARAM_DIFF = ":diff";
     private static final String PARAM_COPY = ":copy";
     private static final String PARAM_CLONE = ":clone";
@@ -252,12 +256,15 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
     private BatchReadConfig brConfig;
     private ProtectedRemoveManager protectedRemoveManager;
 
+    private Map<String, Integer> enforcedBatchReadConfig;
+
     @Override
     public void init() throws ServletException {
         super.init();
 
         brConfig = new BatchReadConfig();
-        String brConfigParam = getServletConfig().getInitParameter(INIT_PARAM_BATCHREAD_CONFIG);
+        String brConfigParam = System.getProperty("org.apache.jackrabbit.server.remoting.davex."
+                + INIT_PARAM_BATCHREAD_CONFIG, getServletConfig().getInitParameter(INIT_PARAM_BATCHREAD_CONFIG));
         if (brConfigParam == null) {
             // TODO: define default values.
             log.debug("batchread-config missing -> initialize defaults.");
@@ -265,9 +272,39 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
             brConfig.setDefaultDepth(5);
         } else {
             try {
-                InputStream in = getServletContext().getResourceAsStream(brConfigParam);
+                InputStream in = getClass().getResourceAsStream(brConfigParam);
+                if (in == null) {
+                    in = getServletContext().getResourceAsStream(brConfigParam);
+                }
                 if (in != null) {
-                    brConfig.load(in);
+                    try {
+                        Properties p = new Properties();
+                        p.load(in);
+                        enforcedBatchReadConfig = new HashMap<String, Integer>();
+                        for (Iterator<Object> iterator = p.keySet().iterator(); iterator.hasNext();) {
+                            String key = String.valueOf(iterator.next());
+                            if (key.endsWith(".enforce") && p.getProperty(key).equals("true")) {
+                                iterator.remove();
+                                String targetKey = key.substring(0, key.indexOf(".enforce"));
+                                String enforced = p.getProperty(targetKey);
+                                if (enforced != null) {
+                                    try {
+                                        enforcedBatchReadConfig.put(targetKey, Integer.parseInt(enforced));
+                                    } catch (NumberFormatException e) {
+                                        // invalid entry in the properties file -> ignore
+                                        log.warn("Invalid depth value for name " + targetKey + ". " + enforced
+                                                + " cannot be parsed into an integer.");
+                                    }
+                                }
+                            }
+                        }
+                        if (enforcedBatchReadConfig.isEmpty()) {
+                            enforcedBatchReadConfig = null;
+                        }
+                        brConfig.add(p);
+                    } finally {
+                        IOUtils.closeQuietly(in);
+                    }
                 }
             } catch (IOException e) {
                 log.debug("Unable to build BatchReadConfig from " + brConfigParam + ".");
@@ -358,7 +395,7 @@ public abstract class JcrRemotingServlet extends JCRWebdavServerServlet {
                 webdavResponse.setContentType(CONTENT_TYPE_APPLICATION_JSON);
                 webdavResponse.setCharacterEncoding(StandardCharsets.UTF_8.name());
                 webdavResponse.setStatus(DavServletResponse.SC_OK);
-                JsonWriter writer = new JsonWriter(webdavResponse.getWriter());
+                JsonWriter writer = new JsonWriter(webdavResponse.getWriter(), enforcedBatchReadConfig);
 
                 String[] includes = webdavRequest.getParameterValues(PARAM_INCLUDE);
                 if (includes == null) {

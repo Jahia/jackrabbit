@@ -40,6 +40,16 @@ public class NodeId implements ItemId, Comparable<NodeId> {
     public static final int UUID_BYTE_LENGTH = 16;
 
     /**
+     * The pre-calculated hashCode value
+     */
+    private final int hashCode;
+
+    /**
+     * The pre-calculated toString value
+     */
+    private final String toString;
+
+    /**
      * Returns a node identifier that is represented by the given UUID string.
      *
      * @param uuid the UUID string
@@ -74,6 +84,8 @@ public class NodeId implements ItemId, Comparable<NodeId> {
     public NodeId(long msb, long lsb) {
         this.msb = msb;
         this.lsb = lsb;
+        this.hashCode = calculateHashCode(msb, lsb);
+        this.toString = calculateToString(msb, lsb);
     }
 
     /**
@@ -156,6 +168,8 @@ public class NodeId implements ItemId, Comparable<NodeId> {
         }
         this.msb = m;
         this.lsb = x;
+        this.hashCode = calculateHashCode(msb, lsb);
+        this.toString = calculateToString(msb, lsb);
     }
 
     /**
@@ -249,6 +263,10 @@ public class NodeId implements ItemId, Comparable<NodeId> {
      * @return UUID string
      */
     public String toString() {
+        return toString;
+    }
+
+    private static String calculateToString(long msb, long lsb) {
         char[] retval = new char[36];
         hex4(retval, 0, msb >>> 48);
         hex4(retval, 4, msb >>> 32);
@@ -293,6 +311,10 @@ public class NodeId implements ItemId, Comparable<NodeId> {
      * @return hash code
      */
     public int hashCode() {
+        return hashCode;
+    }
+
+    private static int calculateHashCode(long msb, long lsb) {
         return (int) ((msb >>> 32) ^ msb ^ (lsb >>> 32) ^ lsb);
     }
 

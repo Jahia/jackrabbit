@@ -21,26 +21,19 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import javax.jcr.PropertyType;
+import javax.jcr.RepositoryException;
 
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.spi.Name;
+import org.apache.jackrabbit.spi.commons.name.NameConstants;
 
 /**
  * Holds structural information about a node. Used by the consistency checker and garbage collector.
  */
 public final class NodeInfo {
-
-    /**
-     * The same node id in a NodeInfo graph typically occurs three times: as a the id of the current
-     * NodeInfo, as the parent to another NodeInfo, and as a child of another NodeInfo. In order to
-     * minimize the memory footprint use an NodeId object pool.
-     */
-    private static final ConcurrentMap<NodeId,NodeId> nodeIdPool = new ConcurrentHashMap<NodeId, NodeId>(1000);
 
     /**
      * The node id
@@ -73,19 +66,30 @@ public final class NodeInfo {
     private boolean hasBlobsInDataStore;
 
     /**
+     * The node type name
+     */
+    private final Name nodeTypeName;
+
+    /**
+     * The original (unparsed) string value of the jcr:created property 
+     */
+    private String created;
+
+    /**
      * Create a new NodeInfo object from a bundle
      *
      * @param bundle the node bundle
      */
     public NodeInfo(final NodePropBundle bundle) {
-        nodeId = getNodeId(bundle.getId());
-        parentId = getNodeId(bundle.getParentId());
+        nodeId = bundle.getId();
+        parentId = bundle.getParentId();
+        nodeTypeName = bundle.getNodeTypeName();
 
         List<NodePropBundle.ChildNodeEntry> childNodeEntries = bundle.getChildNodeEntries();
         if (!childNodeEntries.isEmpty()) {
             children = new ArrayList<NodeId>(childNodeEntries.size());
             for (NodePropBundle.ChildNodeEntry entry : bundle.getChildNodeEntries()) {
-                children.add(getNodeId(entry.getId()));
+                children.add(entry.getId());
             }
         } else {
             children = Collections.emptyList();
@@ -98,18 +102,25 @@ public final class NodeInfo {
                 }
                 List<NodeId> values = new ArrayList<NodeId>(entry.getValues().length);
                 for (InternalValue value : entry.getValues()) {
-                    values.add(getNodeId(value.getNodeId()));
+                    values.add(value.getNodeId());
                 }
                 references.put(entry.getName(), values);
-            }
-            else if (entry.getType() == PropertyType.BINARY) {
+            } else if (entry.getType() == PropertyType.BINARY) {
                 for (InternalValue internalValue : entry.getValues()) {
                     if (internalValue.isInDataStore()) {
                         hasBlobsInDataStore = true;
                         break;
                     }
                 }
-
+            } else if (entry.getType() == PropertyType.DATE && entry.getName().equals(NameConstants.JCR_CREATED)) {
+                InternalValue[] values = entry.getValues();
+                if (values != null && values.length > 0) {
+                    try {
+                        created = values[0].getString();
+                    } catch (RepositoryException e) {
+                        // should not happen
+                    }
+                }
             }
         }
 
@@ -162,28 +173,20 @@ public final class NodeInfo {
     }
 
     /**
-     * Simple pool implementation to minimize memory overhead from node id objects
-     * @param nodeId  node id to cache
-     * @return  the cached node id
+     * Returns the node type name.
+     * 
+     * @return the node type name
      */
-    private static NodeId getNodeId(NodeId nodeId) {
-        if (nodeId == null) {
-            return null;
-        }
-        NodeId cached = nodeIdPool.get(nodeId);
-        if (cached == null) {
-            cached = nodeIdPool.putIfAbsent(nodeId, nodeId);
-            if (cached == null) {
-                cached = nodeId;
-            }
-        }
-        return cached;
+    public Name getNodeTypeName() {
+        return nodeTypeName;
     }
 
     /**
-     * Clear the NodeId pool.
+     * Returns the the original (unparsed) string value of the jcr:created property.
+     * 
+     * @return the the original (unparsed) string value of the jcr:created property
      */
-    public static void clearPool() {
-        nodeIdPool.clear();
+    public String getCreated() {
+        return created;
     }
 }

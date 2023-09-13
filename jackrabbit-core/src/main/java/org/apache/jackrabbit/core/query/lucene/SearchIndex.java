@@ -34,8 +34,10 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.jcr.PropertyType;
+import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.query.InvalidQueryException;
+import javax.jcr.query.qom.QueryObjectModel;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -65,6 +67,7 @@ import org.apache.jackrabbit.core.query.AbstractQueryHandler;
 import org.apache.jackrabbit.core.query.ExecutableQuery;
 import org.apache.jackrabbit.core.query.QueryHandler;
 import org.apache.jackrabbit.core.query.QueryHandlerContext;
+import org.apache.jackrabbit.core.query.QueryObjectModelImpl;
 import org.apache.jackrabbit.core.query.lucene.directory.DirectoryManager;
 import org.apache.jackrabbit.core.query.lucene.directory.FSDirectoryManager;
 import org.apache.jackrabbit.core.query.lucene.hits.AbstractHitCollector;
@@ -82,6 +85,7 @@ import org.apache.jackrabbit.spi.commons.name.NameConstants;
 import org.apache.jackrabbit.spi.commons.name.PathFactoryImpl;
 import org.apache.jackrabbit.spi.commons.query.DefaultQueryNodeFactory;
 import org.apache.jackrabbit.spi.commons.query.qom.OrderingImpl;
+import org.apache.jackrabbit.spi.commons.query.qom.QueryObjectModelTree;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LimitTokenCountAnalyzer;
 import org.apache.lucene.analysis.TokenStream;
@@ -386,7 +390,7 @@ public class SearchIndex extends AbstractQueryHandler {
      * Default value is: <code>false</code>.
      */
     private boolean supportHighlighting = false;
-    
+
     /**
      * If enabled, NodeIterator.getSize() may report a larger value than the
      * actual result. This value may shrink when the query result encounters
@@ -519,6 +523,10 @@ public class SearchIndex extends AbstractQueryHandler {
      * anymore.
      */
     private boolean closed = false;
+
+    protected AnalyzerRegistry getAnalyzerRegistry() {
+        return AnalyzerRegistry.empty;
+    }
 
     /**
      * Initializes this <code>QueryHandler</code>. This implementation requires
@@ -663,7 +671,7 @@ public class SearchIndex extends AbstractQueryHandler {
             removeCollection.add(id);
             removedIds.add(id);
         }
-        
+
         Collection<Document> addCollection = new ArrayList<Document>();
         while (add.hasNext()) {
             NodeState state = add.next();
@@ -673,12 +681,13 @@ public class SearchIndex extends AbstractQueryHandler {
                 retrieveAggregateRoot(state, aggregateRoots);
 
                 try {
-                    addCollection.add(createDocument(
-                            state, getNamespaceMappings(),
-                            index.getIndexFormatVersion()));
+                    Document document = createDocument(state, getNamespaceMappings(), index.getIndexFormatVersion());
+                    if (document != null) {
+                        addCollection.add(document);
+                    }
                 } catch (RepositoryException e) {
                     log.warn("Exception while creating document for node: "
-                            + state.getNodeId() + ": " + e.toString());
+                            + state.getNodeId(), e);
                 }
             }
         }
@@ -701,9 +710,10 @@ public class SearchIndex extends AbstractQueryHandler {
 
             for (NodeState state : aggregateRoots.values()) {
                 try {
-                    modified.add(createDocument(
-                            state, getNamespaceMappings(),
-                            index.getIndexFormatVersion()));
+                    Document document = createDocument(state, getNamespaceMappings(), index.getIndexFormatVersion());
+                    if (document != null) {
+                        modified.add(document);
+                    }
                 } catch (RepositoryException e) {
                     log.warn("Exception while creating document for node: "
                             + state.getNodeId(), e);
@@ -712,6 +722,26 @@ public class SearchIndex extends AbstractQueryHandler {
 
             index.update(aggregateRoots.keySet(), modified);
         }
+    }
+
+    /**
+     * Creates a new query by specifying the query Object model tree itself.
+     *
+     * @param sessionContext component context of the current session
+     * @param qomTree  the query object model tree.
+     * @param language the original query syntax from where the JQOM was
+     *                 created.
+     * @param node     a nt:query node where the query was read from or
+     *                 <code>null</code> if it is not a stored query.
+     *
+     * @throws InvalidQueryException if statement is invalid or language is unsupported.
+     * @return A <code>Query</code> object.
+     */
+    public QueryObjectModel createQueryObjectModel(SessionContext sessionContext, QueryObjectModelTree qomTree,
+                                                       String language, Node node) throws RepositoryException {
+        QueryObjectModelImpl qom = new QueryObjectModelImpl();
+        qom.init(sessionContext, this, qomTree, language, node);
+        return qom;
     }
 
     /**
@@ -999,7 +1029,7 @@ public class SearchIndex extends AbstractQueryHandler {
         return parser;
     }
 
-    private Parser createParser() {
+    protected Parser createParser() {
         URL url = null;
         if (tikaConfigPath != null) {
             File file = new File(tikaConfigPath);
@@ -1517,17 +1547,19 @@ public class SearchIndex extends AbstractQueryHandler {
                         for (NodeState aggregate : aggregates) {
                             Document aDoc = createDocument(aggregate, getNamespaceMappings(), ifv);
                             // transfer fields to doc if there are any
-                            Fieldable[] fulltextFields = aDoc.getFieldables(FieldNames.FULLTEXT);
-                            if (fulltextFields != null) {
-                                for (Fieldable fulltextField : fulltextFields) {
-                                    doc.add(fulltextField);
+                            if (aDoc != null) {
+                                Fieldable[] fulltextFields = aDoc.getFieldables(FieldNames.FULLTEXT);
+                                if (fulltextFields != null) {
+                                    for (Fieldable fulltextField : fulltextFields) {
+                                        doc.add(fulltextField);
+                                    }
+                                    doc.add(new Field(
+                                            FieldNames.AGGREGATED_NODE_UUID, false,
+                                            aggregate.getNodeId().toString(),
+                                            Field.Store.NO,
+                                            Field.Index.NOT_ANALYZED_NO_NORMS,
+                                            Field.TermVector.NO));
                                 }
-                                doc.add(new Field(
-                                        FieldNames.AGGREGATED_NODE_UUID, false,
-                                        aggregate.getNodeId().toString(),
-                                        Field.Store.NO,
-                                        Field.Index.NOT_ANALYZED_NO_NORMS,
-                                        Field.TermVector.NO));
                             }
                         }
                         // make sure that fulltext fields are aligned properly
@@ -1548,56 +1580,58 @@ public class SearchIndex extends AbstractQueryHandler {
                             String namePrefix = FieldNames.createNamedValue(getNamespaceMappings().translateName(propState.getName()), "");
                             NodeState parent = (NodeState) ism.getItemState(propState.getParentId());
                             Document aDoc = createDocument(parent, getNamespaceMappings(), ifv);
-                            try {
-                                // find the right fields to transfer
-                                Fieldable[] fields = aDoc.getFieldables(FieldNames.PROPERTIES);
-                                for (Fieldable field : fields) {
+                            if (aDoc != null) {
+                                try {
+                                    // find the right fields to transfer
+                                    Fieldable[] fields = aDoc.getFieldables(FieldNames.PROPERTIES);
+                                    for (Fieldable field : fields) {
 
-                                    // assume properties fields use SingleTokenStream
-                                    TokenStream tokenStream = field.tokenStreamValue();
-                                    TermAttribute termAttribute = tokenStream.addAttribute(TermAttribute.class);
-                                    PayloadAttribute payloadAttribute = tokenStream.addAttribute(PayloadAttribute.class);
-                                    tokenStream.incrementToken();
-                                    tokenStream.end();
-                                    tokenStream.close();
+                                        // assume properties fields use SingleTokenStream
+                                        TokenStream tokenStream = field.tokenStreamValue();
+                                        TermAttribute termAttribute = tokenStream.addAttribute(TermAttribute.class);
+                                        PayloadAttribute payloadAttribute = tokenStream.addAttribute(PayloadAttribute.class);
+                                        tokenStream.incrementToken();
+                                        tokenStream.end();
+                                        tokenStream.close();
 
-                                    String value = new String(termAttribute.termBuffer(), 0, termAttribute.termLength());
-                                    if (value.startsWith(namePrefix)) {
-                                        // extract value
-                                        String rawValue = value.substring(namePrefix.length());
-                                        // create new named value
-                                        Path p = getRelativePath(state, propState);
-                                        String path = getNamespaceMappings().translatePath(p);
-                                        value = FieldNames.createNamedValue(path, rawValue);
-                                        termAttribute.setTermBuffer(value);
-                                        PropertyMetaData pdm = PropertyMetaData
-                                                .fromByteArray(payloadAttribute
-                                                        .getPayload().getData());
-                                        doc.add(new Field(field.name(),
-                                                new SingletonTokenStream(value,
-                                                        pdm.getPropertyType())));
-                                        doc.add(new Field(
-                                                FieldNames.AGGREGATED_NODE_UUID,
-                                                false,
-                                                parent.getNodeId().toString(),
-                                                Field.Store.NO,
-                                                Field.Index.NOT_ANALYZED_NO_NORMS,
-                                                Field.TermVector.NO));
-                                        if (pdm.getPropertyType() == PropertyType.STRING) {
-                                            // add to fulltext index
-                                            Field ft = new Field(
-                                                    FieldNames.FULLTEXT,
+                                        String value = new String(termAttribute.termBuffer(), 0, termAttribute.termLength());
+                                        if (value.startsWith(namePrefix)) {
+                                            // extract value
+                                            String rawValue = value.substring(namePrefix.length());
+                                            // create new named value
+                                            Path p = getRelativePath(state, propState);
+                                            String path = getNamespaceMappings().translatePath(p);
+                                            value = FieldNames.createNamedValue(path, rawValue);
+                                            termAttribute.setTermBuffer(value);
+                                            PropertyMetaData pdm = PropertyMetaData
+                                                    .fromByteArray(payloadAttribute
+                                                            .getPayload().getData());
+                                            doc.add(new Field(field.name(),
+                                                    new SingletonTokenStream(value,
+                                                            pdm.getPropertyType())));
+                                            doc.add(new Field(
+                                                    FieldNames.AGGREGATED_NODE_UUID,
                                                     false,
-                                                    rawValue,
-                                                    Field.Store.YES,
-                                                    Field.Index.ANALYZED_NO_NORMS,
-                                                    Field.TermVector.NO);
-                                            doc.add(ft);
+                                                    parent.getNodeId().toString(),
+                                                    Field.Store.NO,
+                                                    Field.Index.NOT_ANALYZED_NO_NORMS,
+                                                    Field.TermVector.NO));
+                                            if (pdm.getPropertyType() == PropertyType.STRING) {
+                                                // add to fulltext index
+                                                Field ft = new Field(
+                                                        FieldNames.FULLTEXT,
+                                                        false,
+                                                        rawValue,
+                                                        Field.Store.YES,
+                                                        Field.Index.ANALYZED_NO_NORMS,
+                                                        Field.TermVector.NO);
+                                                doc.add(ft);
+                                            }
                                         }
                                     }
+                                } finally {
+                                    Util.disposeDocument(aDoc);
                                 }
-                            } finally {
-                                Util.disposeDocument(aDoc);
                             }
                         }
                     }
@@ -2189,13 +2223,13 @@ public class SearchIndex extends AbstractQueryHandler {
     public long getExtractorTimeout() {
         return extractorTimeout;
     }
-    
+
     /**
      * If enabled, NodeIterator.getSize() may report a larger value than the
      * actual result. This value may shrink when the query result encounters
      * non-existing nodes or the session does not have access to a node. This
      * might be a security problem.
-     * 
+     *
      * @param b <code>true</code> to enable
      */
     public void setSizeEstimate(boolean b) {
@@ -2204,10 +2238,10 @@ public class SearchIndex extends AbstractQueryHandler {
         }
         this.sizeEstimate = b;
     }
-    
+
     /**
      * Get the size estimate setting.
-     * 
+     *
      * @return the setting
      */
     public boolean getSizeEstimate() {

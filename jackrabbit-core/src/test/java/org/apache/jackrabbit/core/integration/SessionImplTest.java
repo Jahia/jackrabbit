@@ -16,15 +16,6 @@
  */
 package org.apache.jackrabbit.core.integration;
 
-import java.security.AccessControlException;
-
-import javax.jcr.Credentials;
-import javax.jcr.PathNotFoundException;
-import javax.jcr.RepositoryException;
-import javax.jcr.Session;
-import javax.jcr.SimpleCredentials;
-import javax.security.auth.Subject;
-
 import org.apache.jackrabbit.api.JackrabbitSession;
 import org.apache.jackrabbit.core.RepositoryImpl;
 import org.apache.jackrabbit.core.SessionImpl;
@@ -32,6 +23,10 @@ import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.security.principal.PrincipalImpl;
 import org.apache.jackrabbit.test.AbstractJCRTest;
 import org.apache.jackrabbit.test.NotExecutableException;
+
+import javax.jcr.*;
+import javax.security.auth.Subject;
+import java.security.AccessControlException;
 
 /**
  * Integration tests for the Session implementation in Jackrabbit core.
@@ -202,4 +197,5 @@ public class SessionImplTest extends AbstractJCRTest {
         // note: that's a bit unexpected
         assertEquals(superuser.hasPermission("/", ",,"), js.hasPermission("/", "", "", ""));
     }
+
 }

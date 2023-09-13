@@ -129,7 +129,7 @@ public class RepositoryImpl extends AbstractRepository
         implements javax.jcr.Repository, JackrabbitRepository, SessionListener, WorkspaceListener {
 
     private static Logger log = LoggerFactory.getLogger(RepositoryImpl.class);
-
+    
     /**
      * hardcoded id of the repository root node
      */
@@ -179,6 +179,9 @@ public class RepositoryImpl extends AbstractRepository
     protected final RepositoryContext context = new RepositoryContext(this);
 
     private final VirtualNodeTypeStateManager virtNTMgr;
+
+    /** period in seconds for phantom cleanup */
+    protected static int PHANTOM_PERIOD = 60;
 
     /**
      * Security manager
@@ -644,7 +647,7 @@ public class RepositoryImpl extends AbstractRepository
                         repConfig,
                         getWorkspaceInfo(wspName).itemStateMgr,
                         context.getInternalVersionManager().getPersistenceManager(),
-                        SYSTEM_ROOT_NODE_ID, null, null);
+                        SYSTEM_ROOT_NODE_ID, null, getSystemExcludedNodeId());
 
                 SystemSession defSysSession = getSystemSession(wspName);
                 ObservationManager obsMgr = defSysSession.getWorkspace().getObservationManager();
@@ -656,6 +659,16 @@ public class RepositoryImpl extends AbstractRepository
             }
         }
         return systemSearchMgr;
+    }
+
+    /**
+     * Returns the id of the node that should be excluded from indexing by system search manager. Any descendant of that node will also be
+     * excluded from indexing. If nothing should be excluded, returns <code>null</code>.
+     * 
+     * @return the id of the node that should be excluded from indexing by system search manager
+     */
+    protected NodeId getSystemExcludedNodeId() {
+        return null;
     }
 
     /**
@@ -899,6 +912,21 @@ public class RepositoryImpl extends AbstractRepository
         // check sanity of this instance
         sanityCheck();
         return getWorkspaceInfo(workspaceName).getRetentionRegistry();
+    }
+
+    /**
+     * Returns the {@link NodeTypeInstanceHandlerFactory} for the workspace with name
+     * <code>workspaceName</code>
+     *
+     * @param workspaceName workspace name
+     * @return <code>NodeTypeInstanceHandlerFactory</code> for the workspace
+     * @throws NoSuchWorkspaceException if such a workspace does not exist
+     * @throws RepositoryException      if some other error occurs
+     */
+    NodeTypeInstanceHandlerFactory getNodeTypeInstanceHandlerFactory(String workspaceName) throws NoSuchWorkspaceException, RepositoryException {
+        // check sanity of this instance
+        sanityCheck();
+        return getWorkspaceInfo(workspaceName).getNodeTypeInstanceHandlerFactory();
     }
 
     /**
@@ -1699,6 +1727,12 @@ public class RepositoryImpl extends AbstractRepository
         private RetentionRegistryImpl retentionReg;
 
         /**
+         * internal manager for evaluation of effective retention policies
+         * and holds
+         */
+        private NodeTypeInstanceHandlerFactory nodeTypeInstanceHandlerFactory;
+
+        /**
          * flag indicating whether this instance has been initialized.
          */
         private boolean initialized;
@@ -1960,6 +1994,24 @@ public class RepositoryImpl extends AbstractRepository
                     retentionReg = new RetentionRegistryImpl(getSystemSession(), fs);
                 }
                 return retentionReg;
+            }
+        }
+
+        /**
+         * Return manager used for evaluating effect retention and holds.
+         *
+         * @return
+         * @throws RepositoryException
+         */
+        protected NodeTypeInstanceHandlerFactory getNodeTypeInstanceHandlerFactory() throws RepositoryException {
+            if (!isInitialized()) {
+                throw new IllegalStateException("workspace '" + getName() + "' not initialized");
+            }
+            synchronized (this) {
+                if (nodeTypeInstanceHandlerFactory == null) {
+                    nodeTypeInstanceHandlerFactory = config.getNodeTypeInstanceHandlerFactory();
+                }
+                return nodeTypeInstanceHandlerFactory;
             }
         }
 
@@ -2479,4 +2531,5 @@ public class RepositoryImpl extends AbstractRepository
             return vals != null ? vals : new Value[] {val};
         }
     }
+
 }

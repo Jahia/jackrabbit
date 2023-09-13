@@ -214,7 +214,13 @@ public abstract class AbstractJournal implements Journal {
 
     private void internalSync(boolean startup) throws JournalException {
         try {
+            if (log.isDebugEnabled()) {
+                log.debug(this + ".internalSync("+startup + "): Trying to acquire read lock ");
+            }
             rwLock.readLock().acquire();
+            if (log.isDebugEnabled()) {
+                log.debug(this + ".internalSync(" + startup + "): Read lock acquired");
+            }
         } catch (InterruptedException e) {
             String msg = "Unable to acquire read lock.";
             throw new JournalException(msg, e);
@@ -223,6 +229,9 @@ public abstract class AbstractJournal implements Journal {
             doSync(getMinimalRevision(), startup);
         } finally {
             rwLock.readLock().release();
+            if (log.isDebugEnabled()) {
+                log.debug(this + ".internalSync("+startup + "): Read lock released");
+            }
         }
     }
 
@@ -307,7 +316,13 @@ public abstract class AbstractJournal implements Journal {
 
     private void internalLockAndSync() throws JournalException {
         try {
+            if (log.isDebugEnabled()) {
+                log.debug(this + ".internalLockAndSync: Trying to acquire writeLock " + rwLock.writeLock());
+            }
             rwLock.writeLock().acquire();
+            if (log.isDebugEnabled()) {
+    			log.debug(this + ".internalLockAndSync: writeLock " +rwLock.writeLock()+" acquired");
+            }
         } catch (InterruptedException e) {
             String msg = "Unable to acquire write lock.";
             throw new JournalException(msg, e);
@@ -332,6 +347,9 @@ public abstract class AbstractJournal implements Journal {
         } finally {
             if (!succeeded) {
                 rwLock.writeLock().release();
+                if (log.isDebugEnabled()) {
+    				log.debug(this + ".internalLockAndSync : writeLock "+rwLock.writeLock()+"released - unsuccessful sync");
+                }
             }
         }
     }
@@ -350,6 +368,9 @@ public abstract class AbstractJournal implements Journal {
     		//Should not happen that a RuntimeException will be thrown in subCode, but it's safer
     		//to release the rwLock in finally block.
             rwLock.writeLock().release();
+            if (log.isDebugEnabled()) {
+    			log.debug(this + ".unlock : writeLock "+rwLock.writeLock()+" released - Successful? " + successful);
+            }
     	}
     }
 

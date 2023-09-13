@@ -43,7 +43,6 @@ import org.apache.jackrabbit.core.query.AbstractQueryImpl;
 import org.apache.jackrabbit.core.query.QueryHandler;
 import org.apache.jackrabbit.core.query.QueryHandlerContext;
 import org.apache.jackrabbit.core.query.QueryHandlerFactory;
-import org.apache.jackrabbit.core.query.QueryObjectModelImpl;
 import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.NodeState;
@@ -262,9 +261,7 @@ public class SearchManager implements SynchronousEventListener {
             SessionContext sessionContext, QueryObjectModelTree qomTree,
             String langugage, Node node)
             throws InvalidQueryException, RepositoryException {
-        QueryObjectModelImpl qom = new QueryObjectModelImpl();
-        qom.init(sessionContext, handler, qomTree, langugage, node);
-        return qom;
+        return handler.createQueryObjectModel(sessionContext, qomTree, langugage, node);
     }
 
     /**
@@ -290,7 +287,7 @@ public class SearchManager implements SynchronousEventListener {
      * @return <code>true</code> if the event should be excluded,
      *         <code>false</code> otherwise
      */
-    private boolean isExcluded(EventImpl event) {
+    protected boolean isExcluded(EventImpl event) {
         try {
             return excludePath != null
                 && excludePath.isAncestorOf(event.getQPath());

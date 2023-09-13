@@ -596,21 +596,23 @@ abstract public class VersionManagerImplRestore extends VersionManagerImplBase {
 
                 // check existing version of item exists
                 if (restoredChild == null) {
-                    if (v == null) {
-                        // if version selector was unable to select version,
-                        // choose the initial one
-                        List<InternalVersion> vs = vh.getRootVersion().getSuccessors();
-                        if (vs.isEmpty()) {
-                            String msg = "Unable to select appropriate version for "
-                                    + child.getName() + " using " + vsel;
-                            log.error(msg);
-                            throw new VersionException(msg);
-                        }
-                        v = vs.get(0);
-                    }
-                    InternalFrozenNode f = v.getFrozenNode();
-                    restoredChild = state.addNode(fh.getName(), f.getFrozenPrimaryType(), f.getFrozenId());
-                    restoredChild.setMixins(f.getFrozenMixinTypes());
+// Jahia patch - Do not restore childVersionHistory nodes
+                    v = null;
+//                    if (v == null) {
+//                        // if version selector was unable to select version,
+//                        // choose the initial one
+//                        List<InternalVersion> vs = vh.getRootVersion().getSuccessors();
+//                        if (vs.isEmpty()) {
+//                            String msg = "Unable to select appropriate version for "
+//                                    + child.getName() + " using " + vsel;
+//                            log.error(msg);
+//                            throw new VersionException(msg);
+//                        }
+//                        v = vs.get(0);
+//                    }
+//                    InternalFrozenNode f = v.getFrozenNode();
+//                    restoredChild = state.addNode(fh.getName(), f.getFrozenPrimaryType(), f.getFrozenId());
+//                    restoredChild.setMixins(f.getFrozenMixinTypes());
                 } else {
                     if (v == null || oldVersion == null || v.getName().equals(oldVersion)) {
                         v = null;
@@ -675,7 +677,7 @@ abstract public class VersionManagerImplRestore extends VersionManagerImplBase {
             throws RepositoryException {
         // compute system generated values if necessary
         InternalValue[] values =
-            new NodeTypeInstanceHandler(session.getUserID()).
+            session.getNodeTypeInstanceHandler().
             computeSystemGeneratedPropertyValues(state.getState(), def);
         if (values == null && useDefaultValues) {
             values = InternalValue.create(def.getDefaultValues());

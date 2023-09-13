@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.core.state;
 
+import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.core.id.NodeId;
 
@@ -99,6 +100,9 @@ public interface UpdatableItemStateManager extends ItemStateManager {
      * @throws IllegalStateException if the manager is not in edit mode.
      */
     void cancel() throws IllegalStateException;
+
+
+    ItemState getItemStateFromCache(ItemId id) throws NoSuchItemStateException, ItemStateException;
 
     /**
      * End an update operation. This will save all items

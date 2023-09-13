@@ -403,6 +403,22 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
 
         InternalVersionImpl v = (InternalVersionImpl) getVersion(versionName);
         if (v.equals(rootVersion)) {
+            if (!vMgr.hasItemReferences(node.getNodeId())) {
+                // Current version history has no references
+                NodeStateEx[] childNodes = node.getChildNodes();
+
+                // Check if there is only root version and version labels nodes
+                if (childNodes.length == 2) {
+                    // Removing orphan version history as it contains only two children
+                    NodeStateEx parentNode = node.getParent();
+                    // Remove version history node
+                    parentNode.removeNode(node.getName());
+                    // store changes for this node and his children
+                    parentNode.store();
+                    
+                    return;
+                }
+            }
             String msg = "Removal of " + versionName + " not allowed.";
             log.debug(msg);
             throw new VersionException(msg);
@@ -461,6 +477,56 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
         for (Name label : labels) {
             labelCache.remove(label);
         }
+    }
+
+    /**
+     * Internal method for removing unused version from the version history without performing any reference checks and also skipping check
+     * for removing the whole version history if this version was the last one (except root version).
+     * 
+     * @param v
+     *            the version node to remove
+     * @throws RepositoryException
+     *             in case of versioning operation error
+     * @returns <code>true</code> if the version was deleted; <code>false</code> otherwise
+     * @since Jahia 6.6.1.6
+     */
+    synchronized boolean removeUnusedVersion(InternalVersionImpl v) throws RepositoryException {
+        if (v.equals(rootVersion)) {
+            return false;
+        }
+
+        // unregister from labels
+        Name[] labels = v.internalGetLabels();
+        for (Name label : labels) {
+            v.internalRemoveLabel(label);
+            labelNode.removeProperty(label);
+        }
+        // detach from the version graph
+        v.internalDetach();
+
+        // check if referenced by an activity
+        InternalActivityImpl activity = v.getActivity();
+        if (activity != null) {
+            activity.removeVersion(v);
+        }
+
+        // remove from persistence state
+        node.removeNode(v.getName());
+
+        // and remove from history
+        versionCache.remove(v.getId());
+        nameCache.remove(v.getName());
+        vMgr.versionDestroyed(v);
+
+        // store changes
+        node.store();
+
+        // now also remove from labelCache
+        for (Name label : labels) {
+            labelCache.remove(label);
+        }
+        
+        return true;
     }
 
     /**
