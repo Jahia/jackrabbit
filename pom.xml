@@ -68,6 +68,17 @@
     <tag>2.20-jahia</tag>
   </scm>
 
+  <distributionManagement>
+    <repository>
+        <id>thirdparty-releases</id>
+        <url>https://devtools.jahia.com/nexus/content/repositories/thirdparty-releases</url>
+    </repository>
+    <snapshotRepository>
+        <id>thirdparty-snapshots</id>
+        <url>https://devtools.jahia.com/nexus/content/repositories/thirdparty-snapshots</url>
+    </snapshotRepository>
+  </distributionManagement>
+
   <build>
     <plugins>
       <plugin>
