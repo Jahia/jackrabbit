@@ -9,7 +9,7 @@ on:
 jobs:
   on-release:
     runs-on: ubuntu-latest
-    name: Compile
+    name: Release module
     steps:
       - uses: actions/checkout@v3
       - name: Set environment variables from parameters
@@ -22,7 +22,6 @@ jobs:
       - uses: webfactory/ssh-agent@v0.7.0
         with:
           ssh-private-key: ${{ secrets.GH_SSH_PRIVATE_KEY_JAHIACI }}
-
       - name: Delete github tag ${{ github.event.release.tag_name }}
         shell: bash
         run: |
