@@ -44,8 +44,8 @@ jobs:
           distribution: 'temurin'
       - name: Release with Maven
         run: |
-          TAG_VERSION=$(echo ${{ github.event.release.tag_name }}) # e.g. 2.20.12-jahia1
-          FINAL_RELEASE_VERSION=$(echo ${{ tag_name }} | tr '_' '.')
+          TAG_VERSION=$(echo "${{ github.event.release.tag_name }}") # e.g. 2.20.12-jahia1
+          FINAL_RELEASE_VERSION=$(echo "${{ github.event.release.tag_name }}" | tr '_' '.')
           REVISION=$(echo $FINAL_RELEASE_VERSION | tr -d 'jahia' | cut -d'-' -f2)
           NEXT_REVISION=$(expr $REVISION + 1)
           NEXT_DEVELOPMENT_VERSION="$(echo $FINAL_RELEASE_VERSION | cut -d'-' -f1)-jahia${NEXT_REVISION}"-SNAPSHOT # e.g. 2.20.12-jahia2-SNAPSHOT
