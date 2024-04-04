@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Release module
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set environment variables from parameters
         shell: bash
         run: |
@@ -19,7 +19,7 @@ jobs:
           echo "NEXUS_PASSWORD=${{ secrets.NEXUS_PASSWORD }}" >> $GITHUB_ENV
       # Setting up the SSH agent to be able to commit back to the repository
       # https://github.com/webfactory/ssh-agent
-      - uses: webfactory/ssh-agent@v0.7.0
+      - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.GH_SSH_PRIVATE_KEY_JAHIACI }}
       - name: Delete github tag ${{ github.event.release.tag_name }}
@@ -31,14 +31,14 @@ jobs:
           git tag --delete ${{ github.event.release.tag_name }}
           git push origin :refs/tags/${{ github.event.release.tag_name }}
 
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
       - name: Set up JDK 1.8
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: 8
           distribution: 'temurin'
