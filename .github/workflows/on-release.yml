@@ -49,8 +49,8 @@ jobs:
           REVISION=$(echo $FINAL_RELEASE_VERSION | tr -d 'jahia' | cut -d'-' -f2)
           NEXT_REVISION=$(expr $REVISION + 1)
           NEXT_DEVELOPMENT_VERSION="$(echo $FINAL_RELEASE_VERSION | cut -d'-' -f1)-jahia${NEXT_REVISION}"-SNAPSHOT # e.g. 2.20.12-jahia2-SNAPSHOT
-          mvn -ntp -B -s .github/maven.settings.xml -DdryRun=false -DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true -DskipLocalStaging=true \
+          mvn -ntp -B -s .github/maven.settings.xml -DdryRun=false -DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true -Drat.skip=true -DskipLocalStaging=true \
           -Dtag=$TAG_VERSION -DreleaseVersion=$FINAL_RELEASE_VERSION -DdevelopmentVersion="$NEXT_DEVELOPMENT_VERSION" -DscmCommentPrefix="[skip ci] [maven-release-plugin] " \
-          -Darguments="-DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true -DskipLocalStaging=true" -Papache-release release:prepare 
-          mvn -ntp -B -s .github/maven.settings.xml -DdryRun=false -DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true -DskipLocalStaging=true \
-          -Darguments="-DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true -DskipLocalStaging=true" -Papache-release release:perform
+          -Darguments="-DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true -Drat.skip=true -DskipLocalStaging=true" -Papache-release release:prepare 
+          mvn -ntp -B -s .github/maven.settings.xml -DdryRun=false -DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true -Drat.skip=true -DskipLocalStaging=true \
+          -Darguments="-DskipTests -Dmaven.javadoc.skip=true -Dgpg.skip=true -Drat.skip=true -DskipLocalStaging=true" -Papache-release release:perform
