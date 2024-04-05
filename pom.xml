@@ -60,6 +60,10 @@
     <module>jackrabbit-it-osgi</module>
   </modules>
 
+  <properties>
+      <project.scm.id>github</project.scm.id>
+  </properties>
+
   <distributionManagement>
     <repository>
         <id>thirdparty-releases</id>
