@@ -30,7 +30,6 @@ jobs:
           git fetch --all
           git tag --delete ${{ github.event.release.tag_name }}
           git push origin :refs/tags/${{ github.event.release.tag_name }}
-
       - uses: actions/cache@v4
         with:
           path: ~/.m2/repository
@@ -42,6 +41,7 @@ jobs:
         with:
           java-version: 8
           distribution: 'temurin'
+          cache: 'maven'
       - name: Release with Maven
         run: |
           TAG_VERSION=$(echo "${{ github.event.release.tag_name }}") # e.g. 2.20.12-jahia1
