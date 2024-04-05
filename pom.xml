@@ -62,8 +62,8 @@
   </modules>
 
   <scm>
-    <connection>scm:git:git@github.com:Jahia/jackrabbit.git</connection>
-    <developerConnection>scm:git:git@github.com:Jahia/jackrabbit.git</developerConnection>
+    <connection>scm:git:ssh://github.com/Jahia/jackrabbit</connection>
+    <developerConnection>scm:git:ssh://github.com/Jahia/jackrabbit</developerConnection>
     <url>https://github.com/Jahia/jackrabbit</url>
     <tag>2.20-jahia</tag>
   </scm>
