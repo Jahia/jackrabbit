@@ -68,6 +68,10 @@
     <tag>2.20-jahia</tag>
   </scm>
 
+  <properties>
+      <project.scm.id>github</project.scm.id>
+  </properties>
+
   <distributionManagement>
     <repository>
         <id>thirdparty-releases</id>
