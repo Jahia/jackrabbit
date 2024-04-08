@@ -61,28 +61,6 @@
     <module>jackrabbit-it-osgi</module>
   </modules>
 
-    <scm>
-        <connection>scm:git:git@github.com:Jahia/jackrabbit.git</connection>
-        <developerConnection>scm:git:git@github.com:Jahia/jackrabbit.git</developerConnection>
-        <url>https://github.com/Jahia/jackrabbit</url>
-        <tag>2.20-jahia</tag>
-    </scm>
-
-  <properties>
-      <project.scm.id>github</project.scm.id>
-  </properties>
-
-  <distributionManagement>
-    <repository>
-        <id>thirdparty-releases</id>
-        <url>https://devtools.jahia.com/nexus/content/repositories/thirdparty-releases</url>
-    </repository>
-    <snapshotRepository>
-        <id>thirdparty-snapshots</id>
-        <url>https://devtools.jahia.com/nexus/content/repositories/thirdparty-snapshots</url>
-    </snapshotRepository>
-  </distributionManagement>
-
   <build>
     <plugins>
       <plugin>
