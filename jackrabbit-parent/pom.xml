@@ -77,13 +77,6 @@
     Apache Jackrabbit is a project of the Apache Software Foundation.
   </description>
 
-  <scm>
-    <connection>scm:git:git@github.com:Jahia/jackrabbit.git</connection>
-    <developerConnection>scm:git:git@github.com:Jahia/jackrabbit.git</developerConnection>
-    <url>https://github.com/Jahia/jackrabbit</url>
-    <tag>2.20-jahia</tag>
-  </scm>
-
   <distributionManagement>
     <repository>
       <id>thirdparty-releases</id>
