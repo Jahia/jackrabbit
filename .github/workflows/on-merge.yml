@@ -60,4 +60,4 @@ jobs:
     - name: Build with Maven
       run: | 
         mvn -s .github/maven.settings.xml -ntp -B -Papache-release -Dmaven.test.skip=false -Dmaven.javadoc.skip=true -Dgpg.skip=true -Drat.skip=true --file pom.xml \
-        -DaltDeploymentRepository=thirdparty-snapshots::default::https://devtools.jahia.com/nexus/content/repositories/thirdparty-snapshots clean install deploy
+        clean install deploy
