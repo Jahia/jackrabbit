@@ -136,7 +136,7 @@ public class LuceneQueryBuilder implements QueryNodeVisitor {
     /**
      * The analyzer instance to use for contains function query parsing
      */
-    private Analyzer analyzer;
+    private final Analyzer analyzer;
 
     /**
      * The property type registry.
@@ -1216,13 +1216,5 @@ public class LuceneQueryBuilder implements QueryNodeVisitor {
 
     protected List<Exception> getExceptions() {
         return exceptions;
-    }
-
-    protected void setAnalyzer(Analyzer analyzer) {
-        this.analyzer = analyzer;
-    }
-
-    protected Analyzer getAnalyzer() {
-        return analyzer;
     }
 }
