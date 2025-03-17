@@ -176,7 +176,7 @@ public class LuceneQueryBuilder implements QueryNodeVisitor {
      *                           node is configured.
      * @param indexFormatVersion the index format version for the lucene query.
      */
-    private LuceneQueryBuilder(QueryRootNode root,
+    protected LuceneQueryBuilder(QueryRootNode root,
                                SessionImpl session,
                                ItemStateManager sharedItemMgr,
                                HierarchyManager hmgr,
@@ -254,8 +254,15 @@ public class LuceneQueryBuilder implements QueryNodeVisitor {
      * @throws RepositoryException if an error occurs while building the lucene
      *                             query.
      */
-    private Query createLuceneQuery() throws RepositoryException {
+    protected Query createLuceneQuery() throws RepositoryException {
         return (Query) root.accept(this, null);
+    }
+
+    /**
+     * Returns the QueryParser for the given field name.
+     */
+    protected QueryParser getQueryParser(String fieldName) {
+        return new JackrabbitQueryParser(fieldName, analyzer, synonymProvider, cache);
     }
 
     //---------------------< QueryNodeVisitor interface >-----------------------
@@ -421,9 +428,7 @@ public class LuceneQueryBuilder implements QueryNodeVisitor {
                 tmp.append(propName.getLocalName());
                 fieldname = tmp.toString();
             }
-            QueryParser parser = new JackrabbitQueryParser(
-                    fieldname, analyzer, synonymProvider, cache);
-            Query context = parser.parse(node.getQuery());
+            Query context = getQueryParser(fieldname).parse(node.getQuery());
             if (relPath != null && (!node.getReferencesProperty() || relPath.getLength() > 1)) {
                 // text search on some child axis
                 Path.Element[] elements = relPath.getElements();
@@ -1207,5 +1212,9 @@ public class LuceneQueryBuilder implements QueryNodeVisitor {
             log.debug("Using literal " + literal + " as is.");
         }
         return values.toArray(new String[values.size()]);
+    }
+
+    protected List<Exception> getExceptions() {
+        return exceptions;
     }
 }
