@@ -145,7 +145,7 @@ public class LuceneQueryFactory {
 
     protected final String primaryTypeField;
 
-    private final PerQueryCache cache = new PerQueryCache();
+    protected final PerQueryCache cache = new PerQueryCache();
 
     /**
      * Creates a new lucene query factory.
@@ -325,15 +325,18 @@ public class LuceneQueryFactory {
             tmp.append(propName.getLocalName());
             fieldname = tmp.toString();
         }
-        QueryParser parser = new JackrabbitQueryParser(
-                fieldname, getTextAnalyzer(),
-                index.getSynonymProvider(), cache);
+        QueryParser parser = getQueryParser(fieldname);
         try {
             StaticOperand expr = fts.getFullTextSearchExpression();
             return parser.parse(evaluator.getValue(expr).getString());
         } catch (ParseException e) {
             throw new RepositoryException(e);
         }
+    }
+
+    protected QueryParser getQueryParser(String field) {
+        return new JackrabbitQueryParser(field, getTextAnalyzer(),
+                index.getSynonymProvider(), cache);
     }
 
     protected Analyzer getTextAnalyzer() {
@@ -506,10 +509,7 @@ public class LuceneQueryFactory {
         StaticOperand expression = fts.getFullTextSearchExpression();
         String query = evaluator.getValue(expression).getString();
         try {
-            QueryParser parser = new JackrabbitQueryParser(
-                    field, getTextAnalyzer(),
-                    index.getSynonymProvider(), cache);
-            return parser.parse(query);
+            return getQueryParser(field).parse(query);
         } catch (ParseException e) {
             throw new RepositoryException(
                     "Invalid full text search expression: " + query, e);

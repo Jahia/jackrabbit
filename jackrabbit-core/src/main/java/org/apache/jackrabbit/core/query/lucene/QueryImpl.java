@@ -107,13 +107,7 @@ public class QueryImpl extends AbstractQueryImpl {
         }
 
         // build lucene query
-        Query query = LuceneQueryBuilder.createQuery(
-                root, sessionContext.getSessionImpl(),
-                index.getContext().getItemStateManager(),
-                index.getNamespaceMappings(), getTextAnalyzer(),
-                propReg, index.getSynonymProvider(),
-                index.getIndexFormatVersion(),
-                cache);
+        Query query = createLuceneQuery();
 
         OrderQueryNode orderNode = root.getOrderNode();
 
@@ -133,6 +127,16 @@ public class QueryImpl extends AbstractQueryImpl {
         }
 
         return createQueryResult(offset, limit, query, orderProperties, ascSpecs, orderFuncs);
+    }
+
+    protected Query createLuceneQuery() throws RepositoryException {
+        return LuceneQueryBuilder.createQuery(
+                root, sessionContext.getSessionImpl(),
+                index.getContext().getItemStateManager(),
+                index.getNamespaceMappings(), getTextAnalyzer(),
+                propReg, index.getSynonymProvider(),
+                index.getIndexFormatVersion(),
+                cache);
     }
 
     protected QueryResult createQueryResult(long offset, long limit, Query query, Path[] orderProperties,
