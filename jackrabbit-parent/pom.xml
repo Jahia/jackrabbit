@@ -44,10 +44,9 @@
 
   <!-- using adjusted inheritance rules: https://issues.apache.org/jira/browse/MNG-6059 -->
   <scm child.scm.connection.inherit.append.path="false" child.scm.developerConnection.inherit.append.path="false">
-    <connection>scm:git:https://gitbox.apache.org/repos/asf/jackrabbit.git</connection>
-    <developerConnection>scm:git:https://gitbox.apache.org/repos/asf/jackrabbit.git</developerConnection>
-    <url>https://github.com/apache/jackrabbit/tree/${project.scm.tag}</url>
-    <tag>jackrabbit-2.22.0</tag>
+    <connection>scm:git:git@github.com:Jahia/jackrabbit.git</connection>
+    <developerConnection>scm:git:git@github.com:Jahia/jackrabbit.git</developerConnection>
+    <url>https://github.com/Jahia/jackrabbit/tree/2.22-jahia</url>
   </scm>
 
   <properties>
