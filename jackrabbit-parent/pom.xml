@@ -49,6 +49,17 @@
     <url>https://github.com/Jahia/jackrabbit/tree/2.22-jahia</url>
   </scm>
 
+  <distributionManagement>
+    <repository>
+      <id>thirdparty-releases</id>
+      <url>https://devtools.jahia.com/nexus/content/repositories/thirdparty-releases</url>
+    </repository>
+    <snapshotRepository>
+      <id>thirdparty-snapshots</id>
+      <url>https://devtools.jahia.com/nexus/content/repositories/thirdparty-snapshots</url>
+    </snapshotRepository>
+  </distributionManagement>
+
   <properties>
     <test.opts.memory>-Xmx256m</test.opts.memory>
     <test.opts.modules />
