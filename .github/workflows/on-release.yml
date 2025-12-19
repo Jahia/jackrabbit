@@ -28,6 +28,7 @@ jobs:
           git config user.email 'jahia-ci@jahia.com'
           git config user.name 'Jahia CI'
           git fetch --all
+          git checkout -B ${{ github.event.release.target_commitish }}
           git tag --delete ${{ github.event.release.tag_name }}
           git push origin :refs/tags/${{ github.event.release.tag_name }}
       - uses: actions/cache@v4
