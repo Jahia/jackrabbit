@@ -861,6 +861,13 @@ public abstract class AbstractBundlePersistenceManager implements
         bundles.remove(id);
     }
 
+    /**
+     * Evicts every bundle from the bundle cache.
+     */
+    protected void evictAllBundles() {
+        bundles.clear();
+    }
+
     public void cacheAccessed(long accessCount) {
         logCacheStats();
         cacheAccessCounter.addAndGet(accessCount);

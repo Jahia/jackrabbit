@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -59,6 +60,7 @@ import org.apache.jackrabbit.core.state.SessionItemStateManager;
 import org.apache.jackrabbit.core.state.StaleItemStateException;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.core.version.InternalVersionManager;
+import org.apache.jackrabbit.core.version.LegacyVersioning;
 import org.apache.jackrabbit.core.version.VersionHistoryInfo;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
@@ -105,6 +107,12 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
         if (dirty.size() == 0) {
             // no transient items, nothing to do here
             return this;
+        }
+
+        // with the versioning disabled, the save removes the versioning properties of the nodes it
+        // writes, before it collects the removed states
+        if (LegacyVersioning.isDisabled() && removeVersioningProperties(context, dirty)) {
+            dirty = getTransientStates(context.getItemStateManager());
         }
 
         /**
@@ -776,6 +784,9 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
     private boolean initVersionHistories(
             SessionContext context, Iterable<ItemState> states)
             throws RepositoryException {
+        if (LegacyVersioning.isDisabled()) {
+            return false;
+        }
         SessionImpl session = context.getSessionImpl();
         ItemManager itemMgr = context.getItemManager();
 
@@ -832,6 +843,40 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
                                 InternalValue.create(true));
                         createdTransientState = true;
                     }
+                }
+            }
+        }
+        return createdTransientState;
+    }
+
+    /**
+     * Removes the versioning properties of each node that the given transient states touch: a
+     * transient node, or the parent of a transient property. The JCR versioning is disabled, so the
+     * targets of these properties no longer exist.
+     *
+     * @return true if this call generated new transient state; otherwise false
+     */
+    private boolean removeVersioningProperties(
+            SessionContext context, Iterable<ItemState> states)
+            throws RepositoryException {
+        ItemManager itemMgr = context.getItemManager();
+        Set<NodeId> nodeIds = new LinkedHashSet<NodeId>();
+        for (ItemState itemState : states) {
+            if (itemState.isNode()) {
+                nodeIds.add(((NodeState) itemState).getNodeId());
+            } else if (state.isNode()) {
+                // the parent of a property lies in the scope of this save only when a node is saved
+                nodeIds.add(itemState.getParentId());
+            }
+        }
+        boolean createdTransientState = false;
+        for (NodeId id : nodeIds) {
+            NodeImpl node = (NodeImpl) itemMgr.getItem(id, false);
+            NodeState nodeState = node.getNodeState();
+            for (Name name : LegacyVersioning.NODE_PROPERTIES) {
+                if (nodeState.hasPropertyName(name)) {
+                    node.removeChildProperty(name);
+                    createdTransientState = true;
                 }
             }
         }

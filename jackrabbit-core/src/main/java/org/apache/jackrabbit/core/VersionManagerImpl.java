@@ -53,6 +53,7 @@ import org.apache.jackrabbit.core.version.InternalActivity;
 import org.apache.jackrabbit.core.version.InternalBaseline;
 import org.apache.jackrabbit.core.version.InternalVersion;
 import org.apache.jackrabbit.core.version.InternalVersionHistory;
+import org.apache.jackrabbit.core.version.LegacyVersioning;
 import org.apache.jackrabbit.core.version.NodeStateEx;
 import org.apache.jackrabbit.core.version.VersionImpl;
 import org.apache.jackrabbit.core.version.VersionManagerImplConfig;
@@ -93,6 +94,7 @@ public class VersionManagerImpl extends VersionManagerImplConfig
 
     private <T> T perform(SessionOperation<T> operation)
             throws RepositoryException {
+        LegacyVersioning.check(operation.toString());
         return context.getSessionState().perform(operation);
     }
 
@@ -132,6 +134,10 @@ public class VersionManagerImpl extends VersionManagerImplConfig
      * {@inheritDoc}
      */
     public void checkout(final String absPath) throws RepositoryException {
+        if (LegacyVersioning.isDisabled()) {
+            // with the versioning disabled, every node is checked out already
+            return;
+        }
         perform(new SessionWriteOperation<NodeId> () {
             public NodeId perform(SessionContext context)
                     throws RepositoryException {

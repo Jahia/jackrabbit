@@ -57,6 +57,7 @@ import org.apache.jackrabbit.core.util.ReferenceChangeTracker;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.core.version.VersionHistoryInfo;
 import org.apache.jackrabbit.core.version.InternalVersionManager;
+import org.apache.jackrabbit.core.version.LegacyVersioning;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
 import org.apache.jackrabbit.spi.QPropertyDefinition;
@@ -1366,6 +1367,9 @@ public class BatchedItemOperations extends ItemValidator {
          * but also verify that node.isNodeType("mix:versionable")==true;
          * this would have a negative impact on performance though...
          */
+        if (LegacyVersioning.isDisabled()) {
+            return;
+        }
         NodeState nodeState = getNodeState(nodePath);
         while (!nodeState.hasPropertyName(NameConstants.JCR_ISCHECKEDOUT)) {
             if (nodePath.denotesRoot()) {
@@ -1733,7 +1737,8 @@ public class BatchedItemOperations extends ItemValidator {
             }
             // init version history if needed
             VersionHistoryInfo history = null;
-            if (versionable && flag == COPY) {
+            boolean versioningDisabled = LegacyVersioning.isDisabled();
+            if (versionable && flag == COPY && !versioningDisabled) {
                 NodeId copiedFrom = null;
                 if (fullVersionable) {
                     // base version of copied versionable node is reference value of
@@ -1750,6 +1755,10 @@ public class BatchedItemOperations extends ItemValidator {
                 Path propPath = PathFactoryImpl.getInstance().create(srcPath, propName, true);
                 PropertyId propId = new PropertyId(srcState.getNodeId(), propName);
                 if (!srcAccessMgr.canRead(propPath, propId)) {
+                    continue;
+                }
+                if (versioningDisabled && LegacyVersioning.NODE_PROPERTIES.contains(propName)) {
+                    // the copy or the clone carries no versioning property
                     continue;
                 }
                 PropertyState srcChildState =
