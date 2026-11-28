@@ -707,6 +707,34 @@ public class BundleDbPersistenceManager
     }
 
     /**
+     * Removes every row of the tables of this persistence manager, and empties its bundle cache.
+     * Jahia calls it on the persistence manager of the version storage only, once the JCR
+     * versioning is disabled: the item state managers above it keep their own caches.
+     *
+     * @throws ItemStateException if a table cannot be emptied
+     */
+    public synchronized void removeAllContent() throws ItemStateException {
+        if (!initialized) {
+            throw new IllegalStateException("not initialized");
+        }
+        for (String table : new String[] {"BUNDLE", "REFS", "BINVAL"}) {
+            String name = schemaObjectPrefix + table;
+            try {
+                conHelper.exec("truncate table " + name);
+            } catch (SQLException e) {
+                // a database without TRUNCATE, or a missing privilege, falls back to a delete
+                log.warn("Unable to truncate {}, deleting its rows: {}", name, e.getMessage());
+                try {
+                    conHelper.exec("delete from " + name);
+                } catch (SQLException e2) {
+                    throw new ItemStateException("Unable to empty " + name, e2);
+                }
+            }
+        }
+        evictAllBundles();
+    }
+
+    /**
      * {@inheritDoc}
      */
     public synchronized void close() throws Exception {

@@ -415,6 +415,13 @@ public class LocalItemStateManager
     }
 
     /**
+     * Evicts every item state from the cache of this manager.
+     */
+    public void evictAllItemStates() {
+        cache.evictAll();
+    }
+
+    /**
      * {@inheritDoc}
      */
     public void dispose() {

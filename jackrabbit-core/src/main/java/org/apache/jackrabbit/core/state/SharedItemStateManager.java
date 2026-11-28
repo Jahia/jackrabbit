@@ -455,6 +455,13 @@ public class SharedItemStateManager
 
     //-------------------------------------------------< misc. public methods >
     /**
+     * Evicts every item state from the cache of this manager.
+     */
+    public void evictAllItemStates() {
+        cache.evictAll();
+    }
+
+    /**
      * Disposes this <code>SharedItemStateManager</code> and frees resources.
      */
     public void dispose() {

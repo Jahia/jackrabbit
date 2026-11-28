@@ -45,6 +45,7 @@ import org.apache.jackrabbit.core.observation.EventState;
 import org.apache.jackrabbit.core.observation.EventStateCollection;
 import org.apache.jackrabbit.core.observation.EventStateCollectionFactory;
 import org.apache.jackrabbit.core.persistence.PersistenceManager;
+import org.apache.jackrabbit.core.persistence.pool.BundleDbPersistenceManager;
 import org.apache.jackrabbit.core.state.ChangeLog;
 import org.apache.jackrabbit.core.state.ISMLocking;
 import org.apache.jackrabbit.core.state.ItemState;
@@ -116,12 +117,17 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
     /**
      * Persistent root node of the version histories.
      */
-    private final NodeStateEx historyRoot;
+    private volatile NodeStateEx historyRoot;
 
     /**
      * Persistent root node of the activities.
      */
-    private final NodeStateEx activitiesRoot;
+    private volatile NodeStateEx activitiesRoot;
+
+    /**
+     * The node id of jcr:system, the parent of the version storage.
+     */
+    private final NodeId systemId;
 
     /**
      * Map of returned items. this is kept for invalidating
@@ -158,36 +164,11 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
             this.fs = fs;
             this.escFactory = new DynamicESCFactory(obsMgr);
 
-            // need to store the version storage root directly into the persistence manager
-            if (!pMgr.exists(historiesId)) {
-                NodeState root = pMgr.createNew(historiesId);
-                root.setParentId(systemId);
-                root.setNodeTypeName(NameConstants.REP_VERSIONSTORAGE);
-                PropertyState pt = pMgr.createNew(new PropertyId(historiesId, NameConstants.JCR_PRIMARYTYPE));
-                pt.setMultiValued(false);
-                pt.setType(PropertyType.NAME);
-                pt.setValues(new InternalValue[]{InternalValue.create(NameConstants.REP_VERSIONSTORAGE)});
-                root.addPropertyName(pt.getName());
-                ChangeLog cl = new ChangeLog();
-                cl.added(root);
-                cl.added(pt);
-                pMgr.store(cl);
-            }
-
-            // check for jcr:activities
-            if (!pMgr.exists(activitiesId)) {
-                NodeState root = pMgr.createNew(activitiesId);
-                root.setParentId(systemId);
-                root.setNodeTypeName(NameConstants.REP_ACTIVITIES);
-                PropertyState pt = pMgr.createNew(new PropertyId(activitiesId, NameConstants.JCR_PRIMARYTYPE));
-                pt.setMultiValued(false);
-                pt.setType(PropertyType.NAME);
-                pt.setValues(new InternalValue[]{InternalValue.create(NameConstants.REP_ACTIVITIES)});
-                root.addPropertyName(pt.getName());
-                ChangeLog cl = new ChangeLog();
-                cl.added(root);
-                cl.added(pt);
-                pMgr.store(cl);
+            this.systemId = systemId;
+            createRootsIfMissing();
+            if (pMgr.exists(new PropertyId(historiesId, LegacyVersioning.MARKER))) {
+                // the switch was recorded before a restart
+                LegacyVersioning.disable();
             }
 
             sharedStateMgr = createItemStateManager(pMgr, systemId, ntReg, cacheFactory, ismLocking, nodeIdFactory);
@@ -195,17 +176,124 @@ public class InternalVersionManagerImpl extends InternalVersionManagerBase
             stateMgr = LocalItemStateManager.createInstance(sharedStateMgr, escFactory, cacheFactory);
             stateMgr.addListener(this);
 
-            NodeState nodeState = (NodeState) stateMgr.getItemState(historiesId);
-            historyRoot = new NodeStateEx(stateMgr, ntReg, nodeState, NameConstants.JCR_VERSIONSTORAGE);
-
-            nodeState = (NodeState) stateMgr.getItemState(activitiesId);
-            activitiesRoot =  new NodeStateEx(stateMgr, ntReg, nodeState, NameConstants.JCR_ACTIVITIES);
+            loadRoots();
 
             // create the virtual item state provider
             versProvider = new VersionItemStateProvider(historiesId, activitiesId, sharedStateMgr);
 
         } catch (ItemStateException e) {
             throw new RepositoryException(e);
+        }
+    }
+
+    /**
+     * Stores the roots of the version storage and of the activities directly into the
+     * persistence manager, when they do not exist.
+     */
+    private void createRootsIfMissing() throws ItemStateException {
+        createRootIfMissing(historiesId, NameConstants.REP_VERSIONSTORAGE);
+        createRootIfMissing(activitiesId, NameConstants.REP_ACTIVITIES);
+    }
+
+    private void createRootIfMissing(NodeId id, Name nodeTypeName) throws ItemStateException {
+        if (!pMgr.exists(id)) {
+            NodeState root = pMgr.createNew(id);
+            root.setParentId(systemId);
+            root.setNodeTypeName(nodeTypeName);
+            PropertyState pt = pMgr.createNew(new PropertyId(id, NameConstants.JCR_PRIMARYTYPE));
+            pt.setMultiValued(false);
+            pt.setType(PropertyType.NAME);
+            pt.setValues(new InternalValue[]{InternalValue.create(nodeTypeName)});
+            root.addPropertyName(pt.getName());
+            ChangeLog cl = new ChangeLog();
+            cl.added(root);
+            cl.added(pt);
+            pMgr.store(cl);
+        }
+    }
+
+    /**
+     * Records the switch on the root of the version storage, directly into the persistence manager.
+     */
+    private void storeMarker() throws ItemStateException {
+        PropertyId markerId = new PropertyId(historiesId, LegacyVersioning.MARKER);
+        if (pMgr.exists(markerId)) {
+            return;
+        }
+        NodeState root = pMgr.load(historiesId);
+        PropertyState marker = pMgr.createNew(markerId);
+        marker.setMultiValued(false);
+        marker.setType(PropertyType.BOOLEAN);
+        marker.setValues(new InternalValue[]{InternalValue.create(true)});
+        root.addPropertyName(LegacyVersioning.MARKER);
+        ChangeLog cl = new ChangeLog();
+        cl.modified(root);
+        cl.added(marker);
+        pMgr.store(cl);
+    }
+
+    /**
+     * Turns the JCR versioning off for good: records the switch in the version storage, so that it
+     * survives a restart, then turns it off in this JVM.
+     *
+     * @throws RepositoryException if the switch cannot be recorded
+     */
+    public void disableVersioning() throws RepositoryException {
+        VersioningLock.WriteLock lock = acquireWriteLock();
+        try {
+            storeMarker();
+            sharedStateMgr.evictAllItemStates();
+            stateMgr.evictAllItemStates();
+            loadRoots();
+            LegacyVersioning.disable();
+        } catch (ItemStateException e) {
+            throw new RepositoryException("Unable to record the switch", e);
+        } finally {
+            lock.release();
+        }
+    }
+
+    private void loadRoots() throws ItemStateException {
+        NodeState nodeState = (NodeState) stateMgr.getItemState(historiesId);
+        historyRoot = new NodeStateEx(stateMgr, ntReg, nodeState, NameConstants.JCR_VERSIONSTORAGE);
+
+        nodeState = (NodeState) stateMgr.getItemState(activitiesId);
+        activitiesRoot = new NodeStateEx(stateMgr, ntReg, nodeState, NameConstants.JCR_ACTIVITIES);
+    }
+
+    /**
+     * Removes every version history, every version and every activity of the repository, at the
+     * level of the persistence manager. Jahia calls it once the JCR versioning is disabled, so no
+     * reader nor writer of the version storage remains. The removal writes no cluster journal
+     * record, fires no observation event and updates no search index. It empties the caches of
+     * this cluster node only.
+     *
+     * @throws RepositoryException if the versioning is enabled, or if the removal fails
+     */
+    public void removeAllVersions() throws RepositoryException {
+        if (!LegacyVersioning.isDisabled()) {
+            throw new IllegalStateException("The JCR versioning must be disabled first");
+        }
+        if (!(pMgr instanceof BundleDbPersistenceManager)) {
+            throw new RepositoryException("Unsupported persistence manager for the version storage: "
+                    + pMgr.getClass().getName());
+        }
+        VersioningLock.WriteLock lock = acquireWriteLock();
+        try {
+            ((BundleDbPersistenceManager) pMgr).removeAllContent();
+            createRootsIfMissing();
+            storeMarker();
+            synchronized (versionItems) {
+                versionItems.clear();
+            }
+            stateMgr.evictAllItemStates();
+            sharedStateMgr.evictAllItemStates();
+            loadRoots();
+            log.info("Removed every version of the version storage");
+        } catch (ItemStateException e) {
+            throw new RepositoryException("Unable to remove the versions", e);
+        } finally {
+            lock.release();
         }
     }
 

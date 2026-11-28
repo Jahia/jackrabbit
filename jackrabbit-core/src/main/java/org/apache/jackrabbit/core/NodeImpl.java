@@ -84,6 +84,7 @@ import org.apache.jackrabbit.core.id.ItemId;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.nodetype.EffectiveNodeType;
+import org.apache.jackrabbit.core.version.LegacyVersioning;
 import org.apache.jackrabbit.core.nodetype.NodeTypeConflictException;
 import org.apache.jackrabbit.core.nodetype.NodeTypeImpl;
 import org.apache.jackrabbit.core.nodetype.NodeTypeManagerImpl;
@@ -2846,7 +2847,7 @@ public class NodeImpl extends ItemImpl implements Node, JackrabbitNode {
         // try shortcut first:
         // if current node is 'new' we can safely consider it checked-out since
         // otherwise it would had been impossible to add it in the first place
-        if (isNew()) {
+        if (isNew() || LegacyVersioning.isDisabled()) {
             return true;
         }
 

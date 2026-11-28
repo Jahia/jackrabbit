@@ -31,6 +31,7 @@ import org.apache.jackrabbit.core.state.PropertyState;
 import org.apache.jackrabbit.core.util.ReferenceChangeTracker;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.core.version.InternalVersionManager;
+import org.apache.jackrabbit.core.version.LegacyVersioning;
 import org.apache.jackrabbit.core.version.VersionHistoryInfo;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.Path;
@@ -345,7 +346,7 @@ public class WorkspaceImporter implements Importer {
          * todo FIXME delegate to 'node type instance handler'
          */
         EffectiveNodeType ent = itemOps.getEffectiveNodeType(node);
-        if (ent.includesNodeType(NameConstants.MIX_SIMPLE_VERSIONABLE)) {
+        if (ent.includesNodeType(NameConstants.MIX_SIMPLE_VERSIONABLE) && !LegacyVersioning.isDisabled()) {
             /**
              * check if there's already a version history for that
              * node; this would e.g. be the case if a versionable node
